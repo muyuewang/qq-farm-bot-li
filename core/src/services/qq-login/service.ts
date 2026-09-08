@@ -132,7 +132,7 @@ async function requestWebUI(path: string, body: any = {}): Promise<any> {
         if (data?.code !== undefined && Number(data.code) !== 0) {
             throw new Error(data.message || 'NapCat WebUI 请求失败');
         }
-        return data;
+        return normalize(data);
     } catch (error: any) {
         if (/unauthorized|credential|凭证|认证/i.test(error.message)) {
             webUiCredential = '';
@@ -186,7 +186,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
         }
     }
     
-    const raw = result.qrcode || result.data?.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
+    const raw = result.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
     if (!raw) {
         console.error('[QQ Login] NapCat返回数据:', JSON.stringify(result));
         throw new Error('NapCat 未返回登录二维码');
