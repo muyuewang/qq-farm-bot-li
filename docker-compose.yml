@@ -1,7 +1,5 @@
 services:
   qq-farm-bot-muyue:
-    networks:
-      - default
     build:
       context: .
       dockerfile: core/Dockerfile
@@ -41,8 +39,6 @@ services:
 
   napcat:
     profiles: ["napcat"]
-    networks:
-      - default
     build:
       context: .
       dockerfile: napcat/Dockerfile
@@ -78,7 +74,3 @@ volumes:
     name: qq-farm-napcat-config
   qq-farm-napcat-QQ:
     name: qq-farm-napcat-QQ
-
-networks:
-  default:
-    name: qq-farm-network
