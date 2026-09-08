@@ -186,7 +186,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
         }
     }
     
-    const raw = result.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
+    const raw = result.qrcode || result.data?.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
     if (!raw) {
         console.error('[QQ Login] NapCat返回数据:', JSON.stringify(result));
         throw new Error('NapCat 未返回登录二维码');
