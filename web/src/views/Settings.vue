@@ -2086,9 +2086,9 @@ async function handleResetSystemConfig() {
                   />
                   <BaseInput
                     v-model="localLoginSettings.napCatSignature"
-                    label="NapCat接口签名"
+                    label="NapCat Token"
                     type="password"
-                    placeholder="请输入 NapCat 接口签名"
+                    placeholder="请输入 NapCat Token"
                   />
                 </div>
 

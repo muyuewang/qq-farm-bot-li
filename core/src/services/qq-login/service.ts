@@ -82,7 +82,7 @@ async function requestNapCat(path: string, body: Record<string, unknown>, requir
             validateStatus: status => status === 200,
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Signature': settings.napCatSignature,
+                'Authorization': `Bearer ${settings.napCatSignature}`,
             },
         });
     }
