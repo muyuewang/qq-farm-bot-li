@@ -9,7 +9,7 @@ if [[ ! -s "$token_file" ]]; then
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$token_file"
 fi
 NAPCAT_TOKEN=$(tr -d '\r\n' < "$token_file")
-export WEBUI_TOKEN="$NAPCAT_TOKEN"
+export NAPCAT_WEBUI_SECRET_KEY="$NAPCAT_TOKEN"
 
 if [[ ! -f /app/napcat/napcat.mjs ]]; then
   unzip -q /app/NapCat.Shell.zip -d /app/NapCat.Shell
