@@ -12,6 +12,18 @@ const TTL_MS = 120000;
 
 let webUiCredential = '';
 
+// 全局任务存储
+declare global {
+    var _qqLoginTask: {
+        id: string;
+        owner: string;
+        status: QqLoginTaskStatus;
+        qrImage: string;
+        expiresAt: number;
+        user?: any;
+    } | undefined;
+}
+
 export type QqLoginTaskStatus
     = 'waiting_scan'
     | 'scanned'
@@ -84,6 +96,10 @@ async function webUiLogin(settings: LoginSettings): Promise<string> {
     const token = settings.napCatSignature;
     const hash = crypto.createHash('sha256').update(`${token}.napcat`).digest('hex');
     
+    console.log('[QQ Login] 尝试登录NapCat WebUI...');
+    console.log('[QQ Login] Token:', token ? '***' + token.slice(-4) : 'empty');
+    console.log('[QQ Login] Endpoint:', settings.napCatEndpoint);
+    
     try {
         const response = await axios.post(apiUrl(settings.napCatEndpoint, '/auth/login'), { hash }, {
             timeout: REQUEST_TIMEOUT_MS,
@@ -93,8 +109,10 @@ async function webUiLogin(settings: LoginSettings): Promise<string> {
         const credential = response?.data?.data?.Credential || '';
         if (!credential) throw new Error('NapCat WebUI 登录失败');
         webUiCredential = credential;
+        console.log('[QQ Login] WebUI登录成功');
         return credential;
     } catch (error: any) {
+        console.error('[QQ Login] WebUI登录失败:', error.message);
         throw new Error(`NapCat WebUI 登录失败: ${error.message}`);
     }
 }
@@ -131,19 +149,27 @@ function normalize(value: any): any {
 async function createLoginTask(): Promise<QqLoginTask> {
     const settings = loginSettings();
     
+    console.log('[QQ Login] 开始创建登录任务...');
+    
     // 清除旧的credential
     webUiCredential = '';
     
     // 刷新二维码
     try {
+        console.log('[QQ Login] 刷新二维码...');
         await requestWebUI(settings, '/QQLogin/RefreshQRcode');
         await new Promise(resolve => setTimeout(resolve, 300));
-    } catch {}
+    } catch (error: any) {
+        console.log('[QQ Login] 刷新二维码失败，继续尝试获取:', error.message);
+    }
     
     // 获取二维码
+    console.log('[QQ Login] 获取二维码...');
     const result = await requestWebUI(settings, '/QQLogin/GetQQLoginQrcode');
     const raw = result.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
     if (!raw) throw new Error('NapCat 未返回登录二维码');
+    
+    console.log('[QQ Login] 二维码获取成功');
     
     const qrImage = /^data:image\//i.test(raw) 
         ? raw 
@@ -161,6 +187,8 @@ async function createLoginTask(): Promise<QqLoginTask> {
     
     // 保存任务到全局变量
     globalThis._qqLoginTask = task;
+    
+    console.log('[QQ Login] 登录任务创建成功，ID:', task.id);
     
     return { taskId: task.id, status: task.status, qrImage: task.qrImage, expiresAt: task.expiresAt };
 }
