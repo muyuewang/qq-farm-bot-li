@@ -21,7 +21,6 @@ declare global {
         owner: string;
         status: QqLoginTaskStatus;
         qrImage: string;
-        rawQrcodeUrl: string;
         expiresAt: number;
         user?: any;
     } | undefined;
@@ -210,7 +209,6 @@ async function createLoginTask(): Promise<QqLoginTask> {
         owner: '', 
         status: 'waiting_scan' as QqLoginTaskStatus, 
         qrImage, 
-        rawQrcodeUrl: raw,
         expiresAt: Date.now() + TTL_MS 
     };
     
@@ -235,6 +233,7 @@ async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
     }
     
     const state = await requestWebUI('/QQLogin/CheckLoginStatus');
+    const text = `${state.status || ''} ${state.message || ''}`.toLowerCase();
     
     if (state.isLogin === true) {
         task.status = 'confirmed';
@@ -244,14 +243,10 @@ async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
                 task.user = user;
             }
         } catch {}
-    } else if (state.isOffline === true) {
-        task.status = 'failed';
-    } else if (state.loginError) {
-        task.status = 'expired';
-    } else if (Date.now() > task.expiresAt) {
-        task.status = 'expired';
-    } else if (state.qrcodeurl && state.qrcodeurl !== task.rawQrcodeUrl) {
+    } else if (/scanned|待确认|等待确认/.test(text)) {
         task.status = 'scanned';
+    } else if (/expired|timeout|过期|失效/.test(text)) {
+        task.status = 'expired';
     }
     
     return { taskId: task.id, status: task.status, qrImage: task.qrImage, expiresAt: task.expiresAt };
