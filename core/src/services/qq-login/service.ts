@@ -304,6 +304,15 @@ async function getMiniappCode(taskId: string): Promise<string> {
         throw new Error(result.data?.error || 'NapCat 未返回小程序授权 Code');
     }
     
+    // 登出NapCat临时会话，节省资源并避免QQ异地登录被封
+    try {
+        await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
+        await axios.post(apiUrl(openAuthEndpoint, '/logout'), undefined, {
+            timeout: 10000,
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+    } catch {}
+    
     return authCode;
 }
 
