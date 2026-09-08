@@ -52,7 +52,7 @@ services:
       NAPCAT_UID: ${NAPCAT_UID:-1000}
       NAPCAT_GID: ${NAPCAT_GID:-1000}
     ports:
-      - "127.0.0.1:6099:6099"
+      - "6099:6099"
     volumes:
       - ../data/napcat/config:/app/napcat/config
       - ../data/napcat/QQ:/app/.config/QQ
