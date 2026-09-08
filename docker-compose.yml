@@ -15,10 +15,17 @@ services:
     volumes:
       - qq-farm-data:/app/core/data
       - qq-farm-logs:/app/core/data/logs
+      - qq-farm-logs:/app/core/data/logs
+      - qq-farm-napcat-auth:/app/napcat-auth:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - NODE_ENV=production
       - ADMIN_PORT=3007
+      - FARM_DATA_DIR=/app/core/data
+      - CAPTURE_ADVERTISE_IPS=${CAPTURE_ADVERTISE_IPS:-auto}
+      - NAPCAT_LOGIN_ENABLED=${NAPCAT_LOGIN_ENABLED:-false}
+      - NAPCAT_WEBUI_URL=http://napcat:6099/api
+      - NAPCAT_OPENAUTH_URL=http://napcat:6099/plugin/qq-miniapp-openauth/api
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3007/api/game-version"]
       interval: 30s
@@ -31,8 +38,40 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  napcat:
+    profiles: ["napcat"]
+    build:
+      context: .
+      dockerfile: napcat/Dockerfile
+      args:
+        NAPCAT_IMAGE: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:v4.18.19}
+    image: qq-farm-napcat:latest
+    container_name: qq-farm-napcat
+    hostname: ${NAPCAT_DEVICE_NAME:-QQ-Farm-NapCat}
+    restart: unless-stopped
+    environment:
+      NAPCAT_UID: ${NAPCAT_UID:-1000}
+      NAPCAT_GID: ${NAPCAT_GID:-1000}
+    ports:
+      - "127.0.0.1:6099:6099"
+    volumes:
+      - qq-farm-napcat-config:/app/napcat/config
+      - qq-farm-napcat-QQ:/app/.config/QQ
+      - qq-farm-napcat-auth:/app/napcat-auth
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   qq-farm-data:
     name: qq-farm-data
   qq-farm-logs:
     name: qq-farm-logs
+  qq-farm-napcat-auth:
+    name: qq-farm-napcat-auth
+  qq-farm-napcat-config:
+    name: qq-farm-napcat-config
+  qq-farm-napcat-QQ:
+    name: qq-farm-napcat-QQ

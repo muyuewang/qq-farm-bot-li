@@ -47,3 +47,11 @@ coverage/
 
 # Cleanup script (self-deleting)
 cleanup.bat
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Docker compose data
+data/
