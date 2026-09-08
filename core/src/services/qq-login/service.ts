@@ -5,6 +5,7 @@ const axios = require('axios').default;
 const store = require('../../models/store');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const QRCode = require('qrcode');
 
 const QQ_MINIAPP_APP_ID = '1112386029';
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -194,11 +195,14 @@ async function createLoginTask(): Promise<QqLoginTask> {
     
     console.log('[QQ Login] 二维码获取成功');
     
-    const qrImage = /^data:image\//i.test(raw) 
-        ? raw 
-        : (/^[a-z0-9+/]+={0,2}$/i.test(raw) && raw.length > 128 
-            ? `data:image/png;base64,${raw}` 
-            : raw);
+    let qrImage: string;
+    if (/^data:image\//i.test(raw)) {
+        qrImage = raw;
+    } else if (/^[a-z0-9+/]+={0,2}$/i.test(raw) && raw.length > 128) {
+        qrImage = `data:image/png;base64,${raw}`;
+    } else {
+        qrImage = await QRCode.toDataURL(raw, { width: 280, margin: 1 });
+    }
     
     const task = { 
         id: crypto.randomBytes(18).toString('hex'), 
