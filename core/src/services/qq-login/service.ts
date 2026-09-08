@@ -165,9 +165,32 @@ async function createLoginTask(): Promise<QqLoginTask> {
     
     // 获取二维码
     console.log('[QQ Login] 获取二维码...');
-    const result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
+    let result;
+    try {
+        result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
+    } catch (error: any) {
+        // 如果QQ已经登录，需要先登出
+        if (/QQ Is Logined/i.test(error.message)) {
+            console.log('[QQ Login] QQ已登录，尝试登出...');
+            try {
+                await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
+                await new Promise(resolve => setTimeout(resolve, 500));
+                // 重新获取二维码
+                result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
+            } catch (logoutError: any) {
+                console.error('[QQ Login] 登出失败:', logoutError.message);
+                throw new Error('QQ已登录，请先在NapCat中登出QQ');
+            }
+        } else {
+            throw error;
+        }
+    }
+    
     const raw = result.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
-    if (!raw) throw new Error('NapCat 未返回登录二维码');
+    if (!raw) {
+        console.error('[QQ Login] NapCat返回数据:', JSON.stringify(result));
+        throw new Error('NapCat 未返回登录二维码');
+    }
     
     console.log('[QQ Login] 二维码获取成功');
     
