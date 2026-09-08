@@ -32,6 +32,7 @@ fi
 plugin_config=/app/napcat/config/plugins/qq-miniapp-openauth/config.json
 mkdir -p "$(dirname "$plugin_config")"
 
+# 使用JSON格式存储token
 jq -n --arg token "$NAPCAT_TOKEN" '{token: $token}' > "$plugin_config.tmp"
 mv "$plugin_config.tmp" "$plugin_config"
 chmod 600 "$plugin_config"

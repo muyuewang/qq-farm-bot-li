@@ -5,6 +5,11 @@ import path from 'node:path';
 function config(ctx) {
   try { return JSON.parse(fs.readFileSync(ctx.configPath, 'utf8')); } catch { return {}; }
 }
+function getToken(ctx) {
+  const fileToken = config(ctx).token || '';
+  const envToken = process.env.NAPCAT_TOKEN || '';
+  return fileToken || envToken;
+}
 function safe(value, seen = new WeakSet(), depth = 0) {
   if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value;
   if (depth > 8 || typeof value !== 'object') return String(value);
@@ -70,7 +75,7 @@ function authorized(req, res, token) {
 }
 
 export async function plugin_init(ctx) {
-  const token = String(config(ctx).token || '');
+  const token = getToken(ctx);
   ctx.router.getNoAuth('/status', async (req, res) => {
     if (!authorized(req, res, token)) return;
     const service = misc(ctx);
