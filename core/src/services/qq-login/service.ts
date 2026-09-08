@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const QQ_MINIAPP_APP_ID = '1112386029';
 const REQUEST_TIMEOUT_MS = 120_000;
 const TTL_MS = 120000;
+const TOKEN_FILE = process.env.NAPCAT_TOKEN_FILE || '/app/napcat-auth/token';
 
 let webUiCredential = '';
 
@@ -39,12 +40,26 @@ export interface QqLoginTask {
     expiresAt: number;
 }
 
+function authToken(): string {
+    try {
+        return fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+    } catch {
+        return '';
+    }
+}
+
+function napCatEndpoint(): string {
+    return process.env.NAPCAT_WEBUI_URL || 'http://napcat:6099/api';
+}
+
+function napCatOpenAuthEndpoint(): string {
+    return process.env.NAPCAT_OPENAUTH_URL || 'http://napcat:6099/plugin/qq-miniapp-openauth/api';
+}
+
 function loginSettings(): LoginSettings {
     const settings = store.getLoginSettings();
     if (!settings?.qqQrLogin)
         throw new Error('QQ扫码登录未开启');
-    if (!settings.napCatEndpoint || !settings.napCatSignature)
-        throw new Error('请先配置 NapCat 接口地址和 NapCat Token');
     return settings;
 }
 
@@ -72,36 +87,20 @@ function napCatErrorMessage(data: any): string {
     }
 }
 
-function normalizeTask(raw: any): QqLoginTask {
-    const task = (raw?.task && typeof raw.task === 'object') ? raw.task : {};
-    const taskId = String(task.id || '').trim();
-    const status = String(task.status || '').trim() as QqLoginTaskStatus;
-    const qrImage = String(task.qrImage || '').trim();
-    const expiresAt = Number(task.expiresAt);
-    if (!taskId)
-        throw new Error('NapCat 返回的登录任务无效');
-    if (!qrImage)
-        throw new Error('NapCat 未返回登录二维码');
-    return {
-        taskId,
-        status,
-        qrImage,
-        expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
-    };
-}
-
-async function webUiLogin(settings: LoginSettings): Promise<string> {
+async function webUiLogin(): Promise<string> {
     if (webUiCredential) return webUiCredential;
     
-    const token = settings.napCatSignature;
+    const token = authToken();
+    if (!token) throw new Error('NapCat Token 文件不存在或为空');
+    
     const hash = crypto.createHash('sha256').update(`${token}.napcat`).digest('hex');
+    const endpoint = napCatEndpoint();
     
     console.log('[QQ Login] 尝试登录NapCat WebUI...');
-    console.log('[QQ Login] Token:', token ? '***' + token.slice(-4) : 'empty');
-    console.log('[QQ Login] Endpoint:', settings.napCatEndpoint);
+    console.log('[QQ Login] Endpoint:', endpoint);
     
     try {
-        const response = await axios.post(apiUrl(settings.napCatEndpoint, '/auth/login'), { hash }, {
+        const response = await axios.post(apiUrl(endpoint, '/auth/login'), { hash }, {
             timeout: REQUEST_TIMEOUT_MS,
             validateStatus: status => status === 200,
             headers: { 'Content-Type': 'application/json' },
@@ -117,10 +116,11 @@ async function webUiLogin(settings: LoginSettings): Promise<string> {
     }
 }
 
-async function requestWebUI(settings: LoginSettings, path: string, body: any = {}): Promise<any> {
-    const credential = await webUiLogin(settings);
+async function requestWebUI(path: string, body: any = {}): Promise<any> {
+    const credential = await webUiLogin();
+    const endpoint = napCatEndpoint();
     try {
-        const response = await axios.post(apiUrl(settings.napCatEndpoint, path), body, {
+        const response = await axios.post(apiUrl(endpoint, path), body, {
             timeout: REQUEST_TIMEOUT_MS,
             validateStatus: status => status === 200,
             headers: {
@@ -147,7 +147,7 @@ function normalize(value: any): any {
 }
 
 async function createLoginTask(): Promise<QqLoginTask> {
-    const settings = loginSettings();
+    loginSettings();
     
     console.log('[QQ Login] 开始创建登录任务...');
     
@@ -157,7 +157,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
     // 刷新二维码
     try {
         console.log('[QQ Login] 刷新二维码...');
-        await requestWebUI(settings, '/QQLogin/RefreshQRcode');
+        await requestWebUI('/QQLogin/RefreshQRcode');
         await new Promise(resolve => setTimeout(resolve, 300));
     } catch (error: any) {
         console.log('[QQ Login] 刷新二维码失败，继续尝试获取:', error.message);
@@ -165,7 +165,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
     
     // 获取二维码
     console.log('[QQ Login] 获取二维码...');
-    const result = await requestWebUI(settings, '/QQLogin/GetQQLoginQrcode');
+    const result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
     const raw = result.qrcode || result.qrCode || result.qrUrl || result.qr_url || result.image || result.base64;
     if (!raw) throw new Error('NapCat 未返回登录二维码');
     
@@ -173,7 +173,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
     
     const qrImage = /^data:image\//i.test(raw) 
         ? raw 
-        : (`^[a-z0-9+/]+={0,2}$/i.test(raw) && raw.length > 128 
+        : (/^[a-z0-9+/]+={0,2}$/i.test(raw) && raw.length > 128 
             ? `data:image/png;base64,${raw}` 
             : raw);
     
@@ -194,7 +194,7 @@ async function createLoginTask(): Promise<QqLoginTask> {
 }
 
 async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
-    const settings = loginSettings();
+    loginSettings();
     const task = globalThis._qqLoginTask;
     
     if (!task || task.id !== taskId) {
@@ -205,12 +205,12 @@ async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
         throw new Error('登录任务已过期');
     }
     
-    const state = await requestWebUI(settings, '/QQLogin/CheckLoginStatus');
+    const state = await requestWebUI('/QQLogin/CheckLoginStatus');
     const text = `${state.status || ''} ${state.message || ''}`.toLowerCase();
     
     if (state.isLogin === true) {
         try {
-            const user = normalize(await requestWebUI(settings, '/QQLogin/GetQQLoginInfo'));
+            const user = normalize(await requestWebUI('/QQLogin/GetQQLoginInfo'));
             if (user.uin) {
                 task.user = user;
                 task.status = 'confirmed';
@@ -226,7 +226,7 @@ async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
 }
 
 async function getMiniappCode(taskId: string): Promise<string> {
-    const settings = loginSettings();
+    loginSettings();
     const task = globalThis._qqLoginTask;
     
     if (!task || task.id !== taskId) {
@@ -237,13 +237,16 @@ async function getMiniappCode(taskId: string): Promise<string> {
         throw new Error('请先完成 QQ 扫码确认');
     }
     
+    const token = authToken();
+    const openAuthEndpoint = napCatOpenAuthEndpoint();
+    
     // 检查插件状态
     let ready = false;
     for (let i = 0; i < 40; i++) {
         try {
-            const health = await axios.get(apiUrl(settings.napCatEndpoint, '/plugin/qq-miniapp-openauth/api/status'), {
+            const health = await axios.get(apiUrl(openAuthEndpoint, '/status'), {
                 timeout: 5000,
-                headers: { 'Authorization': `Bearer ${settings.napCatSignature}` },
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             if (health.data?.ok === true && health.data?.ready === true) {
                 ready = true;
@@ -258,13 +261,13 @@ async function getMiniappCode(taskId: string): Promise<string> {
     }
     
     // 获取小程序授权码
-    const result = await axios.post(apiUrl(settings.napCatEndpoint, '/plugin/qq-miniapp-openauth/api/miniapp'), 
+    const result = await axios.post(apiUrl(openAuthEndpoint, '/miniapp'), 
         { appId: QQ_MINIAPP_APP_ID, interactive: true }, 
         {
             timeout: REQUEST_TIMEOUT_MS,
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${settings.napCatSignature}`,
+                'Authorization': `Bearer ${token}`,
             },
         }
     );
@@ -282,8 +285,7 @@ async function cancelLoginTask(taskId: string): Promise<void> {
     if (task && task.id === taskId) {
         // 尝试登出
         try {
-            const settings = loginSettings();
-            await requestWebUI(settings, '/QQLogin/SetQuickLoginQQ', { uin: '' });
+            await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
         } catch {}
         delete globalThis._qqLoginTask;
     }
