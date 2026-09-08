@@ -1375,11 +1375,6 @@ async function loadSystemConfig() {
 }
 
 async function handleSaveLoginSettings() {
-  if (localLoginSettings.value.qqQrLogin
-    && (!localLoginSettings.value.napCatEndpoint.trim() || !localLoginSettings.value.napCatSignature.trim())) {
-    showAlert('开启 QQ 扫码登录前，请配置 NapCat 接口地址和接口签名', 'danger')
-    return
-  }
   loginSettingsSaving.value = true
   try {
     const { data } = await api.post('/api/settings/login-config', localLoginSettings.value)
@@ -2072,24 +2067,6 @@ async function handleResetSystemConfig() {
                   <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
                     <BaseSwitch v-model="localLoginSettings.qqQrLogin" label="QQ扫码登录" />
                   </div>
-                </div>
-
-                <div
-                  v-if="localLoginSettings.qqQrLogin"
-                  class="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50/70 p-4 sm:grid-cols-2 dark:border-gray-700 dark:bg-gray-900/30"
-                >
-                  <BaseInput
-                    v-model="localLoginSettings.napCatEndpoint"
-                    label="NapCat接口地址"
-                    type="text"
-                    placeholder="http://127.0.0.1:6099"
-                  />
-                  <BaseInput
-                    v-model="localLoginSettings.napCatSignature"
-                    label="NapCat Token"
-                    type="password"
-                    placeholder="请输入 NapCat Token"
-                  />
                 </div>
 
                 <div class="mt-3 flex justify-end border-t pt-3 dark:border-gray-700">
