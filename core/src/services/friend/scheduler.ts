@@ -8,6 +8,7 @@ const { getUserState, networkEvents } = require('../../utils/network');
 const { toNum, getSystemDateKey, log, logWarn, randomDelay } = require('../../utils/utils');
 const { getDataFile } = require('../../config/runtime-paths');
 const { createScheduler } = require('../scheduler');
+const { runExclusiveAutomationTask } = require('../automation-lock');
 const { readJsonFile, writeJsonFileAtomic } = require('../json-db');
 const { setOperationLimitsCallback } = require('../farm');
 const {
@@ -441,7 +442,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
 async function friendCheckLoop(): Promise<void> {
     if (externalSchedulerMode) return;
     if (!friendLoopRunning) return;
-    await checkFriends();
+    await runExclusiveAutomationTask('friend_check_loop', checkFriends);
     if (!friendLoopRunning) return;
     friendScheduler.setTimeoutTask('friend_check_loop', Math.max(0, CONFIG.friendCheckInterval), () => friendCheckLoop());
 }
@@ -467,7 +468,9 @@ export function startFriendCheckLoop(options: StartOptions = {}): void {
     }
 
     // 启动时检查一次待处理的好友申请
-    friendScheduler.setTimeoutTask('friend_check_bootstrap_applications', 3000, () => checkAndAcceptApplications());
+    friendScheduler.setTimeoutTask('friend_check_bootstrap_applications', 3000, () => (
+        runExclusiveAutomationTask('friend_applications_bootstrap', checkAndAcceptApplications).catch(() => null)
+    ));
 
     // 好友宠物每日同步（自带启动错峰与定时重试）
     petSyncRef().startFriendPetSyncTimer();
@@ -506,7 +509,7 @@ function getApplicationFilterConfig(): any {
 
 function enqueueApplications(applications: any[]): void {
     applicationQueue = applicationQueue
-        .then(() => processFriendApplications(applications))
+        .then(() => runExclusiveAutomationTask('friend_applications_push', () => processFriendApplications(applications)))
         .catch((e: any) => {
             logWarn('申请', `处理好友申请失败: ${e && e.message ? e.message : e}`);
         });

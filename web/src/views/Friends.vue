@@ -10,7 +10,6 @@ import { NSpin } from 'naive-ui/es/spin'
 import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import api, { getApiErrorMessage } from '@/api'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -19,18 +18,15 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
-import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 import { interactionItemTargetReason } from '@/utils/interaction-item-rules'
 
 const accountStore = useAccountStore()
-const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
-const route = useRoute()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status } = storeToRefs(statusStore)
 const {
@@ -56,12 +52,6 @@ const {
   knownFriendSettingsLoading,
   knownFriendSettingsSaving,
 } = storeToRefs(friendStore)
-const {
-  qixi,
-  pendingActions: activityPendingActions,
-  actionError: activityActionError,
-  notice: activityNotice,
-} = storeToRefs(activityStore)
 const isQqAccount = computed(() => {
   const acc = currentAccount.value
   if (!acc)
@@ -77,6 +67,9 @@ const currentAccountConnected = computed(() => {
 })
 const currentAccountRunning = computed(() => (
   !!currentAccount.value?.running || currentAccountConnected.value
+))
+const friendDataLoadScope = computed(() => (
+  currentAccountRunning.value ? String(currentAccountId.value || '') : ''
 ))
 
 const knownFriendGidCount = computed(() => knownFriendGids.value.length)
@@ -99,6 +92,7 @@ const filteredKnownFriendGids = computed(() => {
 
 const syncedGidCount = computed(() => filteredKnownFriendGids.value.filter(item => item.synced).length)
 const unsyncedGidCount = computed(() => filteredKnownFriendGids.value.filter(item => !item.synced).length)
+const knownFriendSettingsLoadedAccount = ref('')
 
 async function handleRemoveGidFromList(gid: number) {
   if (!currentAccountId.value)
@@ -123,6 +117,11 @@ async function handleRemoveUnsyncedGids() {
 function openGidListModal() {
   gidSearchKeyword.value = ''
   showGidListModal.value = true
+  const accountId = currentAccountId.value
+  if (accountId && isQqAccount.value && knownFriendSettingsLoadedAccount.value !== accountId) {
+    knownFriendSettingsLoadedAccount.value = accountId
+    void friendStore.fetchKnownFriendSettings(accountId)
+  }
 }
 
 const TABS = [
@@ -134,10 +133,15 @@ const TABS = [
 type TabKey = typeof TABS[number]['key']
 
 const activeTab = ref<TabKey>('friends')
+const friendsLoadedAccount = ref('')
+const blacklistLoadedAccount = ref('')
+const interactRecordsLoadedAccount = ref('')
 
 function setActiveTab(value: string) {
-  if (TABS.some(tab => tab.key === value))
+  if (TABS.some(tab => tab.key === value)) {
     activeTab.value = value as TabKey
+    loadTabData()
+  }
 }
 
 const showConfirm = ref(false)
@@ -188,20 +192,8 @@ const expandedFriends = ref<Set<string>>(new Set())
 const selectedInteractionItemId = ref('')
 const selectedInteractionLandIds = ref<Record<string, string[]>>({})
 const lastInteractionResults = ref<Record<string, FriendInteractionResultDto[]>>({})
-const clockNow = ref(Date.now())
 const currentPage = ref(1)
 const pageSize = 25
-
-const qixiGiftActive = computed(() => {
-  const activity = qixi.value
-  if (!activity?.active)
-    return false
-  return !activity.endTime || clockNow.value < activity.endTime
-})
-const qixiSachetBalance = computed(() => {
-  const value = Number(qixi.value?.balances.sachet || 0)
-  return Number.isSafeInteger(value) && value > 0 ? value : 0
-})
 
 const selectedInteractionItem = computed<FriendInteractionItemDto | null>(() => {
   return interactionItems.value.find(item => String(item.itemId) === selectedInteractionItemId.value) || null
@@ -295,6 +287,11 @@ function friendKey(friendId: unknown) {
 
 function interactionSelectionKey(friendId: unknown, itemId: unknown = selectedInteractionItemId.value) {
   return `${String(itemId || '')}:${friendKey(friendId)}`
+}
+
+function toggleInteractionItem(itemId: unknown) {
+  const nextItemId = String(itemId || '')
+  selectedInteractionItemId.value = selectedInteractionItemId.value === nextItemId ? '' : nextItemId
 }
 
 function selectedInteractionIds(friendId: unknown, itemId: unknown = selectedInteractionItemId.value) {
@@ -429,44 +426,31 @@ function interactionFailures(friendId: unknown) {
   return results.filter(result => !result.ok)
 }
 
-function giftQixiSachetToFriend(friend: any, event: Event) {
-  event.stopPropagation()
-  if (!currentAccountId.value || !qixiGiftActive.value || qixiSachetBalance.value < 1)
+async function loadData() {
+  const accountId = currentAccountId.value
+  if (!accountId || !currentAccountRunning.value || activeTab.value !== 'friends' || friendsLoadedAccount.value === accountId)
     return
-  const gid = friendKey(friend?.gid)
-  const name = String(friend?.name || `GID ${gid}`)
-  confirmAction(`确定向 ${name} 赠送 1 个鹊羽香囊吗？`, async () => {
-    const result = await activityStore.giftQixiSachet(currentAccountId.value!, gid)
-    if (!result)
-      throw new Error(activityActionError.value || '鹊羽香囊赠送失败')
-    toast.success(activityNotice.value || `已向 ${name} 赠送 1 个鹊羽香囊`)
-    return result
-  })
+
+  friendsLoadedAccount.value = accountId
+  avatarErrorKeys.value.clear()
+  await friendStore.fetchFriends(accountId)
 }
 
-async function loadData() {
+function loadTabData() {
   const accountId = currentAccountId.value
   if (!accountId || !currentAccountRunning.value)
     return
 
-  avatarErrorKeys.value.clear()
-  // 登录后的好友页先读 Worker 缓存，再同步主列表，避免一次性向同一账号 Worker 发起多路 RPC。
-  await Promise.allSettled([
-    friendStore.fetchFriendsCache(accountId),
-    friendStore.fetchBlacklist(accountId),
-  ])
-  await new Promise(resolve => window.setTimeout(resolve, 250))
-  await friendStore.fetchFriends(accountId)
-  await new Promise(resolve => window.setTimeout(resolve, 250))
-  await Promise.allSettled([
-    friendStore.fetchInteractRecords(accountId),
-    friendStore.fetchInteractionItems(accountId),
-  ])
-  await new Promise(resolve => window.setTimeout(resolve, 250))
-  const backgroundRequests: Promise<unknown>[] = [activityStore.lazyLoad(accountId)]
-  if (isQqAccount.value)
-    backgroundRequests.push(friendStore.fetchKnownFriendSettings(accountId))
-  await Promise.allSettled(backgroundRequests)
+  if (activeTab.value === 'friends')
+    void loadData()
+  if (activeTab.value === 'blacklist' && blacklistLoadedAccount.value !== accountId) {
+    blacklistLoadedAccount.value = accountId
+    void friendStore.fetchBlacklist(accountId)
+  }
+  if (activeTab.value === 'visitors' && interactRecordsLoadedAccount.value !== accountId) {
+    interactRecordsLoadedAccount.value = accountId
+    void friendStore.fetchInteractRecords(accountId)
+  }
 }
 
 function requestUseFarmInteractionItem(friend: any) {
@@ -485,7 +469,6 @@ function requestUseFarmInteractionItem(friend: any) {
   })
 }
 useIntervalFn(() => {
-  clockNow.value = Date.now()
   for (const gid of expandedFriends.value) {
     for (const land of friendLands.value[gid] || []) {
       if (land.matureInSec > 0)
@@ -499,28 +482,27 @@ watch(currentAccountId, () => {
   selectedInteractionItemId.value = ''
   selectedInteractionLandIds.value = {}
   lastInteractionResults.value = {}
+  friendsLoadedAccount.value = ''
+  blacklistLoadedAccount.value = ''
+  interactRecordsLoadedAccount.value = ''
+  knownFriendSettingsLoadedAccount.value = ''
   friendStore.resetInteractionState()
   friendStore.resetFriendLandState()
 })
-
-watch([currentAccountId, () => currentAccount.value?.running, currentAccountConnected], () => {
+watch(friendDataLoadScope, (scope) => {
+  if (!scope) {
+    friendsLoadedAccount.value = ''
+    blacklistLoadedAccount.value = ''
+    interactRecordsLoadedAccount.value = ''
+  }
   void loadData()
+  loadTabData()
 }, { immediate: true })
 
 watch(interactionItems, (items) => {
-  const requestedItemId = String(route.query.interactionItem || '')
-  if (requestedItemId && items.some(item => String(item.itemId) === requestedItemId)) {
-    selectedInteractionItemId.value = requestedItemId
-    return
-  }
   if (!items.some(item => String(item.itemId) === selectedInteractionItemId.value))
-    selectedInteractionItemId.value = String(items[0]?.itemId || '')
+    selectedInteractionItemId.value = ''
 }, { immediate: true })
-
-watch(qixiGiftActive, (active) => {
-  if (!active)
-    activityActionError.value = ''
-})
 
 async function handleRefreshFriends() {
   if (!currentAccountId.value)
@@ -1084,17 +1066,6 @@ async function handleBatchAddKnownFriendGids() {
 
               <div class="flex flex-wrap gap-2">
                 <NButton
-                  v-if="qixiGiftActive"
-                  type="warning"
-                  secondary
-                  size="small"
-                  :disabled="activityPendingActions.giftQixiSachet || qixiSachetBalance < 1"
-                  @click="giftQixiSachetToFriend(friend, $event)"
-                >
-                  <span class="i-carbon-gift mr-1" />
-                  赠香囊 {{ qixiSachetBalance }}
-                </NButton>
-                <NButton
                   type="info"
                   secondary
                   size="small"
@@ -1216,7 +1187,7 @@ async function handleBatchAddKnownFriendGids() {
                               ? 'border-amber-500 ring-2 ring-amber-200 dark:ring-amber-800'
                               : 'border-amber-200 hover:border-amber-400 dark:border-amber-800'"
                             :aria-pressed="selectedInteractionItemId === item.itemId"
-                            @click="selectedInteractionItemId = item.itemId"
+                            @click="toggleInteractionItem(item.itemId)"
                           >
                             <img :src="item.image" alt="" class="h-8 w-8 object-contain">
                             <span>

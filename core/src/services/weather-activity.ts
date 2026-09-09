@@ -322,7 +322,7 @@ function cloudEligibleLandIds(lands: any[]): string[] {
         if (landId === '0' || seen.has(landId)) continue;
         const plant = targetLand?.plant;
         if (!plant || toNum(plant.id) <= 0 || !Array.isArray(plant.phases) || plant.phases.length === 0) continue;
-        const phase = toNum(getCurrentPhase(plant.phases, false, '')?.phase);
+        const phase = toNum(getCurrentPhase(plant.phases, false, '', toNum(plant.id))?.phase);
         if (phase <= PlantPhase.SEED || phase >= PlantPhase.MATURE) continue;
         const interactions = [
             ...(Array.isArray(plant.interaction_uses) ? plant.interaction_uses : []),

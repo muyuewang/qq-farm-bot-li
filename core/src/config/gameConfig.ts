@@ -360,6 +360,31 @@ function getPlantGrowTime(plantId: number): number {
     return totalSeconds;
 }
 
+interface PlantGrowPhase {
+    index: number;
+    name: string;
+    duration: number;
+}
+
+/**
+ * 解析官方 Plant.grow_phases。官方客户端把每项转换成内部 phase_id；
+ * 服务端响应的 phases 是从当前阶段开始的配置后缀。
+ */
+function getPlantGrowPhases(plantId: number): PlantGrowPhase[] {
+    const plant = plantMap.get(Number(plantId) || 0);
+    if (!plant || !plant.grow_phases) return [];
+
+    return String(plant.grow_phases)
+        .split(';')
+        .filter(Boolean)
+        .map((value: string, index: number) => {
+            const separator = value.lastIndexOf(':');
+            const name = separator >= 0 ? value.slice(0, separator) : value;
+            const duration = separator >= 0 ? Number(value.slice(separator + 1)) || 0 : 0;
+            return { index, name, duration };
+        });
+}
+
 function formatGrowTime(seconds: number): string {
     if (seconds < 60) return `${seconds}秒`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
@@ -677,6 +702,7 @@ module.exports = {
     getPlantName,
     getPlantNameBySeedId,
     getPlantGrowTime,
+    getPlantGrowPhases,
     getPlantExp,
     formatGrowTime,
     // 果实配置

@@ -19,9 +19,9 @@ export {};
  * - critical 的两条通道（heartbeat / ace）各自保留一个槽位，互不挤占；
  * - 业务流量（foreground/farm/friend）总在途不超过 MAX_BUSINESS_IN_FLIGHT；
  * - 其中非前台业务（farm/friend）不超过 MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT，
- *   所以前台操作永远有至少一个槽位，不会被后台定时任务饿死；
+ *   所以前台操作至少保留两个槽位；前台请求排队时，新的后台业务请求会让路；
  * - background 只在连接彻底空闲（没有在途请求、队列里也没有别的班次）时才发；
- * - 低优先班次等待超过 CLASS_STARVATION_MS 时会被提升到队首，避免长期饿死。
+ * - 低优先班次等待超过 CLASS_STARVATION_MS 时会被提升到队首；前台请求排队时除外。
  */
 
 const REQUEST_CLASS_ORDER = ['critical', 'foreground', 'farm', 'friend', 'background'] as const;
@@ -35,14 +35,14 @@ const BUSINESS_CLASSES = ['foreground', 'farm', 'friend'] as const;
 
 /** 业务流量（前台 + 农场 + 好友）的总在途预算。 */
 const MAX_BUSINESS_IN_FLIGHT = 3;
-/** 非前台业务的在途上限：比总预算少 1，给前台操作永久留一个槽位。 */
-const MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT = 2;
+/** 非前台业务的在途上限：后台自动任务最多占一个业务槽位。 */
+const MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT = 1;
 
 /** 每个班次自身的在途上限。 */
 const MAX_IN_FLIGHT_BY_CLASS: Readonly<Record<RequestClass, number>> = {
     critical: 2,
     foreground: 3,
-    farm: 2,
+    farm: 1,
     friend: 1,
     background: 1,
 };
@@ -166,6 +166,7 @@ function selectDispatchIndex(
     // 3) 业务班次：总预算 + 每班次上限 + 前台保留槽位三重约束。
     const businessInFlight = countInFlight(active, (_request, cls) => isBusinessClass(cls));
     if (businessInFlight < MAX_BUSINESS_IN_FLIGHT) {
+        const hasQueuedForeground = list.some(request => classOf(request) === 'foreground');
         const nonForegroundInFlight = countInFlight(active, (_request, cls) => isBusinessClass(cls) && cls !== 'foreground');
         const perClassInFlight = new Map<RequestClass, number>();
         for (const request of active) {
@@ -178,7 +179,7 @@ function selectDispatchIndex(
             const cls = classOf(list[index]);
             if (!isBusinessClass(cls)) continue;
             if ((perClassInFlight.get(cls) || 0) >= MAX_IN_FLIGHT_BY_CLASS[cls]) continue;
-            if (cls !== 'foreground' && nonForegroundInFlight >= MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT) continue;
+            if (cls !== 'foreground' && (hasQueuedForeground || nonForegroundInFlight >= MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT)) continue;
             eligible.push(index);
         }
 

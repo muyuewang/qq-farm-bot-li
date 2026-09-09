@@ -850,7 +850,25 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
 
     const { skipNormal = false } = options;
 
+    if (fertilizerConfig === 'none') {
+        log('施肥', `${reasonLabel}：当前施肥策略为不施肥，跳过`, {
+            module: 'farm',
+            event: eventName,
+            result: 'skip',
+            reason,
+            type: 'none',
+        });
+        return { normal: 0, organic: 0 };
+    }
+
     if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && fertilizerConfig !== 'smart') {
+        log('施肥', `${reasonLabel}：没有可施肥地块，跳过`, {
+            module: 'farm',
+            event: eventName,
+            result: 'skip',
+            reason,
+            count: 0,
+        });
         return { normal: 0, organic: 0 };
     }
     let latestLands: any[] = [];
@@ -894,7 +912,18 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let fertilizedNormal: number = 0;
     let fertilizedOrganic: number = 0;
 
-    if (!skipNormal && (fertilizerConfig === 'normal' || fertilizerConfig === 'both' || fertilizerConfig === 'smart') && normalTargets.length > 0) {
+    if (!skipNormal && (fertilizerConfig === 'normal' || fertilizerConfig === 'both' || fertilizerConfig === 'smart')) {
+        if (normalTargets.length === 0) {
+            log('施肥', `${reasonLabel}：普通化肥目标为空（传入 ${planted.length} 块，范围: ${selectedLandTypeNames.join('、')}），跳过普通施肥`, {
+                module: 'farm',
+                event: eventName,
+                result: 'skip',
+                reason,
+                type: 'normal',
+                count: 0,
+                landTypes: selectedLandTypes,
+            });
+        } else {
         fertilizedNormal = await fertilize(normalTargets, NORMAL_FERTILIZER_ID, options.propagateErrors);
         if (fertilizedNormal > 0) {
             log('施肥', `${reasonLabel}：已为${fertilizedNormal}/${normalTargets.length} 块地施普通化肥（范围: ${selectedLandTypeNames.join('、')}）`, {
@@ -907,6 +936,17 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
             landTypes: selectedLandTypes,
         });
             recordOperation('fertilize', fertilizedNormal);
+            } else {
+                log('施肥', `${reasonLabel}：普通化肥施肥 0/${normalTargets.length} 块（可能化肥不足或地块不可施）`, {
+                    module: 'farm',
+                    event: eventName,
+                    result: 'skip',
+                    reason,
+                    type: 'normal',
+                    count: 0,
+                    landTypes: selectedLandTypes,
+                });
+            }
         }
     }
 
@@ -915,6 +955,10 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
 
         if (latestLands.length > 0) {
             organicTargets = getOrganicFertilizerTargetsFromLands(latestLands);
+        }
+        if (reason === 'multi_season' && planted.length > 0) {
+            const plantedSet = new Set(planted);
+            organicTargets = organicTargets.filter(id => plantedSet.has(id));
         }
         if (landTypeById.size > 0) {
             organicTargets = filterLandIdsByTypes(organicTargets, landTypeById, selectedLandTypes);

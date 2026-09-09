@@ -103,7 +103,7 @@ function pruneRecentHelp(now: number = Date.now()): void {
 function getHelpSnapshotKey(lands: any[]): string {
     return (Array.isArray(lands) ? lands : []).map((land: any) => {
         const plant: any = land && land.plant;
-        const phase: any = plant && Array.isArray(plant.phases) ? getCurrentPhase(plant.phases) : null;
+        const phase: any = plant && Array.isArray(plant.phases) ? getCurrentPhase(plant.phases, false, '', toNum(plant && plant.id)) : null;
         const weeds: string = (plant && Array.isArray(plant.weed_owners) ? plant.weed_owners : []).map(toNum).join(',');
         const insects: string = (plant && Array.isArray(plant.insect_owners) ? plant.insect_owners : []).map(toNum).join(',');
         return [
@@ -311,7 +311,7 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
             continue;
         }
 
-        const currentPhase: any = getCurrentPhase(plant.phases, false, `[${friendName}]土地#${id}`);
+        const currentPhase: any = getCurrentPhase(plant.phases, false, `[${friendName}]土地#${id}`, toNum(plant.id));
         if (!currentPhase) {
             continue;
         }

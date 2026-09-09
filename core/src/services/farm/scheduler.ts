@@ -8,6 +8,7 @@ const { isAutomationOn, getAutomation, getFertilizerBuyOrganicCount, getFertiliz
 const { getUserState, networkEvents } = require('../../utils/network');
 const { toNum, log, logWarn, randomDelay } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
+const { runExclusiveAutomationTask } = require('../automation-lock');
 const { recordOperation } = require('../stats');
 const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./api');
 const {
@@ -27,7 +28,6 @@ let isCheckingFarm: boolean = false;
 let isFirstFarmCheck: boolean = true;
 let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
-let fertilizerBuyCheckTimer: ReturnType<typeof setInterval> | null = null;
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
 
@@ -357,7 +357,7 @@ function scheduleNextFarmCheck(delayMs: number = CONFIG.farmCheckInterval): void
     if (!farmLoopRunning) return;
     farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, delayMs), async () => {
         if (!farmLoopRunning) return;
-        await checkFarm();
+        await runExclusiveAutomationTask('farm_check_loop', checkFarm);
         if (!farmLoopRunning) return;
         scheduleNextFarmCheck(CONFIG.farmCheckInterval);
     });
@@ -388,7 +388,7 @@ function onLandsChangedPush(lands: any[]): void {
         module: 'farm', event: '土地推送通知', result: 'trigger_check', count: lands.length
     });
     farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isCheckingFarm) await checkFarm();
+        if (!isCheckingFarm) await runExclusiveAutomationTask('farm_push_check', checkFarm);
     });
 }
 
@@ -403,7 +403,7 @@ function onFarmSocialEventsChangedPush(events: any[]): void {
         module: 'farm', event: '农场社交事件通知', result: 'trigger_check', count
     });
     farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isCheckingFarm) await checkFarm();
+        if (!isCheckingFarm) await runExclusiveAutomationTask('farm_push_check', checkFarm);
     });
 }
 
@@ -424,9 +424,7 @@ function refreshFarmCheckLoop(delayMs: number = 200): void {
 
 // ============ 化肥自动购买定时检测 ============
 function startFertilizerBuyCheckTimer(): void {
-    if (fertilizerBuyCheckTimer) {
-        clearInterval(fertilizerBuyCheckTimer);
-    }
+    farmScheduler.clear('fertilizer_buy_check');
 
     // 检查是否有开启的化肥购买功能
     if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) {
@@ -437,9 +435,9 @@ function startFertilizerBuyCheckTimer(): void {
     const intervalMinutes: number = getFertilizerBuyCheckIntervalMinutes();
     const intervalMs: number = intervalMinutes * 60 * 1000;
 
-    fertilizerBuyCheckTimer = setInterval(() => {
-        checkFertilizerBuyOnce();
-    }, intervalMs);
+    farmScheduler.setIntervalTask('fertilizer_buy_check', intervalMs, () => {
+        runExclusiveAutomationTask('fertilizer_buy_check', checkFertilizerBuyOnce).catch(() => null);
+    });
 
     log('农场', `化肥自动购买检测定时器已启动，间隔 ${intervalMinutes} 分钟`, {
         module: 'farm',
@@ -450,10 +448,7 @@ function startFertilizerBuyCheckTimer(): void {
 }
 
 function stopFertilizerBuyCheckTimer(): void {
-    if (fertilizerBuyCheckTimer) {
-        clearInterval(fertilizerBuyCheckTimer);
-        fertilizerBuyCheckTimer = null;
-    }
+    farmScheduler.clear('fertilizer_buy_check');
     log('农场', '化肥自动购买检测定时器已停止', {
         module: 'farm',
         event: '购买化肥计时器',

@@ -22,6 +22,7 @@ const { isGatewayYieldError, isGatewayHealthyForBusiness } = require('../../util
 const { runWithRequestClass } = require('../../utils/request-context');
 const { toNum, log, logWarn, sleep, getSystemDateKey } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
+const { runExclusiveAutomationTask } = require('../automation-lock');
 const { getAllFriends, enterFriendFarm, leaveFriendFarm } = require('./api');
 const { extractReplyFriends, getInvalidKnownFriendGidSet } = require('./gid-manager');
 const {
@@ -375,7 +376,7 @@ function scheduleNextSyncRound(delayMs: number): void {
     petSyncScheduler.setTimeoutTask('friend_pet_sync_round', Math.max(1000, delayMs), async () => {
         let nextDelayMs: number = SYNC_CHECK_INTERVAL_MS;
         try {
-            const result: FriendPetSyncResult = await runFriendPetSync();
+            const result: FriendPetSyncResult = await runExclusiveAutomationTask('friend_pet_sync', runFriendPetSync);
             const pacing: SyncPacing = planNextSyncPacing(result, { quota: roundQuota, rampLocked: quotaRampLocked });
             roundQuota = pacing.quota;
             quotaRampLocked = pacing.rampLocked;

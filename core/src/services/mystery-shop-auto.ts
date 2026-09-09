@@ -25,9 +25,7 @@ const MYSTERY_SHOP_AUTOMATION_KEYS = [
     'mystery_shop_purchase_notify',
 ] as const;
 
-const AUTO_BUY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
-const AUTO_BUY_INITIAL_DELAY_MS = 10 * 1000;
-const AUTO_BUY_AFTER_SAVE_DELAY_MS = 2 * 1000;
+const AUTO_BUY_CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
 interface MysteryShopAutoState {
     lastArrivalKey: string;
@@ -252,8 +250,6 @@ module.exports = {
     GOLD_BEAN_ITEM_ID,
     MYSTERY_SHOP_AUTOMATION_KEYS,
     AUTO_BUY_CHECK_INTERVAL_MS,
-    AUTO_BUY_INITIAL_DELAY_MS,
-    AUTO_BUY_AFTER_SAVE_DELAY_MS,
     createMysteryShopAutoState,
     isMysteryShopWatchEnabled,
     mysteryShopConfigChanged,
