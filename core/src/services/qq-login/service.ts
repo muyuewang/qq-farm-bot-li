@@ -64,6 +64,28 @@ function loginSettings(): LoginSettings {
     return settings;
 }
 
+async function logout(): Promise<void> {
+    const openAuthEndpoint = napCatOpenAuthEndpoint();
+    const token = authToken();
+    // 清除快速登录
+    await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' }).catch(() => {});
+    // 调用插件登出
+    await axios.post(apiUrl(openAuthEndpoint, '/logout'), undefined, {
+        timeout: 10000,
+        headers: { 'Authorization': `Bearer ${token}` },
+    }).catch(() => {});
+    // 等待并确认登出
+    await new Promise(resolve => setTimeout(resolve, 250));
+    try {
+        const state = await requestWebUI('/QQLogin/CheckLoginStatus');
+        if (state?.isLogin === true || state?.isOffline === true) {
+            // 仍未登出，重启NapCat
+            await requestWebUI('/QQLogin/RestartNapCat').catch(() => {});
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    } catch {}
+}
+
 function apiUrl(endpoint: string, path: string): string {
     return `${endpoint.replace(/\/+$/, '')}${path}`;
 }
@@ -173,15 +195,9 @@ async function createLoginTask(): Promise<QqLoginTask> {
         // 如果QQ已经登录，需要先登出
         if (/QQ Is Logined/i.test(error.message)) {
             console.log('[QQ Login] QQ已登录，尝试登出...');
-            try {
-                await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
-                await new Promise(resolve => setTimeout(resolve, 500));
-                // 重新获取二维码
-                result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
-            } catch (logoutError: any) {
-                console.error('[QQ Login] 登出失败:', logoutError.message);
-                throw new Error('QQ已登录，请先在NapCat中登出QQ');
-            }
+            await logout();
+            // 重新获取二维码
+            result = await requestWebUI('/QQLogin/GetQQLoginQrcode');
         } else {
             throw error;
         }
@@ -305,13 +321,8 @@ async function getMiniappCode(taskId: string): Promise<string> {
     }
     
     // 登出NapCat临时会话，节省资源并避免QQ异地登录被封
-    try {
-        await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
-        await axios.post(apiUrl(openAuthEndpoint, '/logout'), undefined, {
-            timeout: 10000,
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-    } catch {}
+    console.log('[QQ Login] 获取授权码成功，登出NapCat会话...');
+    await logout();
     
     return authCode;
 }
@@ -319,10 +330,7 @@ async function getMiniappCode(taskId: string): Promise<string> {
 async function cancelLoginTask(taskId: string): Promise<void> {
     const task = globalThis._qqLoginTask;
     if (task && task.id === taskId) {
-        // 尝试登出
-        try {
-            await requestWebUI('/QQLogin/SetQuickLoginQQ', { uin: '' });
-        } catch {}
+        await logout().catch(() => {});
         delete globalThis._qqLoginTask;
     }
 }
