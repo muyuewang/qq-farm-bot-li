@@ -1854,5 +1854,133 @@
     "param": 40883,
     "show_guarantee": null,
     "sort": 20030
+  },
+  {
+    "id": 40516001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 40516,
+    "show_guarantee": null,
+    "sort": 20031
+  },
+  {
+    "id": 45995001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 45995,
+    "show_guarantee": null,
+    "sort": 30025
+  },
+  {
+    "id": 41625001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 41625,
+    "show_guarantee": null,
+    "sort": 30026
+  },
+  {
+    "id": 40154001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 40154,
+    "show_guarantee": null,
+    "sort": 30027
+  },
+  {
+    "id": 41072001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 41072,
+    "show_guarantee": null,
+    "sort": 30028
+  },
+  {
+    "id": 40522001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 40522,
+    "show_guarantee": null,
+    "sort": 30029
+  },
+  {
+    "id": 40523001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 40523,
+    "show_guarantee": null,
+    "sort": 30030
+  },
+  {
+    "id": 49004001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 49004,
+    "show_guarantee": null,
+    "sort": 40005
+  },
+  {
+    "id": 204008001,
+    "type": "装扮果实",
+    "illustrated_type": "超变图鉴",
+    "param": 204008,
+    "show_guarantee": true,
+    "sort": 5001
+  },
+  {
+    "id": 1040516001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1040516,
+    "show_guarantee": null,
+    "sort": 20031
+  },
+  {
+    "id": 1045995001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1045995,
+    "show_guarantee": null,
+    "sort": 30025
+  },
+  {
+    "id": 1041625001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1041625,
+    "show_guarantee": null,
+    "sort": 30026
+  },
+  {
+    "id": 1040154001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1040154,
+    "show_guarantee": null,
+    "sort": 30027
+  },
+  {
+    "id": 1041072001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1041072,
+    "show_guarantee": null,
+    "sort": 30028
+  },
+  {
+    "id": 1049004001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1049004,
+    "show_guarantee": null,
+    "sort": 40005
+  },
+  {
+    "id": 204009001,
+    "type": "装扮果实",
+    "illustrated_type": "超变图鉴",
+    "param": 204009,
+    "show_guarantee": true,
+    "sort": 5002
   }
 ]
