@@ -24,17 +24,9 @@ interface ConstellationActivityState extends ActivityStateIdentity {
     noClaimableDays: Record<string, NoClaimableDayObservation>;
 }
 
-interface CharityRedFlowerState {
-    activityId: string;
-    initialized: boolean;
-    claimedProgressTargets: string[];
-    pendingProgressTargets: string[];
-}
-
 interface ActivityCenterStateFile {
     version: number;
     records: Record<string, ConstellationActivityState>;
-    charityRecords: Record<string, CharityRedFlowerState>;
 }
 
 interface StateFileOptions {
@@ -65,15 +57,6 @@ function createEmptyConstellationState(identity: ActivityStateIdentity): Constel
         confirmedOpenedNodeIds: [],
         confirmedLitNodeIds: [],
         noClaimableDays: {},
-    };
-}
-
-function createEmptyCharityRedFlowerState(activityId: unknown): CharityRedFlowerState {
-    return {
-        activityId: normalizeId(activityId),
-        initialized: false,
-        claimedProgressTargets: [],
-        pendingProgressTargets: [],
     };
 }
 
@@ -125,29 +108,6 @@ function normalizeConstellationState(
     };
 }
 
-function normalizeCharityRedFlowerState(
-    value: unknown,
-    activityId: unknown
-): CharityRedFlowerState {
-    const expectedActivityId = normalizeId(activityId);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return createEmptyCharityRedFlowerState(expectedActivityId);
-    }
-    const source = value as Record<string, unknown>;
-    if (normalizeId(source.activityId) !== expectedActivityId) {
-        return createEmptyCharityRedFlowerState(expectedActivityId);
-    }
-    const claimedProgressTargets = normalizeNodeIds(source.claimedProgressTargets);
-    const claimedSet = new Set(claimedProgressTargets);
-    return {
-        activityId: expectedActivityId,
-        initialized: source.initialized === true,
-        claimedProgressTargets,
-        pendingProgressTargets: normalizeNodeIds(source.pendingProgressTargets)
-            .filter(target => !claimedSet.has(target)),
-    };
-}
-
 function mergeConstellationStates(
     identity: ActivityStateIdentity,
     ...states: unknown[]
@@ -180,31 +140,6 @@ function mergeConstellationStates(
     };
 }
 
-function mergeCharityRedFlowerStates(
-    activityId: unknown,
-    ...states: unknown[]
-): CharityRedFlowerState {
-    const expectedActivityId = normalizeId(activityId);
-    const claimed = new Set<string>();
-    const pending = new Set<string>();
-    let initialized = false;
-
-    for (const stateValue of states) {
-        const state = normalizeCharityRedFlowerState(stateValue, expectedActivityId);
-        initialized ||= state.initialized;
-        state.claimedProgressTargets.forEach(target => claimed.add(target));
-        state.pendingProgressTargets.forEach(target => pending.add(target));
-    }
-    claimed.forEach(target => pending.delete(target));
-
-    return {
-        activityId: expectedActivityId,
-        initialized,
-        claimedProgressTargets: normalizeNodeIds(Array.from(claimed)),
-        pendingProgressTargets: normalizeNodeIds(Array.from(pending)),
-    };
-}
-
 function stateRecordKey(identity: ActivityStateIdentity): string {
     const normalized = normalizeIdentity(identity);
     return `${normalized.seasonId}:${normalized.activityId}:v${normalized.catalogVersion}`;
@@ -224,7 +159,7 @@ function getActivityCenterStateFile(accountId?: string, options: StateFileOption
 }
 
 function emptyStateFile(): ActivityCenterStateFile {
-    return { version: STATE_FILE_VERSION, records: {}, charityRecords: {} };
+    return { version: STATE_FILE_VERSION, records: {} };
 }
 
 function normalizeStateFile(value: unknown): ActivityCenterStateFile {
@@ -236,13 +171,7 @@ function normalizeStateFile(value: unknown): ActivityCenterStateFile {
         || Array.isArray(source.records)) {
         return emptyStateFile();
     }
-    return {
-        version: STATE_FILE_VERSION,
-        records: source.records as Record<string, ConstellationActivityState>,
-        charityRecords: source.charityRecords && typeof source.charityRecords === 'object' && !Array.isArray(source.charityRecords)
-            ? source.charityRecords as Record<string, CharityRedFlowerState>
-            : {},
-    };
+    return { version: STATE_FILE_VERSION, records: source.records as Record<string, ConstellationActivityState> };
 }
 
 function loadConstellationState(
@@ -267,40 +196,7 @@ function persistConstellationState(
     const file = normalizeStateFile(readJsonFile(filePath, emptyStateFile));
     const key = stateRecordKey(identity);
     const merged = mergeConstellationStates(identity, file.records[key], stateValue);
-    // 读-并-写在同一 worker 的串行 mutation 队列内调用；writeJsonFileAtomic 保证文件替换原子性。
     file.records[key] = merged;
-    writeJsonFileAtomic(filePath, file);
-    return merged;
-}
-
-function loadCharityRedFlowerState(
-    activityId: unknown,
-    accountId?: string,
-    options: StateFileOptions = {}
-): CharityRedFlowerState {
-    const normalizedActivityId = normalizeId(activityId);
-    const file = normalizeStateFile(readJsonFile(
-        getActivityCenterStateFile(accountId, options),
-        emptyStateFile
-    ));
-    return normalizeCharityRedFlowerState(file.charityRecords[normalizedActivityId], normalizedActivityId);
-}
-
-function persistCharityRedFlowerState(
-    stateValue: unknown,
-    activityId: unknown,
-    accountId?: string,
-    options: StateFileOptions = {}
-): CharityRedFlowerState {
-    const normalizedActivityId = normalizeId(activityId);
-    const filePath = getActivityCenterStateFile(accountId, options);
-    const file = normalizeStateFile(readJsonFile(filePath, emptyStateFile));
-    const merged = mergeCharityRedFlowerStates(
-        normalizedActivityId,
-        file.charityRecords[normalizedActivityId],
-        stateValue
-    );
-    file.charityRecords[normalizedActivityId] = merged;
     writeJsonFileAtomic(filePath, file);
     return merged;
 }
@@ -347,18 +243,13 @@ function stateWithNoClaimableDay(
 module.exports = {
     STATE_FILE_VERSION,
     createEmptyConstellationState,
-    createEmptyCharityRedFlowerState,
     normalizeConstellationState,
-    normalizeCharityRedFlowerState,
     mergeConstellationStates,
-    mergeCharityRedFlowerStates,
     stateRecordKey,
     safeAccountFileToken,
     getActivityCenterStateFile,
     loadConstellationState,
     persistConstellationState,
-    loadCharityRedFlowerState,
-    persistCharityRedFlowerState,
     stateFromDynamicNodes,
     stateWithNoClaimableDay,
 };

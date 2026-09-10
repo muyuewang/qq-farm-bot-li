@@ -1,12 +1,14 @@
 import type { ActivityGameplayModule, ResolvedActivityGameplay } from './types'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
 import { charityGameplay } from './charity'
+import { petGameplay } from './pet'
 import { qingMeiGameplay } from './qingmei'
 import { qixiGameplay } from './qixi'
 import { stellarGameplay } from './stellar'
 import { weatherGameplay } from './weather'
 
 const gameplayModules: Record<ActivityGameplayKey, ActivityGameplayModule> = {
+  pet: petGameplay,
   stellar: stellarGameplay,
   qixi: qixiGameplay,
   qingmei: qingMeiGameplay,
@@ -17,6 +19,8 @@ const gameplayModules: Record<ActivityGameplayKey, ActivityGameplayModule> = {
 function inferGameplayKey(activity: ActivityDirectoryItemDto): ActivityGameplayKey | null {
   if (activity.gameplayKey)
     return activity.gameplayKey
+  if (activity.detailTarget === 'pet' || activity.activityIds.some(id => ['2026090100', '2026090101', '2026090102', '2026090103'].includes(id)))
+    return 'pet'
   if (activity.detailTarget === 'weather')
     return 'weather'
   if (activity.detailTarget === 'charity')

@@ -2,9 +2,9 @@ import type { ActivityWindow, SellConditionContext } from '../config/sell-condit
 
 export {};
 
-const { sendMsgAsync, networkEvents } = require('../utils/network');
-const { types } = require('../utils/proto');
+const { networkEvents } = require('../utils/network');
 const { getServerTimeSec, logWarn, toNum } = require('../utils/utils');
+const { getActivityListReply } = require('./activity-list');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const RETRY_LOG_INTERVAL_MS = 60 * 1000;
@@ -30,18 +30,13 @@ function decodeActivityWindows(reply: any): ReadonlyMap<string, ActivityWindow> 
     return windows;
 }
 
-async function refreshActivityWindows(): Promise<ReadonlyMap<string, ActivityWindow>> {
+async function refreshActivityWindows(diagnostics: { traceId?: unknown; consumer?: unknown } = {}): Promise<ReadonlyMap<string, ActivityWindow>> {
     if (pendingRefresh) return pendingRefresh;
     pendingRefresh = (async () => {
-        const body: Uint8Array = types.ActivityListRequest.encode(
-            types.ActivityListRequest.create({})
-        ).finish();
-        const { body: replyBody } = await sendMsgAsync(
-            'gamepb.activitypb.ActivityService',
-            'List',
-            body
-        );
-        const reply = types.ActivityListReply.decode(replyBody);
+        const reply = await getActivityListReply(0, {
+            traceId: diagnostics?.traceId,
+            consumer: diagnostics?.consumer || 'activity-windows',
+        });
         const nextWindows = decodeActivityWindows(reply);
         if (nextWindows.size === 0) {
             throw new Error('活动列表回包未包含时间配置');
@@ -57,11 +52,11 @@ async function refreshActivityWindows(): Promise<ReadonlyMap<string, ActivityWin
     }
 }
 
-async function getActivityWindows(): Promise<ReadonlyArray<ActivityWindow>> {
+async function getActivityWindows(diagnostics: { traceId?: unknown; consumer?: unknown } = {}): Promise<ReadonlyArray<ActivityWindow>> {
     const fresh = loadedAt > 0 && Date.now() - loadedAt < CACHE_TTL_MS;
     if (!fresh) {
         try {
-            await refreshActivityWindows();
+            await refreshActivityWindows(diagnostics);
         } catch (error) {
             if (activityWindows.size === 0) throw error;
         }

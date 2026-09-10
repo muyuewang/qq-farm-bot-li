@@ -14,7 +14,7 @@ const { types } = require('../utils/proto');
 const { toNum, log, logWarn } = require('../utils/utils');
 
 const MAX_PROTECT_DURATION_SECONDS: number = 30 * 24 * 60 * 60;
-const PET_IDS: number[] = [90001, 90002, 90003, 90011, 90021];
+const PET_IDS: number[] = [90001, 90002, 90003, 90011, 90021, 90031];
 const DOG_FOOD_DURATIONS: Map<number, number> = new Map([
     [90004, 24 * 60 * 60],
     [90005, 3 * 24 * 60 * 60],
@@ -32,6 +32,7 @@ const PET_OBTAIN_CONDITIONS: Record<number, string> = {
     90003: '商店购买：200 点券',
     90011: '商店购买：200 点券',
     90021: '限时活动获得',
+    90031: '萌宠成长日记：将比熊幼崽培育至成年后永久获得',
 };
 interface PetSkillDefinition {
     skillId?: number;
@@ -48,6 +49,10 @@ interface PetSkillDefinition {
 // 不应虚构 DogService 协议。忠心护主概率由 ItemInfo.json 的官方描述提供；
 // 同气连枝文案与用户实际打开的技能说明一致。
 const PET_SKILLS: Record<number, PetSkillDefinition[]> = {
+    90031: [
+        { name: '忠心护主', description: '作物被偷时，有50%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 50, source: 'game-config' },
+        { skillId: 3001, name: '比熊润田', description: '看护状态下，作物有概率触发比熊变异（售价 ×4），可叠加冰冻、爱心、暗化、湿润等变异效果。', source: 'game-config' },
+    ],
     90001: [{ name: '忠心护主', description: '作物被偷时，有10%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 10, source: 'game-config' }],
     90002: [{ name: '忠心护主', description: '作物被偷时，有30%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 30, source: 'game-config' }],
     90003: [{ name: '忠心护主', description: '作物被偷时，有50%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 50, source: 'game-config' }],
