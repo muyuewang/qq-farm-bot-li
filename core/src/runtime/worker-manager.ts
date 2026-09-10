@@ -5,6 +5,10 @@ const DEFAULT_API_CALL_TIMEOUT_MS = 10000;
 // 好友现场天气需要逐个 Enter/Leave，单批最多 5 位好友；
 // 好友列表只读缓存或拉一次名单，给的余量少一些。
 const API_CALL_TIMEOUTS_MS: Record<string, number> = {
+    getPetDiary: 90000,
+    operatePetDiary: 180000,
+    getPetDiaryRecords: 30000,
+    getPetDiaryFriend: 30000,
     scanWeatherFriends: 60000,
     getWeatherFriends: 30000,
 };

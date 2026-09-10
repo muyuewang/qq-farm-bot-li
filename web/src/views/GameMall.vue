@@ -2,21 +2,23 @@
 import type { MallGoodsDto } from '@/stores/commerce'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
 import PurchaseDialog from '@/components/commerce/PurchaseDialog.vue'
 import { useAccountStore } from '@/stores/account'
 import { useCommerceStore } from '@/stores/commerce'
 import { useToastStore } from '@/stores/toast'
 
-type FilterKey = 'all' | 'free' | 'discount' | 'fertilizer' | 'pet'
+type FilterKey = 'all' | 'free' | 'discount' | 'fertilizer' | 'pet' | 'activity'
 
 const accountStore = useAccountStore()
 const commerceStore = useCommerceStore()
 const toast = useToastStore()
+const route = useRoute()
 const { currentAccountId } = storeToRefs(accountStore)
 const { mall, mallLoading, purchasingGoodsId, error, notice } = storeToRefs(commerceStore)
 const selected = ref<MallGoodsDto | null>(null)
-const filter = ref<FilterKey>('all')
+const filter = ref<FilterKey>(route.query.category === 'pet-diary' ? 'activity' : 'all')
 const query = ref('')
 const clock = ref(Date.now())
 let timer: number | undefined
@@ -27,6 +29,7 @@ const filters: Array<{ key: FilterKey, label: string }> = [
   { key: 'discount', label: '折扣' },
   { key: 'fertilizer', label: '化肥' },
   { key: 'pet', label: '狗粮' },
+  { key: 'activity', label: '萌宠成长日记' },
 ]
 
 const filteredGoods = computed(() => {
@@ -43,6 +46,8 @@ const filteredGoods = computed(() => {
       return names.includes('化肥')
     if (filter.value === 'pet')
       return names.includes('狗粮')
+    if (filter.value === 'activity')
+      return goods.rewards.some(item => [1028, 1029, 1030, 80101, 80102, 80103, 90031, 90032, 90033, 90034, 90041, 29004, 101305].includes(Number(item.id)))
     return true
   })
 })

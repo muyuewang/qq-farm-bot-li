@@ -56,15 +56,15 @@ test('心跳与 ACE 各有独立保留槽位，业务排满也挤不掉', () => 
     assert.equal(selectDispatchIndex(queue, bothLanes, 1_000_000), 0);
 });
 
-test('前台永远留一个业务槽位，后台定时任务抢不走', () => {
+test('前台至少保留两个业务槽位，后台定时任务抢不走', () => {
     const queue = [queued('farm'), queued('foreground')];
-    const nonForeground = [{ requestClass: 'farm' }, { requestClass: 'friend' }];
+    const nonForeground = [{ requestClass: 'farm' }];
 
     assert.equal(nonForeground.length, MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT);
-    // farm + friend 已占满非前台额度：队首的 farm 被跳过，前台请求直接插到前面
+    // farm 已占满非前台额度：队首的 farm 被跳过，前台请求直接插到前面
     assert.equal(selectDispatchIndex(queue, nonForeground, 1_000_000), 1);
     // 业务总预算被占满后连前台也得等（此时在飞的都会很快回来）
-    const full = [...nonForeground, { requestClass: 'foreground' }];
+    const full = [...nonForeground, { requestClass: 'foreground' }, { requestClass: 'foreground' }];
     assert.equal(full.length, MAX_BUSINESS_IN_FLIGHT);
     assert.equal(selectDispatchIndex(queue, full, 1_000_000), -1);
 });
@@ -86,19 +86,22 @@ test('业务班次按 前台 > 自己农场 > 好友农场 排序，同班次 FI
         selectDispatchIndex(withoutForeground, [{ requestClass: 'farm' }, { requestClass: 'farm' }], 1_000_000),
         -1,
     );
-    // 自己农场的活清空后好友请求才发出去
-    assert.equal(selectDispatchIndex([queued('friend')], [{ requestClass: 'farm' }], 1_000_000), 0);
+    // 后台业务总在途上限为 1，好友要等农场请求返回
+    assert.equal(selectDispatchIndex([queued('friend')], [{ requestClass: 'farm' }], 1_000_000), -1);
+    assert.equal(selectDispatchIndex([queued('friend')], [], 1_000_000), 0);
 });
 
-test('排队超时的低优先班次会被提升，避免被持续插队饿死', () => {
+test('前台请求排队时，后台业务即使排队超时也让路', () => {
     const now = 1_000_000;
     const queue = [
         queued('friend', { enqueuedAt: now - CLASS_STARVATION_MS }),
         queued('foreground', { enqueuedAt: now }),
     ];
-    // 好友请求已经等了阈值时长，这一轮先让它走
-    assert.equal(selectDispatchIndex(queue, [], now), 0);
-    // 还没到阈值时仍按班次优先级
+    // 好友请求已经等了阈值时长，但只要前台还在排队，它就不能抢占
+    assert.equal(selectDispatchIndex(queue, [], now), 1);
+    // 前台队列清空后，超时的低优先班次才会被提升
+    const withoutForeground = queue.filter(item => item.requestClass !== 'foreground');
+    assert.equal(selectDispatchIndex(withoutForeground, [], now), 0);
     const fresh = [
         queued('friend', { enqueuedAt: now - 500 }),
         queued('foreground', { enqueuedAt: now }),

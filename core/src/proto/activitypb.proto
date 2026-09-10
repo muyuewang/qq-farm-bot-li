@@ -3,6 +3,7 @@ syntax = "proto3";
 package gamepb.activitypb;
 
 import "corepb.proto";
+import "pet-diary.proto";
 
 message ActivityContent {
     int64 activity_id = 1;
@@ -125,6 +126,7 @@ message ActivityData {
     QingMeiDailySeedData qingmei_daily_seed = 103;
     QingMeiBrewData qingmei_brew = 108;
     ConstellationData constellation = 110;
+    ActivityBodyPetTreasureHunt pet_treasure_hunt = 115;
     QixiBridgeConfig qixi_bridge = 112;
     QixiGiftProgress qixi_gift = 113;
     QingMeiQuote qingmei_quote = 114;

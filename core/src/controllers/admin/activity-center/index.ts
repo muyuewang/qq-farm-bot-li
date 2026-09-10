@@ -7,6 +7,7 @@ import { mountQingMeiActivityRoutes } from './qingmei-routes';
 import { mountQixiActivityRoutes } from './qixi-routes';
 import { mountStellarActivityRoutes } from './stellar-routes';
 import { mountWeatherActivityRoutes } from './weather-routes';
+import { mountPetDiaryRoutes } from './pet-diary-routes';
 
 function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     const routes = createActivityRouteContext(app, ctx);
@@ -16,6 +17,7 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     mountQixiActivityRoutes(routes);
     mountCharityActivityRoutes(routes);
     mountWeatherActivityRoutes(routes);
+    mountPetDiaryRoutes(routes);
 }
 
 module.exports = { mountActivityCenterRoutes };

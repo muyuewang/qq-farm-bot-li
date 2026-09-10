@@ -938,6 +938,18 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getCurrentCharityRedFlowerActivity':
                 result = await require('../services/activity-center').getCurrentCharityRedFlowerActivity();
                 break;
+            case 'getPetDiary':
+                result = await require('../services/activity-center').getPetDiary();
+                break;
+            case 'operatePetDiary':
+                result = await require('../services/activity-center').operatePetDiary(args[0], args[1]);
+                break;
+            case 'getPetDiaryRecords':
+                result = await require('../services/activity-center').getPetDiaryRecords(args[0]);
+                break;
+            case 'getPetDiaryFriend':
+                result = await require('../services/activity-center').getPetDiaryFriend(args[0]);
+                break;
             case 'claimCharityRedFlowerSeeds':
                 result = await require('../services/activity-center').claimCharityRedFlowerSeeds();
                 break;

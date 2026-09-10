@@ -127,7 +127,7 @@ function handleOperate(opType: string) {
 
   const confirmMap: Record<string, string> = {
     harvest: '确定要收获所有成熟作物吗？',
-    clear: '确定要一键务农吗？（除草、除虫、浇水并清理黄金虫、足球、乌云和青蛙）',
+    clear: '确定要一键务农吗？',
     plant: '确定要一键种植吗？(根据策略配置)',
     upgrade: '确定要升级所有可升级的土地吗？(消耗金币)',
     all: '确定要一键全收吗？(包含收获、除草、种植等)',

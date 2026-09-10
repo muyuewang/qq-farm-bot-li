@@ -41,8 +41,9 @@ interface RuntimeConfig extends SystemConfig {
 // ============ 设备预设 ============
 
 // clientVersion 由 CONFIG.clientVersion 动态获取，不写死在预设中
-const DEFAULT_CLIENT_VERSION = '1.13.3.17_20260826';
-const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1788763651029;
+// Verified in the mini-program LoginRequest from the 2026-09-10 capture.
+const DEFAULT_CLIENT_VERSION = '1.14.0.1_20260909';
+const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1789004223123;
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
 function resolveClientVersion(savedVersion: unknown, savedUpdatedAt: unknown): { clientVersion: string; clientVersionUpdatedAt: number } {

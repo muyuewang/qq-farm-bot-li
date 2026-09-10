@@ -24,14 +24,15 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 | --- | --- | --- | --- |
 | `critical` | 心跳、ACE AntiData | 2（两条通道各留 1 个专属槽位） | 8 |
 | `foreground` | 用户在面板上的前台操作 | 3 | 60 |
-| `farm` | 自己农场的后台定时任务 | 2 | 40 |
+| `farm` | 自己农场的后台定时任务 | 1 | 40 |
 | `friend` | 好友农场的后台定时任务 | 1 | 30 |
 | `background` | 宠物同步等补数据任务 | 1（且只在连接彻底空闲时） | 10 |
 
 额外约束：
 
 - 业务班次（`foreground` / `farm` / `friend`）总在途不超过 `MAX_BUSINESS_IN_FLIGHT = 3`；
-- 其中非前台业务不超过 `MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT = 2`，所以**前台操作永远有至少一个槽位**，后台定时任务再忙也抢不走；
+- 其中非前台业务不超过 `MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT = 1`，后台定时任务最多占用一个业务槽位，前台操作至少保留两个可用槽位；
+- 只要队列里还有前台请求，新的 `farm` / `friend` 请求就不会派发；已经在途的后台请求无法撤销，但它返回后的下一步会等待前台队列清空；
 - `critical` 的两条通道各有一个专属槽位，ACE 挤不掉心跳，反之亦然；
 - `background` 只在「没有任何在途请求、且队列里没有别的班次」时才发送——它是补数据，不是业务；
 - 排队上限按班次独立计算：后台把自己的 10 个名额排满，也不影响心跳和前台的名额。
@@ -40,7 +41,7 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 ## 防饿死
 
-严格按班次排序会让低优先班次在高优先班次不断到来时永远排不上。`selectDispatchIndex()` 的做法是：排队超过 `CLASS_STARVATION_MS = 4000` 的业务请求会被提升到队首（在同样满足容量约束的候选里挑等待最久的那个）。
+严格按班次排序会让低优先班次在高优先班次不断到来时永远排不上。`selectDispatchIndex()` 的做法是：排队超过 `CLASS_STARVATION_MS = 4000` 的业务请求会被提升到队首（在同样满足容量约束的候选里挑等待最久的那个）。这个提升不会越过前台请求——只要队列里还有前台请求，新的后台业务请求就不会派发。
 
 ## 班次是怎么定下来的
 
@@ -100,7 +101,18 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 `core/src/core/worker.ts` 的 `runStartupSequence()`。以前是四个错峰定时器（农场 2s / 好友 8s / 每日领取 45s / 神秘商店 60s），每日礼包要等一分钟才领，而那时农场和好友循环已经在跑，几件事叠在一起反而把连接打满。
 
-现在登录动作一结束就串行跑完：挂上农场/好友循环 → `await runDailyRoutines(true)`（邮件 / 每日分享 / 月卡 / 免费礼包 / VIP）→ `await checkAndClaimTasks()` → `await runMysteryShopTick()` → 才挂上后续的周期性定时器。串行意味着同一时刻只有一个业务请求在飞，既领得及时，也不会和心跳抢连接。
+现在登录动作一结束先串行跑完 `await runDailyRoutines(true)`（邮件 / 每日分享 / 月卡 / 免费礼包 / VIP）→ `await checkAndClaimTasks()`，然后才挂上农场/好友主循环和后续周期性定时器。串行意味着登录启动期同一时刻只有一个业务请求在飞，既领得及时，也不会和心跳抢连接。神秘商人不再参与登录首查；只有“自动购买”或“到货提醒”开启时，才每 2 小时定时检查一次。
+
+## 自动任务全局互斥
+
+`core/src/services/automation-lock.ts` 提供进程内的自动任务互斥队列：
+
+- 所有后台自动任务入口都通过 `runExclusiveAutomationTask()` 串行执行；
+- 同一任务链内部的嵌套调用可重入，不会自锁；
+- 心跳、ACE/AntiData、面板前台操作不进这个互斥队列，保留原有优先级和响应体验；
+- 队列只约束“自动任务”，不约束用户手动操作；如果某个自动任务长时间不返回，后续自动任务会排队等待。
+
+当前已接入互斥的自动入口包括：登录启动序列、每日例行、农场巡检、好友巡查、推送触发巡田、好友申请处理、宠物同步、任务领取、神秘商人、化肥购买与立即施肥、收获后出售、宠物礼包拾取。
 
 ## 相关文件
 
@@ -109,6 +121,7 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 - `core/src/utils/network.ts` — 排队、发送、`getGatewayLoad()`、`waitForGatewayIdle()`
 - `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定、定时任务的健康度退避、让路错误分类
 - `core/src/utils/request-pressure.ts` — 压力日志节流
+- `core/src/services/automation-lock.ts` — 自动任务全局互斥
 - `core/tests/request-priority.test.js` — 分层与容量的契约测试
 - `core/tests/low-priority-gate.test.js` — 让路闸门与定时任务退避的契约测试
 - `core/tests/low-priority-gate.test.js` — 空闲判定与让路错误分类

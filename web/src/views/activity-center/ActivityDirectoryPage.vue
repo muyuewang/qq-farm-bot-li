@@ -33,15 +33,15 @@ const displayActivities = computed<ActivityDirectoryItemDto[]>(() => {
     ? [...activities.value]
     : stellarDetailsAvailable.value
       ? [{
-          id: season.value?.pass?.activityId || season.value?.id || 'stellar',
-          activityIds: [season.value?.pass?.activityId || season.value?.id || 'stellar'],
-          name: season.value?.title || '千星游记',
-          startTime: season.value?.startTime || null,
-          endTime: season.value?.endTime || null,
-          gameplayKey: 'stellar',
-          gameplayTargets: ['travel', 'constellation', 'shop', 'solar'],
-          detailTarget: season.value?.pass ? 'travel' : constellation.value ? 'constellation' : shop.value ? 'shop' : 'solar',
-        } satisfies ActivityDirectoryItemDto]
+        id: season.value?.pass?.activityId || season.value?.id || 'stellar',
+        activityIds: [season.value?.pass?.activityId || season.value?.id || 'stellar'],
+        name: season.value?.title || '千星游记',
+        startTime: season.value?.startTime || null,
+        endTime: season.value?.endTime || null,
+        gameplayKey: 'stellar',
+        gameplayTargets: ['travel', 'constellation', 'shop', 'solar'],
+        detailTarget: season.value?.pass ? 'travel' : constellation.value ? 'constellation' : shop.value ? 'shop' : 'solar',
+      } satisfies ActivityDirectoryItemDto]
       : []
 
   const appendDetailEntry = (entry: ActivityDirectoryItemDto) => {
@@ -199,10 +199,10 @@ function openActivity(activity: ActivityDirectoryItemDto) {
         @click="openActivity(activity)"
       >
         <span class="activity-entry__topline">
-          <span class="activity-entry__icon"><span class="i-carbon-calendar" /></span>
+          <span class="activity-entry__icon"><img v-if="activity.gameplayKey === 'pet'" src="/activity-assets/pet-diary/S3Open_dog_1.png" alt="" style="width: 36px; height: 36px; object-fit: contain"><span v-else class="i-carbon-calendar" /></span>
           <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>
         </span>
-        <strong>{{ activity.name }}</strong>
+        <strong>{{ activity.gameplayKey === 'pet' ? '萌宠日记' : activity.name }}</strong>
         <span class="activity-entry__period">{{ formatActivityPeriod(activity) }}</span>
         <span class="activity-entry__footer">
           <small>{{ activity.id }}</small>

@@ -1,7 +1,7 @@
 {
   "name": "qq-farm-bot-web",
   "type": "module",
-  "version": "20260908",
+  "version": "20260910",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "build:compressed": "vite build --mode compressed",
     "build:analyze": "vite build --mode analyze",
     "typecheck": "vue-tsc -b",
+    "test": "node --test tests/*.test.mjs",
     "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
     "preview": "vite preview"
   },

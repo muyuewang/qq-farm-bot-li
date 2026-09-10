@@ -13,6 +13,10 @@ core/data/
 # Debug/test scripts
 core/scripts/
 
+# Local captures, Spine source/renderer, and browser review artifacts
+/output/
+/.playwright-cli/
+
 # Build analysis
 web/stats.html
 
@@ -42,16 +46,10 @@ Thumbs.db
 **/tests/
 !core/tests/
 !core/tests/*.test.js
+!web/tests/
+!web/tests/*.test.mjs
 coverage/
 .nyc_output/
 
 # Cleanup script (self-deleting)
 cleanup.bat
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# Docker compose data
-data/

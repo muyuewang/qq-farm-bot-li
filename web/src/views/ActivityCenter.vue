@@ -11,6 +11,7 @@ import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
+import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
 import StellarActivityPage from './activity-center/StellarActivityPage.vue'
@@ -39,6 +40,8 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
     stellarEntryTab.value = gameplay.entryTab as ActivityTab
 
   selectedActivity.value = gameplay.module.key
+  if (gameplay.module.key === 'pet')
+    return
   const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
   if (gameplay.module.key === 'qixi' && currentAccountId.value) {
     await friendStore.fetchFriends(String(currentAccountId.value))
@@ -125,6 +128,7 @@ onMounted(() => {
     v-else-if="selectedActivity === 'weather'"
     @back="goBack"
   />
+  <PetDiaryPage v-else-if="selectedActivity === 'pet'" @back="goBack" />
 </template>
 
 <style>

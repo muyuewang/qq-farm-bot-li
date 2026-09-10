@@ -1,6 +1,6 @@
 # QQ 农场多账号挂机 + Web 面板
 
-基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、作物与超变图鉴、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20260908`，游戏协议版本为 `1.13.3.17_20260826`。
+基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、作物与超变图鉴、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20260910`，游戏协议版本为 `1.14.0.1_20260909`。
 
 > [!IMPORTANT]
 > 首次启动会创建默认管理员 `admin` / `admin`，Web 面板默认端口为 `3007`。对外部署后请立即修改密码，并避免将未加防护的管理端口直接暴露到公网。
@@ -193,31 +193,6 @@ NPM_REGISTRY=https://registry.npmmirror.com/
 
 如需显式指定基础镜像或 pnpm 版本，也可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`。修改构建参数或排查旧缓存问题时请执行 `docker compose build --pull --no-cache`，确保重新拉取基础镜像并安装依赖。
 
-### QQ/NapCat 扫码（Docker，可选）
-
-NapCat 默认不启动，低配置机器继续使用原来的启动命令即可：
-
-```bash
-docker compose up -d --build
-```
-
-需要 QQ 扫码登录时，复制示例配置：
-
-```bash
-cp .env.compose.example .env
-```
-
-在 `.env` 中设置：
-
-```dotenv
-COMPOSE_PROFILES=napcat
-NAPCAT_LOGIN_ENABLED=true
-```
-
-随后执行 `./compose.sh up -d --build`。脚本会读取当前 macOS 或 Linux 宿主机名并将其设置为 QQ 登录记录中的设备名称，然后由 Compose 启动农场和 NapCat 两个服务。构建 NapCat 派生镜像时自动安装 OpenAuth 插件，容器首次启动会生成内部随机 Token，并通过只读文件提供给农场后端，不需要在环境变量中保存密钥。更新农场或插件代码后仍使用同一条命令，不需要手动运行安装脚本。NapCat 的配置、内部 Token 和 QQ 登录数据保存在 `../data/napcat/`。如需覆盖自动检测结果，可在 `.env` 中设置 `NAPCAT_DEVICE_NAME`；建议只使用英文字母、数字和连字符，并在首次登录后保持不变。修改已有部署的名称后，需要重新创建 NapCat 容器才会生效。
-
-默认基础镜像为 `mlikiowa/napcat-docker:v4.18.19`。官方镜像支持 `linux/amd64` 和 `linux/arm64`，覆盖常见的 x64 Linux、ARM Linux、Intel Mac 和 Apple Silicon Mac；macOS 通过 Docker Desktop 运行相应 Linux 架构镜像。官方没有 32 位 `linux/386` 镜像。可在 `.env` 中通过 `NAPCAT_IMAGE` 选择示例文件列出的其他多架构版本。
-
 ### 二进制发布版
 
 可从 [Releases](https://github.com/liyangpengs/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
@@ -239,15 +214,13 @@ chmod +x ./qq-farm-bot
 ## 首次使用
 
 1. 打开 Web 面板，使用 `admin` / `admin` 登录。
-2. 进入"设置 → 系统设置"修改管理员密码。
-3. 如需使用 QQ 扫码登录，可选择以下方式之一：
-   - **Docker 部署**：按照上方"Docker Compose"章节中的"QQ/NapCat 扫码"说明，配置并启动 NapCat 服务。
-   - **源码部署**：先部署并启动 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，再在"设置 → 系统设置 → 登录设置"开启 QQ 扫码登录，并填写 NapCat 接口地址和接口签名。
+2. 进入“设置 → 系统设置”修改管理员密码。
+3. 如需使用 QQ 扫码登录，先部署并启动 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，再在“设置 → 系统设置 → 登录设置”开启 QQ 扫码登录，并填写 NapCat 接口地址和接口签名。
 4. 在设置页添加游戏账号，可使用有效 Code、微信扫码或 QQ扫码登录。
 5. 为账号配置种植、自动化和好友策略，并按需设置实例级下线提醒。
 6. 启动账号，在概览页确认连接状态、农场数据和实时日志。
 
-Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。QQ 客户端被挤下线后，官方"重新登录"会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方"重新登录"，Helper 会更新匹配账号的 Code 并重新启动远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
+Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。QQ 客户端被挤下线后，官方“重新登录”会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方“重新登录”，Helper 会更新匹配账号的 Code 并重新启动远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
 
 QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务。登录设置中的 NapCat 接口地址需填写该服务的可访问地址，NapCat 接口签名需与其 `API_SIGNING_SECRET` 配置一致；两者会保存在本机数据目录中，由后端调用外部服务时读取。QQ 扫码登录默认关闭，开启前必须同时配置接口地址和签名。
 
@@ -262,12 +235,6 @@ QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-
 | `TZ` | `Asia/Shanghai` | Docker Compose | 容器时区 |
 | `NODE_ENV` | `production` | Docker | Compose 当前固定为生产环境 |
 | `LOG_LEVEL` | `info` | 后端 | 服务端日志级别 |
-| `NAPCAT_LOGIN_ENABLED` | `false` | Docker Compose | 是否启用 NapCat QQ 扫码登录服务 |
-| `COMPOSE_PROFILES` | 无 | Docker Compose | 启用 NapCat 服务时需设置为 `napcat` |
-| `NAPCAT_IMAGE` | `mlikiowa/napcat-docker:v4.18.19` | Docker Compose | NapCat 基础镜像版本 |
-| `NAPCAT_DEVICE_NAME` | `QQ-Farm-NapCat` | Docker Compose | QQ 登录记录中的设备名称 |
-| `NAPCAT_UID` | `1000` | Docker Compose | NapCat 容器用户 ID |
-| `NAPCAT_GID` | `1000` | Docker Compose | NapCat 容器组 ID |
 
 管理员账号不通过环境变量初始化。首次运行会自动创建 `admin` / `admin`，之后的管理员凭据保存在数据目录的 `admin.json` 中。项目不提供注册或新增管理员功能。
 
@@ -343,15 +310,9 @@ qq-farm-bot/
 │   ├── src/stores/        # Pinia 状态管理
 │   ├── src/views/         # 各功能页面
 │   └── dist/              # 前端构建产物
-├── napcat/                # NapCat Docker 配置与 OpenAuth 插件
-│   ├── Dockerfile         # NapCat 派生镜像构建文件
-│   ├── docker-entrypoint.sh # 容器启动脚本
-│   └── plugins/           # OpenAuth 插件源码
 ├── docs/                  # 项目专题文档
 ├── tools/                 # 配置下载、图片下载与协议分析工具
 ├── docker-compose.yml
-├── .env.compose.example   # Docker Compose 环境变量示例
-├── compose.sh             # Docker Compose 启动脚本（自动检测宿主机名）
 ├── pnpm-workspace.yaml
 └── package.json
 ```

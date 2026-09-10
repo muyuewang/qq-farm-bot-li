@@ -16,6 +16,7 @@ const { createStellarActivityService } = require('./activity-center/stellar');
 const { createCharityActivityService } = require('./activity-center/charity');
 const { createQixiActivityService } = require('./activity-center/qixi');
 const { createQingMeiActivityService } = require('./activity-center/qingmei');
+const { createPetDiaryService } = require('./activity-center/pet-diary');
 const {
     createEmptyCharityRedFlowerState,
     loadCharityRedFlowerState,
@@ -406,6 +407,7 @@ function buildActivityDirectory(windows: any[], season: any, shop: any, solarTer
     }
     return groups.map(group => ({
         ...group,
+        name: group.activityIds.some((id: string) => ['2026090100', '2026090101', '2026090102', '2026090103'].includes(id)) ? '萌宠成长日记' : group.name,
         ...resolveActivityGameplays(group.activityIds, gameplayBindings),
     }));
 }
@@ -512,6 +514,12 @@ async function getActivityDirectorySnapshot() {
     };
 }
 
+const petDiaryService = createPetDiaryService({
+    types, sendMsgAsync, getBag, getBagItems, getServerTimeSec, itemDto,
+    int64String, int64Number, textContent, businessError, positiveDecimal,
+    serializeMutation, getCurrentSolarTerms,
+});
+
 function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
     const result = mutationTail.then(operation, operation);
     mutationTail = result.then(() => undefined, () => undefined);
@@ -519,6 +527,10 @@ function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 module.exports = {
+    getPetDiary: petDiaryService.getPetDiary,
+    operatePetDiary: petDiaryService.operatePetDiary,
+    getPetDiaryRecords: petDiaryService.getPetDiaryRecords,
+    getPetDiaryFriend: petDiaryService.getPetDiaryFriend,
     charityRedFlowerDto,
     reconcileCharityProgressState,
     buildActivityDirectory,
