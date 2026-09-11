@@ -5,6 +5,8 @@ export {};
 
 const { getAllPlants, getFruitPrice, getSeedPrice, getItemImageById, getItemById } = require('../config/gameConfig');
 
+const EXCLUDED_RADISH_SEED_ID = 29999;
+
 function parseGrowTime(growPhases: string): number {
     if (!growPhases) return 0;
     const phases: string[] = growPhases.split(';').filter((p: string) => p.length > 0);
@@ -62,10 +64,11 @@ interface PlantRankingResult {
 function getPlantRankings(sortBy: string = 'exp'): PlantRankingResult[] {
     const plants: any[] = getAllPlants();
 
-    // 筛选普通作物
+    // 筛选普通作物，排除 id 为 29999 的白萝卜种子。
     const normalPlants: any[] = plants.filter((p: any) => {
-        // 放宽条件，只要有种子ID且有生长阶段数据
-        return p.seed_id > 0 && p.grow_phases;
+        return Number(p.seed_id) !== EXCLUDED_RADISH_SEED_ID
+            && p.seed_id > 0
+            && p.grow_phases;
     });
 
     const results: PlantRankingResult[] = [];

@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { activityHasGameplay } from '@/components/activity/gameplays'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
+import PetMascot from './PetMascot.vue'
 import { useActivityClock } from './useActivityClock'
 
 const emit = defineEmits<{
@@ -199,7 +200,10 @@ function openActivity(activity: ActivityDirectoryItemDto) {
         @click="openActivity(activity)"
       >
         <span class="activity-entry__topline">
-          <span class="activity-entry__icon"><img v-if="activity.gameplayKey === 'pet'" src="/activity-assets/pet-diary/S3Open_dog_1.png" alt="" style="width: 36px; height: 36px; object-fit: contain"><span v-else class="i-carbon-calendar" /></span>
+          <span class="activity-entry__icon">
+            <PetMascot v-if="activity.gameplayKey === 'pet'" stage="puppy" class="activity-entry__pet" />
+            <span v-else class="i-carbon-calendar" />
+          </span>
           <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>
         </span>
         <strong>{{ activity.gameplayKey === 'pet' ? '萌宠日记' : activity.name }}</strong>
@@ -215,3 +219,10 @@ function openActivity(activity: ActivityDirectoryItemDto) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.activity-entry__icon .activity-entry__pet {
+  width: 26px;
+  height: 26px;
+}
+</style>

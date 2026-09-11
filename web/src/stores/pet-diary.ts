@@ -34,7 +34,7 @@ export interface PetDiary {
   nurture: { initialized: boolean, adult: boolean, growth: number, adultGrowth: number, dogGranted: boolean, feedCount: number, feedLimit: number, feedCosts: PetItem[], canFeed: boolean }
   hunt: { count: number, limit: number, total: string, luckyStarTotal: string, costs: PetItem[], canDraw: boolean, canPlunder: boolean }
   seeds: { canClaim: boolean, days: { day: number, claimed: boolean, claimable: boolean, rewards: PetItem[] }[] }
-  stories: { order: number, unlocked: boolean, claimed: boolean, animated: boolean, photo: string, captionImage: string, caption: string }[]
+  stories: { order: number, unlocked: boolean, claimed: boolean, animated: boolean, photo: string }[]
   charms: { pool: PetCharm[], equipped: PetCharm[], all: PetCharm[], picked: boolean, canChoose: boolean, freeRefreshRemaining: number, freeRefreshLimit: number, paidRefreshCount: number, paidRefreshRemaining: number, paidRefreshLimit: number, refreshCost: PetItem, refreshBalance: string | null, canRefresh: boolean, refreshNote: string }
   treasures: PetTreasure[]
   compensationCount: string

@@ -14,8 +14,8 @@ defineProps<{ theme?: 'night' | 'day' }>()
 .activity-shell {
   position: relative;
   width: 100%;
-  height: calc(100dvh - 48px);
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   padding: 0;
   color: var(--ui-ink);

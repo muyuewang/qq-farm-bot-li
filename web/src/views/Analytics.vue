@@ -375,7 +375,7 @@ function getSeedNameById(seedId: number) {
                   v-model:value="strategyLevel"
                   class="w-24"
                   :min="1"
-                  :max="100"
+                  :max="200"
                   :show-button="false"
                   size="small"
                 />

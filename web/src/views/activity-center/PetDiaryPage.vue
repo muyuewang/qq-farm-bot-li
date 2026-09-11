@@ -2,14 +2,16 @@
 import type { PetItem } from '@/stores/pet-diary'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import ActivityShell from '@/components/activity/ActivityShell.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFriendStore } from '@/stores/friend'
 import { usePetDiaryStore } from '@/stores/pet-diary'
+import PetMascot from './PetMascot.vue'
+import PetPaw from './PetPaw.vue'
+import PetSolarScene from './PetSolarScene.vue'
 import PetTreasurePanel from './PetTreasurePanel.vue'
 
 const emit = defineEmits<{ back: [] }>()
-const router = useRouter()
 const accountStore = useAccountStore()
 const friends = useFriendStore()
 const diary = usePetDiaryStore()
@@ -37,12 +39,11 @@ onUnmounted(() => {
 const now = computed(() => clientNow.value + offset.value)
 const busy = computed(() => !!pending.value || stale.value || !pet.value?.active)
 const tabs = [
-  { id: 'home', label: '比熊之家', icon: 0 },
-  { id: 'stories', label: '爪印手记', icon: 1 },
-  { id: 'shop', label: '拾物小铺', icon: 2 },
-  { id: 'solar', label: '节令小礼', icon: 3 },
+  { id: 'home', label: '比熊之家', icon: '' },
+  { id: 'stories', label: '爪印手记', icon: 'i-carbon-book' },
+  { id: 'shop', label: '拾物小铺', icon: 'i-carbon-store' },
+  { id: 'solar', label: '节令小礼', icon: 'i-carbon-sun' },
 ]
-const art = (file: string) => `/activity-assets/pet-diary/${file}.png`
 const growthPercent = computed(() => Math.min(100, (pet.value?.nurture.growth || 0) / (pet.value?.nurture.adultGrowth || 1) * 100))
 const feedHint = computed(() => {
   const state = pet.value
@@ -60,14 +61,21 @@ const feedHint = computed(() => {
   return ''
 })
 const unlocked = computed(() => pet.value?.stories.filter(s => s.unlocked).length || 0)
+const albumPercent = computed(() => pet.value?.stories.length ? unlocked.value / pet.value.stories.length * 100 : 0)
+const feedLabel = computed(() => {
+  const state = pet.value
+  if (!state)
+    return ''
+  return state.nurture.adult ? `今日寻宝 ${state.hunt.count} / ${state.hunt.limit}` : `今日投喂 ${state.nurture.feedCount} / ${state.nurture.feedLimit}`
+})
 const seedRewards = computed(() => pet.value?.seeds.days.find(d => d.claimable && !d.claimed)?.rewards || pet.value?.seeds.days[0]?.rewards || [])
 const claimableTreasures = computed(() => pet.value?.treasures.some(t => t.status === 3 || (t.status === 2 && t.endTime > 0 && t.endTime <= now.value)))
 const escortingCount = computed(() => pet.value?.treasures.filter(t => t.status === 2 && t.endTime > now.value).length || 0)
-const treasureImage = '/game-config/seed_images_named/seed_images/1030.png'
+const waitingCount = computed(() => pet.value?.treasures.filter(t => t.status === 1).length || 0)
 const luckyStars = computed(() => pet.value?.balances.find(item => item.id === '1029'))
 const activityRemaining = computed(() => {
   const hours = Math.max(0, Math.ceil(((pet.value?.endTime || 0) - now.value) / 3600000))
-  return pet.value?.active ? `剩余：${Math.floor(hours / 24)}天${hours % 24}时` : '活动已结束'
+  return pet.value?.active ? `${Math.floor(hours / 24)}天${hours % 24}时` : '活动已结束'
 })
 const currentTerm = computed(() => {
   const terms = pet.value?.solarTerms?.terms || []
@@ -153,6 +161,13 @@ function accountId() {
 function load() {
   return diary.load(accountId())
 }
+function scrollToGift() {
+  const viewport = scrollViewport.value
+  const target = giftPanel.value
+  if (!viewport || !target)
+    return
+  viewport.scrollBy({ top: target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 12, behavior: 'smooth' })
+}
 async function loadFriends() {
   await friends.fetchFriends(accountId())
 }
@@ -183,2104 +198,2070 @@ watch(pet, (value) => {
 </script>
 
 <template>
-  <section class="pet-diary" :class="`pet-diary--${tab}`" aria-label="萌宠成长日记">
-    <div v-if="error || notice || pet?.warnings.length" class="pet-status">
-      <div v-if="error" class="pet-message pet-message--error" role="alert">
-        {{ error }} <button :disabled="!!pending" @click="load">
-          重新刷新
-        </button>
-      </div>
-      <div v-if="notice" class="pet-message" role="status">
-        {{ notice }}
-      </div>
-      <div v-for="warning in pet?.warnings || []" :key="warning" class="pet-message pet-message--warning">
-        {{ warning }}
-      </div>
-    </div>
-    <div ref="scrollViewport" class="pet-scroll" tabindex="0" :aria-label="`${tabs.find(entry => entry.id === tab)?.label}内容`">
-      <div class="pet-content">
-        <header class="pet-header">
-          <div class="pet-brand">
-            <button class="pet-icon-button" aria-label="返回活动列表" @click="emit('back')">
-              <img :src="art('img_s3main_back')" alt="">
-            </button>
-            <div class="pet-heading">
-              <h1><img :src="art('img_s3main_title')" alt="萌宠成长日记"></h1>
-              <span v-if="pet" class="pet-countdown" :title="`${date(pet.startTime)} — ${date(pet.endTime)}`"><span class="i-carbon-time" />{{ activityRemaining }}</span>
+  <ActivityShell theme="day">
+    <div class="pet-diary" aria-label="萌宠成长日记">
+      <header class="pet-header">
+        <div class="pet-header__brand">
+          <button type="button" class="pet-back" aria-label="返回活动列表" @click="emit('back')">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8" /></svg>
+            <span class="pet-back__text">活动列表</span>
+          </button>
+          <div class="pet-title">
+            <small>活动中心</small>
+            <h1>萌宠成长日记</h1>
+          </div>
+        </div>
+        <span v-if="pet" class="pet-countdown" :title="`${date(pet.startTime)} — ${date(pet.endTime)}`">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l3 2M9 3h6" /></svg>
+          <span class="pet-countdown__label">剩余：</span>{{ activityRemaining }}
+        </span>
+        <details v-if="pet" ref="walletMenu" class="pet-wallet-menu">
+          <summary :aria-label="`查看活动道具余额，累计获得 ${pet.hunt.luckyStarTotal} 幸运星`">
+            <img :src="luckyStars?.image || '/game-config/seed_images_named/seed_images/1029.png'" alt="">
+            <strong>{{ luckyStars?.known ? Number(luckyStars.count).toLocaleString() : '—' }}</strong>
+            <svg class="pet-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+          </summary>
+          <div class="pet-wallet">
+            <div v-for="item in pet.balances" :key="item.id" class="pet-wallet__row">
+              <img :src="item.image" alt="">
+              <span>{{ item.name }}<strong>{{ item.known ? Number(item.count).toLocaleString() : '待刷新' }}</strong></span>
             </div>
+            <p>累计获得 {{ pet.hunt.luckyStarTotal }} 幸运星</p>
           </div>
-          <div class="pet-header-tools">
-            <details v-if="pet" ref="walletMenu" class="pet-wallet-menu">
-              <summary aria-label="查看活动道具余额" :title="`累计获得 ${pet.hunt.luckyStarTotal} 幸运星`">
-                <img :src="luckyStars?.image || '/game-config/seed_images_named/seed_images/1029.png'" alt="幸运星">
-                <strong>{{ luckyStars?.known ? Number(luckyStars.count).toLocaleString() : '—' }}</strong><span class="i-carbon-chevron-down" />
-              </summary>
-              <div class="pet-wallet" aria-label="活动道具余额">
-                <div v-for="item in pet.balances" :key="item.id" class="pet-balance">
-                  <img :src="item.image" alt=""><span>{{ item.name }}<strong>{{ item.known ? Number(item.count).toLocaleString() : '待刷新' }}</strong></span>
-                </div>
-                <p>累计获得 {{ pet.hunt.luckyStarTotal }} 幸运星</p>
+        </details>
+        <button v-if="pet" type="button" class="pet-refresh" :disabled="!!pending" :aria-label="pending === 'load' ? '刷新中' : '刷新活动'" @click="load">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4" /><path d="M20 3.6v5h-5" /></svg>
+        </button>
+      </header>
+
+      <div v-if="error || notice || pet?.warnings.length" class="pet-status">
+        <p v-if="error" class="pet-message pet-message--error" role="alert">
+          <span>{{ error }}</span>
+          <button type="button" :disabled="!!pending" @click="load">
+            重新刷新
+          </button>
+        </p>
+        <p v-if="notice" class="pet-message pet-message--ok" role="status">
+          {{ notice }}
+        </p>
+        <p v-for="warning in pet?.warnings || []" :key="warning" class="pet-message pet-message--warn">
+          {{ warning }}
+        </p>
+      </div>
+
+      <div ref="scrollViewport" class="pet-body" tabindex="0" :aria-label="`${tabs.find(entry => entry.id === tab)?.label}内容`">
+        <div class="pet-content">
+          <div v-if="!accountId()" class="pet-empty pet-empty--tall">
+            请先选择账号
+          </div>
+          <div v-else-if="pending === 'load' && !pet" class="pet-empty pet-empty--tall" role="status">
+            <span class="activity-spinner" />
+            <strong>正在加载萌宠成长日记</strong>
+          </div>
+
+          <main v-if="pet && tab === 'home'" class="pet-home">
+            <section class="pet-hero" aria-label="比熊之家">
+              <div class="pet-hero__art">
+                <PetMascot :stage="pet.nurture.adult ? 'adult' : 'puppy'" animated />
               </div>
-            </details>
-            <button class="pet-refresh" :disabled="!!pending" :aria-label="pending === 'load' ? '刷新中' : '刷新活动'" title="刷新活动" @click="load">
-              <span class="i-carbon-renew" />
-            </button>
-          </div>
-        </header>
-        <div v-if="!accountId()" class="pet-empty pet-empty--initial">
-          请先选择账号
-        </div>
-        <div v-else-if="pending === 'load' && !pet" class="pet-empty pet-empty--initial" role="status">
-          <div class="activity-spinner" />加载中…
-        </div>
-        <template v-if="pet">
-          <main v-if="tab === 'home'" class="pet-home">
-            <div class="pet-home-top">
-              <article class="pet-garden" aria-label="比熊之家">
-                <img class="pet-room-scene" :src="art(pet.nurture.adult ? 'scene-home-adult' : 'scene-home-puppy')" :alt="pet.nurture.adult ? '成年比熊坐在家中的爪印地毯上' : '幼年比熊坐在家中的爪印地毯上'">
-                <div class="pet-dog-plaque">
-                  <span class="pet-rarity">
-                    <img :src="art(pet.nurture.adult ? 'img_pet_rarity4' : 'img_pet_rarity2')" alt="">
-                    <span>{{ pet.nurture.adult ? '天工' : '稀有' }}</span>
-                  </span>
+              <div class="pet-hero__main">
+                <div class="pet-hero__head">
                   <h2>比熊犬</h2>
-                  <div class="pet-growth">
-                    <span>{{ pet.nurture.adult ? '成年期' : '幼年期' }}</span><div><progress :value="pet.nurture.growth" :max="pet.nurture.adultGrowth" :aria-label="`成长进度 ${growthPercent.toFixed(0)}%`" /><b>{{ pet.nurture.adult ? '已达成' : `${pet.nurture.growth} / ${pet.nurture.adultGrowth}` }}</b></div>
+                  <span class="pet-chip" :class="pet.nurture.adult ? 'pet-chip--gold' : 'pet-chip--blue'">{{ pet.nurture.adult ? '天工' : '稀有' }}</span>
+                  <span class="pet-chip">{{ pet.nurture.adult ? '成年期' : '幼年期' }}</span>
+                </div>
+                <p class="pet-quote">
+                  {{ pet.nurture.adult ? '我长大啦~以后这个家我来看着！' : '把我喂到成年，我就能去农场看家护院啦~' }}
+                </p>
+                <div class="pet-growth">
+                  <div class="pet-growth__top">
+                    <span>成长进度</span>
+                    <b>{{ pet.nurture.adult ? '已达成' : `${pet.nurture.growth} / ${pet.nurture.adultGrowth}` }}</b>
                   </div>
+                  <progress :value="pet.nurture.growth" :max="pet.nurture.adultGrowth" :aria-label="`成长进度 ${growthPercent.toFixed(0)}%`" />
                 </div>
-                <div class="pet-speech">
-                  <img :src="art(pet.nurture.adult ? 'img_s3BattlePass_chat6' : 'img_s3BattlePass_chat7')" :alt="pet.nurture.adult ? '我长大啦~以后这个家我来看着！' : '把我喂到成年，我就能去农场看家护院啦~'">
-                </div>
-                <div class="pet-room-shortcuts">
-                  <button :disabled="!!pending" aria-label="互动记录" @click="showRecords">
-                    <img :src="art('img_s3BattlePass_recordBtn')" alt="互动记录">
-                  </button>
-                  <button aria-label="每日种子赠礼" @click="giftPanel?.scrollIntoView({ block: 'start' })">
-                    <img :src="art('img_s3BattlePass_rewardBox')" alt=""><span>种子赠礼</span>
-                  </button>
-                </div>
-                <button v-if="pet.nurture.adult" class="pet-escort-shortcut" aria-label="打开宝藏护送" @click="treasurePanel?.open()">
-                  <img :src="art('img_s3Treasure_wait')" alt=""><strong>宝藏护送</strong><span>{{ claimableTreasures ? '奖励可领取' : `护送中：${escortingCount}` }}</span>
-                </button>
                 <div class="pet-care">
-                  <div class="pet-feed-cost">
-                    <span v-for="item in pet.nurture.adult ? pet.hunt.costs : pet.nurture.feedCosts" :key="item.id" :title="item.name"><img :src="item.image" :alt="item.name">{{ feedBalance(item) }}</span>
-                  </div>
-                  <button v-if="!pet.nurture.initialized" class="pet-feed-button" :disabled="busy" @click="diary.operate('initialize')">
+                  <button v-if="!pet.nurture.initialized" type="button" class="pet-button pet-button--primary" :disabled="busy" @click="diary.operate('initialize')">
                     领养比熊
                   </button>
-                  <button v-else-if="!pet.nurture.adult" class="pet-feed-button" :disabled="busy || !pet.nurture.canFeed" @click="diary.operate('feed')">
+                  <button v-else-if="!pet.nurture.adult" type="button" class="pet-button pet-button--primary" :disabled="busy || !pet.nurture.canFeed" @click="diary.operate('feed')">
                     {{ pending === 'feed' ? '投喂中…' : '投喂元气糕' }}
                   </button>
-                  <button v-else-if="!pet.nurture.dogGranted" class="pet-feed-button" :disabled="busy" @click="diary.operate('claimDog')">
+                  <button v-else-if="!pet.nurture.dogGranted" type="button" class="pet-button pet-button--primary" :disabled="busy" @click="diary.operate('claimDog')">
                     {{ pending === 'claimDog' ? '领取中…' : '领取永久比熊' }}
                   </button>
-                  <button v-else class="pet-feed-button" :disabled="busy || !pet.hunt.canDraw" @click="diary.operate('draw')">
+                  <button v-else type="button" class="pet-button pet-button--primary" :disabled="busy || !pet.hunt.canDraw" @click="diary.operate('draw')">
                     {{ pending === 'draw' ? '投喂中…' : '投喂元气糕' }}
                   </button>
-                  <p class="pet-care-note">
-                    {{ pet.nurture.adult ? `今日寻宝 ${pet.hunt.count} / ${pet.hunt.limit}` : `今日投喂 ${pet.nurture.feedCount} / ${pet.nurture.feedLimit}` }}
-                  </p>
-                  <p v-if="feedHint" class="pet-care-note pet-care-note--warning">
-                    {{ feedHint }}
-                  </p>
+                  <span v-for="item in pet.nurture.adult ? pet.hunt.costs : pet.nurture.feedCosts" :key="item.id" class="pet-cost" :title="item.name">
+                    <img :src="item.image" :alt="item.name">
+                    <span>{{ feedBalance(item) }}</span>
+                  </span>
                 </div>
-              </article>
-              <aside id="pet-seed-gift" ref="giftPanel" class="pet-card pet-gift">
-                <img class="pet-gift-art" :src="art('img_s3BattlePass_rewardBox')" alt="">
-                <div class="pet-section-title">
-                  <h2>每日种子赠礼</h2>
+                <p class="pet-note">
+                  {{ feedLabel }}
+                </p>
+                <p v-if="feedHint" class="pet-note pet-note--warning">
+                  {{ feedHint }}
+                </p>
+                <div class="pet-quick">
+                  <button type="button" class="pet-quick__item" :disabled="!!pending" @click="showRecords">
+                    <PetPaw />互动记录
+                  </button>
+                  <button type="button" class="pet-quick__item" @click="scrollToGift">
+                    <PetPaw />种子赠礼
+                  </button>
+                  <button v-if="pet.nurture.adult" type="button" class="pet-quick__item" @click="treasurePanel?.open()">
+                    <PetPaw />宝藏护送
+                    <em v-if="claimableTreasures">可领取</em>
+                    <em v-else>护送中 {{ escortingCount }}</em>
+                  </button>
                 </div>
-                <p>每日赠送1份免费的稀有种子礼包，每日0点刷新；未领取的礼包可累计保留。</p>
-                <div class="pet-seed-rewards">
-                  <div v-for="item in seedRewards" :key="item.id">
-                    <img :src="item.image" alt=""><strong>{{ item.name }}</strong><span>× {{ item.count }}</span>
+              </div>
+            </section>
+
+            <div class="pet-grid">
+              <article id="pet-seed-gift" ref="giftPanel" class="pet-card">
+                <h3 class="pet-card__head">
+                  <PetPaw />
+                  <span>每日种子赠礼</span>
+                  <small>{{ pet.seeds.canClaim ? '今日可领' : '今日已领' }}</small>
+                </h3>
+                <p class="pet-card__text">
+                  每日赠送 1 份免费的稀有种子礼包，每日 0 点刷新；未领取的礼包可累计保留。
+                </p>
+                <div class="pet-rewards">
+                  <div v-for="item in seedRewards" :key="item.id" class="pet-reward" :title="item.name">
+                    <img :src="item.image" :alt="item.name">
+                    <strong>× {{ item.count }}</strong>
+                    <small>{{ item.name }}</small>
                   </div>
                 </div>
-                <button class="pet-button pet-button--primary" :disabled="busy || !pet.seeds.canClaim" @click="diary.operate('seeds')">
+                <button type="button" class="pet-button pet-button--primary pet-button--block" :disabled="busy || !pet.seeds.canClaim" @click="diary.operate('seeds')">
                   {{ pending === 'seeds' ? '领取中…' : pet.seeds.canClaim ? '领取种子礼包' : '今日礼包已领取' }}
                 </button>
-                <div v-if="pet.nurture.adult" class="pet-permanent">
-                  <span v-if="pet.nurture.dogGranted">比熊已永久加入你的农场</span>
-                  <button v-else class="pet-button" :disabled="busy" @click="diary.operate('claimDog')">
-                    领取永久比熊
-                  </button>
-                </div>
-                <div class="pet-grow-tip">
-                  <strong>萌宠元气糕</strong><p>幼年期投喂元气糕提升成长值；成年后继续消耗元气糕互动寻宝，获得宝藏后会自动开始护送。</p><p>收获活动稀有作物可获得元气糕，经验种子和金币种子无法产出。</p><button class="pet-text-button" @click="router.push('/personal')">
-                    前往农场种植 <span class="i-carbon-arrow-right" />
-                  </button>
-                </div>
-              </aside>
-            </div>
-            <div class="pet-home-panels">
-              <div class="pet-home-bottom">
-                <article class="pet-card">
-                  <div class="pet-section-title">
-                    <h2>宝藏护送</h2><span>护送中 {{ escortingCount }} · 待护送 {{ pet.treasures.filter(t => t.status === 1).length }}</span><button class="pet-button pet-button--small" :disabled="!pet.nurture.adult" @click="treasurePanel?.open()">
-                      {{ claimableTreasures ? '查看并领取奖励' : '查看宝藏' }}
-                    </button>
-                  </div><p>{{ pet.nurture.adult ? '查看宝藏价值、被挑战次数、护送日志和待领奖励。待护送宝藏会自动开始护送。' : '将比熊培育至成年后，可通过寻宝获取宝藏并自动护送。' }}</p>
-                  <div v-if="!pet.treasures.length" class="pet-empty pet-empty--small">
-                    <img :src="treasureImage" alt="">暂无待护送宝藏
+                <p v-if="pet.nurture.adult" class="pet-note">
+                  {{ pet.nurture.dogGranted ? '比熊已永久加入你的农场' : '成年奖励：领取永久比熊' }}
+                </p>
+                <button v-if="pet.nurture.adult && !pet.nurture.dogGranted" type="button" class="pet-button pet-button--block" :disabled="busy" @click="diary.operate('claimDog')">
+                  领取永久比熊
+                </button>
+              </article>
+
+              <article class="pet-card">
+                <h3 class="pet-card__head">
+                  <PetPaw />
+                  <span>宝藏护送</span>
+                  <small>护送中 {{ escortingCount }} · 待护送 {{ waitingCount }}</small>
+                </h3>
+                <p class="pet-card__text">
+                  {{ pet.nurture.adult ? '查看宝藏价值、被挑战次数、护送日志和待领奖励。待护送宝藏会自动开始护送。' : '将比熊培育至成年后，可通过寻宝获取宝藏并自动护送。' }}
+                </p>
+                <p v-if="!pet.treasures.length" class="pet-empty pet-empty--inline">
+                  暂无待护送宝藏
+                </p>
+                <button type="button" class="pet-button pet-button--block" :disabled="!pet.nurture.adult" @click="treasurePanel?.open()">
+                  {{ claimableTreasures ? '查看并领取奖励' : '查看宝藏' }}
+                </button>
+              </article>
+
+              <article class="pet-card">
+                <h3 class="pet-card__head">
+                  <PetPaw />
+                  <span>今日锦囊</span>
+                </h3>
+                <div v-for="charm in pet.charms.equipped" :key="charm.id" class="pet-charm">
+                  <img :src="charm.image" :alt="charm.name">
+                  <div>
+                    <strong>{{ charm.name }} <small>已生效</small></strong>
+                    <p>{{ charm.description }}</p>
+                    <span v-if="charm.remaining.length">剩余生效次数：{{ charm.remaining.join(' / ') }}</span>
                   </div>
-                </article>
-                <article class="pet-card">
-                  <div class="pet-section-title">
-                    <h2>今日锦囊</h2><button class="pet-button pet-button--small" :disabled="!pet.nurture.adult" @click="treasurePanel?.open('charms')">
-                      查看锦囊总览
-                    </button>
-                  </div><div v-for="charm in pet.charms.equipped" :key="charm.id" class="pet-charm equipped">
-                    <img :src="charm.image" alt=""><div><strong>{{ charm.name }} <small>已生效</small></strong><p>{{ charm.description }}</p><span v-if="charm.remaining.length">剩余生效次数：{{ charm.remaining.join(' / ') }}</span></div>
-                  </div><p v-if="!pet.charms.equipped.length">
-                    {{ pet.nurture.adult ? '进入宝藏护送挑选锦囊。' : '成年后可搭配锦囊参与宝藏护送。' }}
-                  </p><small class="pet-muted">{{ pet.charms.refreshNote }}</small>
-                </article>
-              </div>
-              <details class="pet-card">
-                <summary>好友夺宝 <span>今日 {{ pet.battleCount }}/{{ pet.battleLimit }}</span></summary><p>消耗一张挑战书参与夺宝，收益与可用挑战书以好友当前宝藏为准。</p><div class="pet-friend-form">
-                  <button class="pet-button" :disabled="!!pending || friends.loading" @click="loadFriends">
+                </div>
+                <p v-if="!pet.charms.equipped.length" class="pet-empty pet-empty--inline">
+                  {{ pet.nurture.adult ? '进入宝藏护送挑选锦囊。' : '成年后可搭配锦囊参与宝藏护送。' }}
+                </p>
+                <small class="pet-note">{{ pet.charms.refreshNote }}</small>
+                <button type="button" class="pet-button pet-button--block" :disabled="!pet.nurture.adult" @click="treasurePanel?.open('charms')">
+                  查看锦囊总览
+                </button>
+              </article>
+
+              <details open class="pet-card pet-card--wide">
+                <summary class="pet-card__head">
+                  <PetPaw />
+                  <span>好友夺宝</span>
+                  <small>今日 {{ pet.battleCount }}/{{ pet.battleLimit }}</small>
+                  <span class="pet-card__toggle i-carbon-chevron-down" aria-hidden="true" />
+                </summary>
+                <p class="pet-card__text">
+                  消耗一张挑战书参与夺宝，收益与可用挑战书以好友当前宝藏为准。
+                </p>
+                <div class="pet-steal">
+                  <button type="button" class="pet-button pet-button--small" :disabled="!!pending || friends.loading" @click="loadFriends">
                     读取好友
-                  </button><select v-model="friendId" aria-label="选择夺宝好友">
+                  </button>
+                  <select v-model="friendId" aria-label="选择夺宝好友">
                     <option value="">
                       选择好友
-                    </option><option v-for="f in friends.friends" :key="String(f.gid)" :value="String(f.gid)">
+                    </option>
+                    <option v-for="f in friends.friends" :key="String(f.gid)" :value="String(f.gid)">
                       {{ f.name || f.gid }}
                     </option>
-                  </select><button class="pet-button pet-button--primary" :disabled="!!pending || !friendId || !pet.hunt.canPlunder" @click="diary.readExtra('friend', friendId)">
+                  </select>
+                  <button type="button" class="pet-button pet-button--small pet-button--primary" :disabled="!!pending || !friendId || !pet.hunt.canPlunder" @click="diary.readExtra('friend', friendId)">
                     查看宝藏
                   </button>
-                </div><p v-if="!pet.hunt.canPlunder" class="pet-muted">
+                </div>
+                <p v-if="!pet.hunt.canPlunder" class="pet-note">
                   成年并满足活动条件后开放夺宝；每日最多 {{ pet.battleLimit }} 次。
-                </p><div v-if="friend">
-                  <p v-if="!friend.treasures.length">
+                </p>
+                <div v-if="friend" class="pet-steal__list">
+                  <p v-if="!friend.treasures.length" class="pet-empty pet-empty--inline">
                     这位好友当前没有可查看的宝藏。
-                  </p><article v-for="treasure in friend.treasures" :key="treasure.id" class="pet-friend-treasure">
-                    <strong>{{ treasure.item.name }} ×{{ treasure.item.count }}</strong><span>{{ treasure.status === 2 ? remaining(treasure.endTime) : '当前不可夺宝' }}</span><div v-for="preview in treasure.previews" :key="preview.challengeId" class="pet-preview">
-                      <span>{{ pet.balances.find(i => i.id === preview.challengeId)?.name || '挑战书' }} ×1</span><span>最高收益 {{ preview.maxProfit.count }} · 最大损失 {{ preview.maxLoss.count }}</span><button class="pet-button pet-button--small" :disabled="busy || !preview.canStart || treasure.status !== 2 || !Number(pet.balances.find(i => i.id === preview.challengeId)?.count)" @click="diary.operate('battle', { gid: friend.gid, treasureId: treasure.id, challengeId: preview.challengeId })">
+                  </p>
+                  <article v-for="treasure in friend.treasures" :key="treasure.id" class="pet-steal__treasure">
+                    <header>
+                      <strong>{{ treasure.item.name }} ×{{ treasure.item.count }}</strong>
+                      <span>{{ treasure.status === 2 ? remaining(treasure.endTime) : '当前不可夺宝' }}</span>
+                    </header>
+                    <div v-for="preview in treasure.previews" :key="preview.challengeId" class="pet-steal__preview">
+                      <span>{{ pet.balances.find(i => i.id === preview.challengeId)?.name || '挑战书' }} ×1</span>
+                      <span>最高收益 {{ preview.maxProfit.count }} · 最大损失 {{ preview.maxLoss.count }}</span>
+                      <button type="button" class="pet-button pet-button--small" :disabled="busy || !preview.canStart || treasure.status !== 2 || !Number(pet.balances.find(i => i.id === preview.challengeId)?.count)" @click="diary.operate('battle', { gid: friend.gid, treasureId: treasure.id, challengeId: preview.challengeId })">
                         发起夺宝
                       </button>
                     </div>
                   </article>
                 </div>
               </details>
-            </div>
-          </main>
-          <main v-else-if="tab === 'stories'" class="pet-story-section" aria-label="爪印手记">
-            <div class="pet-story-banner" aria-hidden="true">
-              <picture>
-                <source :srcset="art('scene-stories')" media="(prefers-reduced-motion: reduce)">
-                <source srcset="/activity-assets/pet-diary/scene-stories.webp?v=20260910-hd" type="image/webp">
-                <img :src="art('scene-stories')" alt="" width="1020" height="460">
-              </picture>
-            </div>
-            <div class="pet-paper pet-story-paper">
-              <img class="pet-story-title" :src="art('img_s3PhotoWall_titleBg')" alt="多跟比熊互动可以解锁更多照片哦~">
-              <div class="pet-section-title">
-                <h2>爪印手记</h2><span>已解锁 {{ unlocked }} / {{ pet.stories.length }}</span>
-              </div><div class="pet-stories">
-                <article v-for="story in pet.stories" :key="story.order" class="pet-story" :class="{ locked: !story.unlocked }">
-                  <div class="pet-photo">
-                    <img v-if="story.unlocked && story.photo" :src="story.photo" :alt="`第 ${story.order} 则手记照片`"><img v-else class="pet-photo-placeholder" :src="art('img_s3PhotoWall_emptyBg')" :alt="`第 ${story.order} 则手记尚未解锁`">
-                  </div><img v-if="story.unlocked" class="pet-photo-pin" :src="art('img_s3PhotoWall_ding')" alt=""><img v-if="story.unlocked && story.captionImage" class="pet-caption" :src="story.captionImage" alt="比熊成长手记"><p v-else-if="story.unlocked && story.caption">
-                    {{ story.caption }}
-                  </p><button v-if="story.unlocked" class="pet-button pet-story-claim" :disabled="busy || story.claimed" @click="diary.operate('story', { order: story.order })">
-                    <img v-if="!story.claimed" :src="art('img_s3PhotoWall_getBtn')" alt="">{{ story.claimed ? '已领取' : '领取奖励' }}
-                  </button>
-                </article>
-              </div>
+
+              <details class="pet-card pet-card--wide">
+                <summary class="pet-card__head">
+                  <PetPaw />
+                  <span>活动说明</span>
+                  <span class="pet-card__toggle i-carbon-chevron-down" aria-hidden="true" />
+                </summary>
+                <p v-for="(rule, index) in pet.rules" :key="index" class="pet-card__text">
+                  {{ rule }}
+                </p>
+              </details>
             </div>
           </main>
 
-          <main v-else-if="tab === 'shop'" class="pet-shop" aria-label="拾物小铺">
-            <div class="pet-shop-banner" aria-hidden="true">
-              <picture>
-                <source :srcset="art('scene-shop')" media="(prefers-reduced-motion: reduce)">
-                <source srcset="/activity-assets/pet-diary/scene-shop.webp?v=20260910-hd" type="image/webp">
-                <img :src="art('scene-shop')" alt="" width="1020" height="450">
-              </picture>
+          <main v-else-if="pet && tab === 'stories'" class="pet-album" aria-label="爪印手记">
+            <section class="pet-album__head">
+              <div>
+                <h2>爪印手记</h2>
+                <p>多跟比熊互动可以解锁更多照片哦~</p>
+              </div>
+              <span class="pet-chip pet-chip--gold">已解锁 {{ unlocked }} / {{ pet.stories.length }}</span>
+            </section>
+            <div class="pet-album__bar" role="presentation">
+              <i :style="{ width: `${albumPercent}%` }" />
             </div>
-            <div class="pet-paper pet-shop-paper">
-              <h2 class="pet-shop-caption">
-                收集幸运星，可兑换游记限定奖励
-              </h2>
-              <div v-if="!pet.shop.length" class="pet-empty">
-                小铺目录暂未加载，请刷新重试。
-              </div>
-              <div class="pet-goods">
-                <button v-for="goods in pet.shop" :key="goods.id" class="pet-product" :class="{ 'pet-product--gold': goods.id === '50', 'pet-product--sold': goods.remaining === '0' }" :aria-label="`查看${goods.name}兑换信息`" @click="openExchange(goods.id)">
-                  <span class="pet-product-image"><img :src="goods.image" :alt="goods.name" loading="lazy"></span>
-                  <strong class="pet-product-name">{{ goods.name }}</strong>
-                  <span class="pet-price"><span v-for="cost in goods.costs" :key="cost.id"><img :src="cost.image" :alt="cost.name">{{ Number(cost.count).toLocaleString() }}</span></span>
-                  <span v-if="goods.remaining === '0'" class="pet-product-sold">已兑完</span>
+            <div class="pet-album__grid">
+              <article v-for="story in pet.stories" :key="story.order" class="pet-photo" :class="{ 'pet-photo--locked': !story.unlocked }">
+                <div class="pet-photo__frame">
+                  <img v-if="story.unlocked && story.photo" :src="story.photo" :alt="`第 ${story.order} 则手记照片`" loading="lazy" decoding="async">
+                  <span v-else class="pet-photo__empty">
+                    <PetPaw />
+                    <small>未解锁</small>
+                  </span>
+                </div>
+                <div class="pet-photo__body">
+                  <strong>第 {{ story.order }} 则</strong>
+                </div>
+                <button v-if="story.unlocked" type="button" class="pet-button pet-button--small pet-button--block" :disabled="busy || story.claimed" @click="diary.operate('story', { order: story.order })">
+                  {{ story.claimed ? '已领取' : '领取奖励' }}
                 </button>
-              </div>
-              <div class="pet-shop-footer">
-                <p>挑战书、活动礼包与化肥也可在游戏商城查看。</p><button class="pet-button" @click="router.push({ path: '/game-mall', query: { category: 'pet-diary' } })">
-                  前往游戏商城 <span class="i-carbon-arrow-right" />
-                </button>
-              </div>
+              </article>
             </div>
           </main>
-          <main v-else class="pet-solar" aria-label="节令小礼">
-            <div v-if="!currentTerm" class="pet-empty pet-empty--initial">
-              节令数据暂未加载，请刷新重试。
+
+          <main v-else-if="pet && tab === 'shop'" class="pet-shop" aria-label="拾物小铺">
+            <p class="pet-notice">
+              <PetPaw />收集幸运星，可兑换游记限定奖励
+            </p>
+            <p v-if="!pet.shop.length" class="pet-empty">
+              小铺目录暂未加载，请刷新重试。
+            </p>
+            <div class="pet-goods">
+              <button v-for="goods in pet.shop" :key="goods.id" type="button" class="pet-goods__item" :class="{ 'pet-goods__item--sold': goods.remaining === '0' }" :aria-label="`查看${goods.name}兑换信息`" @click="openExchange(goods.id)">
+                <span class="pet-goods__thumb">
+                  <img :src="goods.image" :alt="goods.name" loading="lazy" decoding="async">
+                </span>
+                <strong>{{ goods.name }}</strong>
+                <span class="pet-goods__price">
+                  <span v-for="cost in goods.costs" :key="cost.id"><img :src="cost.image" :alt="cost.name">{{ Number(cost.count).toLocaleString() }}</span>
+                </span>
+                <span v-if="goods.remaining === '0'" class="pet-goods__sold">已兑完</span>
+              </button>
             </div>
+          </main>
+
+          <main v-else-if="pet" class="pet-solar" aria-label="节令小礼">
+            <p v-if="!currentTerm" class="pet-empty">
+              节令数据暂未加载，请刷新重试。
+            </p>
             <template v-else>
-              <div class="pet-solar-scene" :class="{ 'pet-solar-scene--bailu': currentTerm.name.includes('白露') }">
-                <template v-if="currentTerm.name.includes('白露')">
-                  <picture>
-                    <source :srcset="art('scene-bailu')" media="(prefers-reduced-motion: reduce)">
-                    <source srcset="/activity-assets/pet-diary/scene-bailu.webp?v=20260910-motion" type="image/webp">
-                    <img class="pet-solar-landscape" :src="art('scene-bailu')" alt="白露节气，小童在芦苇水塘中用荷叶接露水">
-                  </picture>
-                  <div class="pet-solar-lettering">
-                    <img :src="art('img_S3Jieqi_title_bailu_trim')" alt="白露"><img :src="art('img_S3Jieqi_txt_bailu_trim')" alt="白露节令题诗">
+              <div class="pet-terms" aria-label="选择节令">
+                <button v-for="term in pet.solarTerms?.terms || []" :key="term.id" type="button" :class="{ 'is-active': currentTerm.id === term.id, 'is-locked': term.statusCode === '1' }" :aria-pressed="currentTerm.id === term.id" @click="selectedTermId = term.id">
+                  {{ term.name }}<span v-if="term.statusCode === '1'" class="i-carbon-locked" aria-hidden="true" />
+                </button>
+              </div>
+              <section class="pet-solar__card">
+                <PetSolarScene :term="currentTerm.name" />
+                <div class="pet-solar__info">
+                  <h2>{{ currentTerm.name }} · 节令赠礼</h2>
+                  <p class="pet-note">
+                    {{ date(Number(currentTerm.startTime) * 1000) }} — {{ date(Number(currentTerm.endTime) * 1000) }}
+                  </p>
+                  <div class="pet-rewards">
+                    <div v-for="item in currentTerm.rewards" :key="item.id" class="pet-reward" :title="item.name">
+                      <img :src="item.image" :alt="item.name">
+                      <strong>× {{ item.count }}</strong>
+                      <small>{{ item.name }}</small>
+                    </div>
                   </div>
-                </template>
-                <div v-else class="pet-solar-upcoming">
-                  <h2>{{ currentTerm.name }}</h2><p>{{ date(Number(currentTerm.startTime) * 1000) }} 开启</p>
-                </div>
-                <div class="pet-term-tabs" aria-label="选择节令">
-                  <button v-for="term in pet.solarTerms?.terms || []" :key="term.id" :class="{ selected: currentTerm.id === term.id }" :aria-pressed="currentTerm.id === term.id" @click="selectedTermId = term.id">
-                    {{ term.name }}<span v-if="term.statusCode === '1'" class="i-carbon-locked" />
+                  <button type="button" class="pet-button pet-button--primary" :disabled="busy || !currentTerm.canClaim" @click="diary.operate('solar', { termId: currentTerm.id })">
+                    {{ pending === 'solar' ? '领取中…' : currentTerm.canClaim ? '领取节令好礼' : currentTerm.statusCode === '3' ? '已领取' : '未到领取时间' }}
                   </button>
                 </div>
-              </div>
-              <div class="pet-solar-gift">
-                <div><h2>{{ currentTerm.name }} · 节令赠礼</h2><p>{{ date(Number(currentTerm.startTime) * 1000) }} — {{ date(Number(currentTerm.endTime) * 1000) }}</p></div>
-                <div class="pet-inline-rewards">
-                  <span v-for="item in currentTerm.rewards" :key="item.id"><img :src="item.image" alt="">{{ item.name }} ×{{ item.count }}</span>
-                </div>
-                <button class="pet-button pet-button--primary" :disabled="busy || !currentTerm.canClaim" @click="diary.operate('solar', { termId: currentTerm.id })">
-                  {{ pending === 'solar' ? '领取中…' : currentTerm.canClaim ? '领取节令好礼' : currentTerm.statusCode === '3' ? '已领取' : '未到领取时间' }}
-                </button>
-              </div>
+              </section>
             </template>
           </main>
-          <details v-if="tab === 'home'" class="pet-card pet-rules">
-            <summary>活动说明</summary><p v-for="(rule, index) in pet.rules" :key="index">
-              {{ rule }}
-            </p>
-          </details>
-        </template>
-      </div>
-    </div>
-    <nav v-if="pet" class="pet-tabs" aria-label="活动栏目">
-      <button v-for="entry in tabs" :key="entry.id" :class="{ selected: tab === entry.id }" :aria-label="entry.label" :aria-current="tab === entry.id ? 'page' : undefined" @click="tab = entry.id">
-        <img :src="art(`img_s3main_icon${tab === entry.id ? 'Select' : ''}${entry.icon}`)" alt=""><i v-if="entry.id === 'stories' && pet.stories.some(story => story.unlocked && !story.claimed)" />
-      </button>
-    </nav>
-    <dialog ref="exchangeDialog" class="pet-exchange-dialog" aria-labelledby="pet-exchange-title" @close="selectedGoodsId = ''" @click.self="exchangeDialog?.close()">
-      <header>
-        <h2 id="pet-exchange-title">
-          兑换
-        </h2><button class="pet-dialog-close" aria-label="关闭兑换窗口" @click="exchangeDialog?.close()">
-          ×
-        </button>
-      </header>
-      <div v-if="exchangeItem" class="pet-dialog-body">
-        <div class="pet-exchange-product">
-          <img :src="exchangeItem.image" :alt="exchangeItem.name"><div><h3>{{ exchangeItem.name }}</h3><p>{{ itemText(exchangeItem.rewards) }}</p></div>
         </div>
-        <label class="pet-quantity-label" for="pet-exchange-quantity">兑换数量</label>
-        <div class="pet-quantity">
-          <button :disabled="!!pending || exchangeQuantity <= 1" aria-label="减少兑换数量" @click="exchangeQuantity = Math.max(1, (Number(exchangeQuantity) || 1) - 1)">
-            −
-          </button><input id="pet-exchange-quantity" v-model.number="exchangeQuantity" type="number" inputmode="numeric" min="1" :max="exchangeLimit" :disabled="!!pending"><button :disabled="!!pending || exchangeQuantity >= exchangeLimit" aria-label="增加兑换数量" @click="exchangeQuantity = Math.min(exchangeLimit, (Number(exchangeQuantity) || 0) + 1)">
-            +
-          </button><button :disabled="!!pending || !affordableQuantity" @click="exchangeQuantity = affordableQuantity">
-            最大
+      </div>
+
+      <nav v-if="pet" class="pet-nav" aria-label="活动栏目">
+        <div class="pet-nav__inner">
+          <button v-for="entry in tabs" :key="entry.id" type="button" :class="{ 'is-active': tab === entry.id }" :aria-current="tab === entry.id ? 'page' : undefined" :aria-label="entry.label" @click="tab = entry.id">
+            <PetPaw v-if="entry.id === 'home'" class="pet-nav__icon" />
+            <span v-else class="pet-nav__icon" :class="entry.icon" aria-hidden="true" />
+            <strong>{{ entry.label }}</strong>
+            <i v-if="entry.id === 'stories' && pet.stories.some(story => story.unlocked && !story.claimed)" class="pet-nav__badge" aria-label="有可领取的手记奖励" />
           </button>
         </div>
-        <p class="pet-exchange-limit">
-          {{ exchangeItem.remaining === null ? '不限量' : `剩余可兑：${exchangeItem.remaining} / ${exchangeItem.limit}` }}
-        </p>
-        <div class="pet-exchange-cost" aria-live="polite">
-          <span v-for="cost in exchangeCosts" :key="cost.id"><img :src="cost.image" :alt="cost.name">{{ Number(cost.count).toLocaleString() }}</span>
+      </nav>
+
+      <dialog ref="exchangeDialog" class="pet-dialog" aria-labelledby="pet-exchange-title" @close="selectedGoodsId = ''" @click.self="exchangeDialog?.close()">
+        <header class="pet-dialog__head">
+          <h2 id="pet-exchange-title">
+            兑换
+          </h2>
+          <button type="button" class="pet-dialog__close" aria-label="关闭兑换窗口" @click="exchangeDialog?.close()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+          </button>
+        </header>
+        <div v-if="exchangeItem" class="pet-dialog__body">
+          <div class="pet-dialog__product">
+            <img :src="exchangeItem.image" :alt="exchangeItem.name">
+            <div>
+              <h3>{{ exchangeItem.name }}</h3>
+              <p>{{ itemText(exchangeItem.rewards) }}</p>
+            </div>
+          </div>
+          <label class="pet-field" for="pet-exchange-quantity">兑换数量</label>
+          <div class="pet-quantity">
+            <button type="button" :disabled="!!pending || exchangeQuantity <= 1" aria-label="减少兑换数量" @click="exchangeQuantity = Math.max(1, (Number(exchangeQuantity) || 1) - 1)">
+              −
+            </button>
+            <input id="pet-exchange-quantity" v-model.number="exchangeQuantity" type="number" inputmode="numeric" min="1" :max="exchangeLimit" :disabled="!!pending">
+            <button type="button" :disabled="!!pending || exchangeQuantity >= exchangeLimit" aria-label="增加兑换数量" @click="exchangeQuantity = Math.min(exchangeLimit, (Number(exchangeQuantity) || 0) + 1)">
+              +
+            </button>
+            <button type="button" :disabled="!!pending || !affordableQuantity" @click="exchangeQuantity = affordableQuantity">
+              最大
+            </button>
+          </div>
+          <p class="pet-note">
+            {{ exchangeItem.remaining === null ? '不限量' : `剩余可兑：${exchangeItem.remaining} / ${exchangeItem.limit}` }}
+          </p>
+          <div class="pet-costs" aria-live="polite">
+            <span v-for="cost in exchangeCosts" :key="cost.id"><img :src="cost.image" :alt="cost.name">{{ Number(cost.count).toLocaleString() }}</span>
+          </div>
+          <p v-if="exchangeHint" class="pet-note" role="status">
+            {{ exchangeHint }}
+          </p>
+          <p v-if="error" class="pet-message pet-message--error" role="alert">
+            {{ error }}
+          </p>
+          <button type="button" class="pet-button pet-button--primary pet-button--block" :disabled="!canExchange" @click="submitExchange">
+            {{ pending === 'exchange' ? '兑换中…' : '兑换' }}
+          </button>
         </div>
-        <p v-if="exchangeHint" class="pet-exchange-hint" role="status">
-          {{ exchangeHint }}
-        </p>
-        <p v-if="error" class="pet-message pet-message--error" role="alert">
-          {{ error }}
-        </p>
-        <button class="pet-button pet-button--primary pet-exchange-submit" :disabled="!canExchange" @click="submitExchange">
-          {{ pending === 'exchange' ? '兑换中…' : '兑换' }}
-        </button>
-      </div>
-    </dialog>
-    <dialog ref="recordDialog" class="pet-exchange-dialog pet-record-dialog" aria-labelledby="pet-record-title" @click.self="recordDialog?.close()">
-      <header>
-        <h2 id="pet-record-title">
-          互动记录
-        </h2>
-        <button class="pet-dialog-close" aria-label="关闭互动记录" @click="recordDialog?.close()">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-        </button>
-      </header>
-      <div class="pet-dialog-body">
-        <div class="pet-log-tabs" aria-label="记录类型">
-          <button class="pet-button" :class="{ 'pet-button--primary': logKind === 'interact' }" :disabled="!!pending" @click="readLogs('interact')">
+      </dialog>
+
+      <dialog ref="recordDialog" class="pet-dialog" aria-labelledby="pet-record-title" @click.self="recordDialog?.close()">
+        <header class="pet-dialog__head">
+          <h2 id="pet-record-title">
             互动记录
+          </h2>
+          <button type="button" class="pet-dialog__close" aria-label="关闭互动记录" @click="recordDialog?.close()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
           </button>
-          <button class="pet-button" :class="{ 'pet-button--primary': logKind === 'plunder' }" :disabled="!!pending" @click="readLogs('plunder')">
-            被夺宝记录
-          </button>
+        </header>
+        <div class="pet-dialog__body">
+          <div class="pet-log__tabs" aria-label="记录类型">
+            <button type="button" class="pet-button pet-button--small" :class="{ 'pet-button--primary': logKind === 'interact' }" :disabled="!!pending" @click="readLogs('interact')">
+              互动记录
+            </button>
+            <button type="button" class="pet-button pet-button--small" :class="{ 'pet-button--primary': logKind === 'plunder' }" :disabled="!!pending" @click="readLogs('plunder')">
+              被夺宝记录
+            </button>
+          </div>
+          <p v-if="error" class="pet-message pet-message--error" role="alert">
+            <span>{{ error }}</span>
+            <button type="button" :disabled="!!pending" @click="readLogs(logKind)">
+              重试
+            </button>
+          </p>
+          <p v-if="pending === 'interact' || pending === 'plunder'" class="pet-empty pet-empty--inline" role="status">
+            正在读取记录…
+          </p>
+          <p v-else-if="!error && !recordEntries?.length" class="pet-empty pet-empty--inline">
+            暂无{{ logKind === 'interact' ? '互动' : '被夺宝' }}记录。
+          </p>
+          <div v-for="(entry, index) in recordEntries" :key="index" class="pet-log">
+            <time>{{ time(entry.time) }}</time>
+            <template v-if="logKind === 'interact'">
+              <span>消耗：{{ itemText(entry.costs) || '无' }}</span>
+              <strong>获得：{{ itemText(entry.rewards) || '无道具奖励' }}</strong>
+            </template>
+            <template v-else>
+              <span>{{ entry.name }} · {{ entry.won ? '夺宝成功' : '夺宝失败' }}{{ entry.fake ? ' · 锦囊记录' : '' }}</span>
+              <strong>损失 {{ itemText(entry.lost) || '无' }} · 注入 {{ itemText(entry.injected) || '无' }}</strong>
+            </template>
+          </div>
         </div>
-        <p v-if="error" class="pet-message pet-message--error" role="alert">
-          {{ error }} <button :disabled="!!pending" @click="readLogs(logKind)">
-            重试
-          </button>
-        </p>
-        <p v-if="pending === 'interact' || pending === 'plunder'" class="pet-empty pet-empty--small" role="status">
-          正在读取记录…
-        </p>
-        <p v-else-if="!error && !recordEntries?.length" class="pet-empty pet-empty--small">
-          暂无{{ logKind === 'interact' ? '互动' : '被夺宝' }}记录。
-        </p>
-        <div v-for="(entry, index) in recordEntries" :key="index" class="pet-log">
-          <time>{{ time(entry.time) }}</time>
-          <template v-if="logKind === 'interact'">
-            <span>消耗：{{ itemText(entry.costs) || '无' }}</span><strong>获得：{{ itemText(entry.rewards) || '无道具奖励' }}</strong>
-          </template>
-          <template v-else>
-            <span>{{ entry.name }} · {{ entry.won ? '夺宝成功' : '夺宝失败' }}{{ entry.fake ? ' · 锦囊记录' : '' }}</span><strong>损失 {{ itemText(entry.lost) || '无' }} · 注入 {{ itemText(entry.injected) || '无' }}</strong>
-          </template>
-        </div>
-      </div>
-    </dialog>
-    <PetTreasurePanel v-if="pet" ref="treasurePanel" :now="now" />
-  </section>
+      </dialog>
+
+      <PetTreasurePanel v-if="pet" ref="treasurePanel" :now="now" />
+    </div>
+  </ActivityShell>
 </template>
 
 <style scoped>
-/* Only the mounted pet diary owns this viewport; other activities keep their layout. */
-:global(.page-scroll:has(> .pet-diary)) {
-  overflow: hidden;
-  padding: 18px clamp(16px, 2.4vw, 34px);
-}
-.pet-diary.pet-diary {
-  --pet-ink: #805439;
-  --pet-muted: #9c795a;
-  --pet-green: #789323;
-  --pet-border: #e8cd9b;
-  position: relative;
+.pet-diary {
+  --pet-accent: var(--ui-warning);
+  --pet-accent-deep: #a9762c;
+  --pet-accent-soft: var(--ui-warning-soft);
+  --pet-paper: #fffdf8;
+  --pet-paper-2: #fbf5ea;
+  --pet-line: #e9dfcb;
+  --pet-line-soft: #f2ead9;
+  --pet-line-strong: #dfd3ba;
+  --pet-ink: #453d33;
+  --pet-ink-2: #6f6558;
+  --pet-muted: #9a8f80;
   display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  width: 100%;
-  max-width: 1100px;
+  height: 100%;
   min-height: 0;
-  margin: 0 auto;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid #dab57e;
-  border-radius: 20px;
   color: var(--pet-ink);
-  background: #f8e7be;
-  box-shadow: 0 8px 28px #78572b13;
+  background: linear-gradient(180deg, #fffdf8 0%, #fbf6ec 46%, #fbf6ec 100%);
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
-  container-type: inline-size;
 }
+
+.pet-diary *,
+.pet-diary *::before,
+.pet-diary *::after {
+  box-sizing: border-box;
+}
+
 .pet-diary button,
 .pet-diary input,
 .pet-diary select {
-  font: inherit;
+  font-family: inherit;
 }
-.pet-diary button {
-  -webkit-tap-highlight-color: transparent;
-}
-.pet-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: #c29b67 transparent;
-  container: pet-viewport / size;
-}
-.pet-content {
-  position: relative;
-  min-height: 100%;
-  padding-bottom: 28px;
-  isolation: isolate;
-}
+
+/* ---------- 顶部栏 ---------- */
 .pet-header {
-  position: absolute;
-  z-index: 4;
-  inset: 26px 26px auto;
+  position: relative;
+  z-index: 6;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-.pet-brand,
-.pet-header-tools {
-  display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
+  height: 62px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--pet-line-soft);
+  background: #fff;
+}
+
+.pet-header__brand {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
 }
-.pet-brand {
-  align-items: flex-start;
+
+.pet-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 34px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ui-primary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
-.pet-heading {
+
+.pet-back svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pet-title {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
-.pet-heading h1 {
-  margin: 0 0 9px;
+
+.pet-title small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--pet-muted);
 }
-.pet-heading h1 img {
-  display: block;
-  width: 255px;
-  max-width: 100%;
-  height: auto;
+
+.pet-title h1 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 .pet-countdown {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pet-countdown svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--pet-muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pet-wallet-menu {
+  position: relative;
+  flex: none;
+}
+
+.pet-wallet-menu > summary {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 10px;
-  border-radius: 20px;
-  background: #665c3bbc;
-  color: #fff9dc;
-  font-size: 12px;
-  font-weight: 700;
-}
-.pet-icon-button {
-  flex: none;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.pet-icon-button img {
-  width: 100%;
-  height: auto;
-}
-.pet-refresh {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid #ead1a1;
-  border-radius: 50%;
-  background: #fff4d9ed;
-  color: #996634;
-  cursor: pointer;
-}
-.pet-wallet-menu {
-  position: relative;
-}
-.pet-wallet-menu > summary {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 105px;
   height: 32px;
-  padding: 0 9px 0 3px;
-  border: 1px solid #edcf99;
-  border-radius: 24px;
-  background: #fff9e9ed;
-  list-style: none;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-accent-deep);
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
-  box-shadow: 0 2px 3px #805c3720;
+  list-style: none;
 }
+
 .pet-wallet-menu > summary::-webkit-details-marker {
   display: none;
 }
-.pet-wallet-menu > summary > img {
-  width: 37px;
-  height: 37px;
+
+.pet-wallet-menu > summary img {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
   object-fit: contain;
-  margin-left: -9px;
+  background: var(--pet-accent-soft);
 }
-.pet-wallet-menu > summary > strong {
-  flex: 1;
-  text-align: right;
-  color: #975131;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
+
+.pet-chevron {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: var(--pet-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.18s ease;
 }
-.pet-wallet-menu > summary > span {
-  font-size: 12px;
+
+.pet-wallet-menu[open] .pet-chevron {
+  transform: rotate(180deg);
 }
+
 .pet-wallet {
   position: absolute;
+  top: calc(100% + 8px);
   right: 0;
-  top: 45px;
-  width: 300px;
-  max-width: 80cqw;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 12px;
-  padding: 20px;
-  border: 2px solid #e6c394;
-  border-radius: 18px;
-  background: #fff5dfee;
-  box-shadow: 0 8px 24px #75492e2b;
-  backdrop-filter: blur(12px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 216px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 36px rgba(96, 78, 46, 0.16);
 }
-.pet-balance {
+
+.pet-wallet__row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
 }
-.pet-balance img {
-  width: 34px;
-  height: 34px;
+
+.pet-wallet__row img {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
   object-fit: contain;
+  background: var(--pet-paper-2);
 }
-.pet-balance strong {
-  display: block;
-  color: #845130;
-  font-size: 17px;
-  line-height: 1.3;
+
+.pet-wallet__row span {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--pet-ink-2);
 }
+
+.pet-wallet__row strong {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pet-ink);
+}
+
 .pet-wallet p {
-  grid-column: 1 / -1;
   margin: 0;
-  padding-top: 10px;
-  border-top: 1px dashed #e6c394;
-  font-size: 11px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--pet-line-soft);
+  font-size: 11.5px;
   color: var(--pet-muted);
 }
-.pet-tabs {
-  position: relative;
-  z-index: 5;
-  flex: none;
+
+.pet-refresh {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
-  gap: 4px;
-  height: 112px;
-  overflow: hidden;
-  padding: 0 clamp(10px, 5cqw, 70px);
-  background: url('/activity-assets/pet-diary/img_s3main_bg.png') center / 100% 100%;
-}
-.pet-tabs button {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  padding: 0 0 6px;
-  border: 0;
-  background: transparent;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ui-primary);
   cursor: pointer;
 }
-.pet-tabs img {
-  width: 92px;
-  height: 92px;
-  object-fit: contain;
-  transition: transform 160ms ease;
+
+.pet-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
-.pet-tabs button.selected img {
-  width: 104px;
-  height: 104px;
+
+.pet-refresh svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.pet-tabs button:hover img {
-  transform: translateY(-3px);
+
+/* ---------- 状态提示 ---------- */
+.pet-status {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 0;
 }
-.pet-tabs i {
-  position: absolute;
-  top: 15px;
-  left: calc(50% + 31px);
-  width: 8px;
-  height: 8px;
-  border: 2px solid #fff3dc;
-  border-radius: 50%;
-  background: #ef725a;
+
+.pet-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pet-ink-2);
 }
+
+.pet-message span {
+  flex: 1;
+  min-width: 0;
+}
+
+.pet-message button {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid currentcolor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pet-message--error {
+  border-color: #ecc9cb;
+  background: var(--ui-danger-soft);
+  color: #a8474e;
+}
+
+.pet-message--ok {
+  border-color: #c4ddcd;
+  background: var(--ui-primary-soft);
+  color: #2f6f4b;
+}
+
+.pet-message--warn {
+  border-color: #eedcbb;
+  background: var(--pet-accent-soft);
+  color: #8a6520;
+}
+/* ---------- 滚动区 ---------- */
+.pet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pet-body:focus {
+  outline: none;
+}
+
+.pet-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 18px 20px 26px;
+}
+
+.pet-home,
+.pet-album,
+.pet-shop,
+.pet-solar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- 通用控件 ---------- */
 .pet-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 10px 20px;
-  border: 1px solid #dcbb84;
-  border-radius: 22px;
-  color: #8c6736;
-  background: #fff7de;
-  box-shadow: 0 2px 0 #c7995d33;
-  font-weight: 700;
-  line-height: 1.4;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--pet-line);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
   cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    transform 0.12s ease;
 }
-.pet-button--primary {
-  color: #fffce6;
-  border: 2px solid #b4c43f;
-  background: #92b71c;
-  box-shadow:
-    inset 0 1px 0 #d9e783,
-    0 3px 0 #7c942b;
-  text-shadow: 0 1px #698513;
-}
-.pet-button--small {
-  padding: 7px 13px;
-  font-size: 12px;
-}
-.pet-diary button:disabled {
-  opacity: 0.55;
+
+.pet-button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
-.pet-text-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 0;
-  border: 0;
-  background: none;
-  color: #8b9235;
-  font-weight: 700;
-  cursor: pointer;
+
+.pet-button:not(:disabled):active {
+  transform: translateY(1px);
 }
-.pet-home-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: 28px;
-  background: #f9e5b7;
+
+.pet-button--small {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 9px;
+  font-size: 12.5px;
 }
-.pet-garden {
-  position: relative;
-  aspect-ratio: 9 / 14;
-  min-width: 0;
-  background: #f9e5b7;
-}
-.pet-room-scene {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-}
-.pet-dog-plaque {
-  position: absolute;
-  top: 12%;
-  left: 50%;
-  width: 62%;
-  aspect-ratio: 362 / 193;
-  transform: translateX(-50%);
-  background: url('/activity-assets/pet-diary/img_s3BattlePass_bg1.png') center / 100% 100%;
-}
-.pet-dog-plaque h2 {
-  position: absolute;
-  top: 42%;
-  left: 39%;
-  margin: 0;
-  color: #9e6545;
-  font-size: clamp(16px, 2cqw, 21px);
-  font-weight: 800;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-.pet-rarity {
-  position: absolute;
-  top: 41%;
-  left: 12%;
-  width: 24%;
-  aspect-ratio: 2;
-  display: grid;
-  place-items: center;
+
+.pet-button--primary {
+  border-color: #c1873a;
+  background: linear-gradient(180deg, #e2ac60, #cf9243);
   color: #fff;
-  font-size: clamp(11px, 1.7cqw, 18px);
-  font-weight: 800;
-  line-height: 1;
-  text-shadow: 0 1px 1px #8e745540;
+  box-shadow: 0 6px 16px rgba(197, 139, 63, 0.26);
 }
-.pet-rarity img {
-  position: absolute;
-  inset: 0;
+
+.pet-button--block {
   width: 100%;
-  height: 100%;
 }
-.pet-rarity span {
-  position: relative;
+
+.pet-button .i-carbon-arrow-right {
+  width: 15px;
+  height: 15px;
 }
-.pet-growth {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  line-height: 1.4;
-}
-.pet-growth > span {
-  position: absolute;
-  top: 65%;
-  left: 12%;
-  width: 25%;
-  height: 16%;
-  display: grid;
-  place-items: center;
-  font-size: clamp(10px, 1.45cqw, 15px);
-  font-weight: 700;
-  color: #fff2d9;
-}
-.pet-growth > div {
-  position: absolute;
-  top: 66%;
-  left: 39%;
-  width: 55%;
-  height: 14%;
-}
-.pet-growth progress {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  border: 0;
-  border-radius: 12px;
-  background: #edd3b1;
-}
-.pet-growth progress::-webkit-progress-bar {
-  background: url('/activity-assets/pet-diary/img_s3BattlePass_progress.png') center / 100% 100%;
-}
-.pet-growth progress::-webkit-progress-value {
-  background: #9fc94c;
-  border-radius: 12px;
-}
-.pet-growth progress::-moz-progress-bar {
-  background: #9fc94c;
-  border-radius: 12px;
-}
-.pet-growth b {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: #946347;
-  font-size: clamp(10px, 1.5cqw, 16px);
-  white-space: nowrap;
-  text-shadow:
-    1px 1px #fff9e5,
-    -1px -1px #fff9e5;
-}
-.pet-speech {
-  position: absolute;
-  top: 31%;
-  left: 29%;
-  display: grid;
-  place-items: center;
-  width: 44%;
-  aspect-ratio: 363 / 226;
-  background: url('/activity-assets/pet-diary/img_s3BattlePass_chatBg.png') center / contain no-repeat;
-}
-.pet-speech img {
-  width: 85%;
-  height: auto;
-}
-.pet-room-shortcuts {
-  position: absolute;
-  top: 28%;
-  right: 3%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 15%;
-}
-.pet-room-shortcuts button {
-  position: relative;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.pet-room-shortcuts img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-.pet-room-shortcuts span {
-  display: block;
-  margin-top: -5px;
-  color: #fff5d5;
-  font-size: 11px;
-  font-weight: 800;
-  text-shadow:
-    0 1px 2px #99632c,
-    1px 0 2px #99632c,
-    -1px 0 2px #99632c;
-}
-.pet-escort-shortcut {
-  position: absolute;
-  right: 2%;
-  bottom: 21%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 20%;
-  padding: 0;
-  border: 0;
-  color: #855533;
-  background: none;
-  cursor: pointer;
-}
-.pet-escort-shortcut img {
-  width: 66%;
-  max-width: 66px;
-  height: auto;
-}
-.pet-escort-shortcut strong {
-  font-size: clamp(11px, 1.6cqw, 16px);
-  white-space: nowrap;
-}
-.pet-escort-shortcut span {
-  padding: 0 5px;
-  border-radius: 12px;
-  color: #fffbea;
-  background: #9b8256;
-  font-size: 10px;
-  white-space: nowrap;
-}
-.pet-care {
-  position: absolute;
-  bottom: 5%;
-  left: 50%;
-  width: 72%;
-  transform: translateX(-50%);
-  text-align: center;
-}
-.pet-feed-cost {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 5px;
-  color: #fffcec;
-  font-size: 16px;
-  font-weight: 800;
-  text-shadow:
-    0 1px 2px #865831,
-    1px 0 2px #865831,
-    -1px 0 2px #865831;
-}
-.pet-feed-cost span {
+
+.pet-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-}
-.pet-feed-cost img {
-  width: 25px;
-  height: 25px;
-  object-fit: contain;
-}
-.pet-feed-button {
-  display: block;
-  width: 74%;
-  max-width: 265px;
-  aspect-ratio: 309 / 108;
-  padding: 0 0 4px;
-  margin: auto;
-  border: 0;
-  color: #da8213;
-  background: url('/activity-assets/pet-diary/img_s3BattlePass_btn.png') center / 100% 100%;
-  font-size: clamp(19px, 2.4cqw, 26px) !important;
-  font-weight: 800 !important;
-  line-height: 1.2;
-  cursor: pointer;
-  filter: drop-shadow(0 3px 1px #92743b40);
-}
-.pet-care-note {
-  display: block;
-  margin: 5px 0 0;
-  color: #885c38;
-  font-size: 11px;
-}
-.pet-care-note--warning {
-  max-width: 240px;
-  margin-inline: auto;
-  color: #99551e;
-  line-height: 1.4;
-}
-.pet-permanent {
-  margin-top: 24px;
-  color: var(--pet-muted);
-  font-size: 12px;
-}
-.pet-card {
-  min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--pet-border);
-  border-radius: 18px;
-  background: #fff5de;
-  box-shadow: 0 3px 0 #bd8e4820;
-}
-.pet-card p {
-  margin: 9px 0 18px;
-  color: var(--pet-muted);
-  font-size: 13px;
-}
-.pet-gift {
-  align-self: start;
-  margin: 145px 28px 30px 0;
-  padding: 30px 24px;
-  text-align: center;
-}
-.pet-gift-art {
-  display: block;
-  width: 78px;
-  height: 78px;
-  object-fit: contain;
-  margin: -8px auto 12px;
-}
-.pet-section-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-.pet-section-title h2 {
-  margin: 0;
-  font-size: 18px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-ink-2);
+  font-size: 11.5px;
   font-weight: 800;
+  white-space: nowrap;
 }
-.pet-section-title > span {
+
+.pet-chip--gold {
+  border-color: #eedcae;
+  background: #faf1dc;
+  color: #8a6520;
+}
+
+.pet-chip--blue {
+  border-color: #cfe2ee;
+  background: var(--ui-blue-soft);
+  color: #3f6d8a;
+}
+
+.pet-note {
+  margin: 0;
   font-size: 12px;
   color: var(--pet-muted);
 }
-.pet-section-title > .pet-button {
-  margin-left: auto;
+
+.pet-note--warning {
+  color: #a9762c;
+  font-weight: 700;
 }
-.pet-gift .pet-section-title {
-  justify-content: center;
-}
-.pet-seed-rewards {
-  display: flex;
-  justify-content: center;
-  gap: 28px;
-  margin: 25px 0;
-}
-.pet-seed-rewards > div {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 12px;
-}
-.pet-seed-rewards img {
-  width: 64px;
-  height: 64px;
-  object-fit: contain;
-}
-.pet-gift > .pet-button {
-  width: 100%;
-}
-.pet-grow-tip {
-  padding-top: 22px;
-  margin-top: 26px;
-  border-top: 1px dashed var(--pet-border);
-  text-align: left;
-}
-.pet-grow-tip p {
-  margin: 7px 0;
-  font-size: 12px;
-}
-.pet-grow-tip .pet-text-button {
-  margin-top: 12px;
-  font-size: 12px;
-}
-.pet-home-panels {
-  display: grid;
-  gap: 26px;
-  padding: 32px;
-}
-.pet-home-bottom {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 26px;
-}
+
 .pet-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 180px;
-  padding: 20px;
+  gap: 8px;
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--pet-line-strong);
+  border-radius: 12px;
   color: var(--pet-muted);
+  font-size: 12.5px;
+  text-align: center;
 }
-.pet-empty--initial {
-  min-height: 400px;
-  padding-top: 140px;
+
+.pet-empty--inline {
+  border-style: none;
+  padding: 10px;
 }
-.pet-empty--small {
-  min-height: 130px;
-  font-size: 12px;
-}
-.pet-empty img {
-  width: 54px;
-  height: 54px;
-  object-fit: contain;
-  opacity: 0.7;
-}
-.pet-treasure,
-.pet-charm {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 0;
-  border-top: 1px dashed var(--pet-border);
-}
-.pet-treasure > img,
-.pet-charm > img {
-  flex: none;
-  width: 45px;
-  height: 45px;
-  object-fit: contain;
-}
-.pet-treasure > div,
-.pet-charm > div {
+
+.pet-empty--tall {
   flex: 1;
-  min-width: 0;
-}
-.pet-treasure span,
-.pet-treasure b {
-  display: block;
-  color: var(--pet-muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-.pet-treasure strong,
-.pet-charm strong {
+  flex-direction: column;
+  min-height: 240px;
+  border-color: transparent;
   font-size: 13px;
 }
-.pet-charm p {
-  font-size: 12px;
-  margin: 5px 0;
+
+.pet-empty--tall strong {
+  color: var(--pet-ink-2);
 }
-.pet-charm small {
-  padding: 2px 5px;
-  border-radius: 6px;
-  background: #e7edc7;
-  color: #748830;
-  font-size: 10px;
+
+/* ---------- 卡片与网格 ---------- */
+.pet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
 }
-.pet-charm span,
-.pet-muted {
-  display: block;
-  color: var(--pet-muted);
-  font-size: 12px;
-}
-.pet-diary summary {
-  font-weight: 700;
-  cursor: pointer;
-}
-.pet-diary summary > span {
-  color: var(--pet-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-.pet-rules {
-  margin: 0 32px;
-  background: #fff6dfc7;
-}
-.pet-rules p {
-  white-space: pre-line;
-  margin: 14px 0;
-  font-size: 12px;
-}
-.pet-friend-form {
+
+.pet-card {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  flex-wrap: wrap;
+  padding: 16px;
+  border: 1px solid var(--pet-line);
+  border-radius: 14px;
+  background: #fff;
 }
-.pet-friend-form select {
-  flex: 1;
-  min-width: 150px;
-  padding: 7px 12px;
-  border: 1px solid var(--pet-border);
-  border-radius: 10px;
-  background: #fffaf0;
+
+.pet-card--wide {
+  grid-column: 1 / -1;
+}
+
+.pet-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.pet-card__head > svg,
+.pet-card__head > .pet-paw {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--pet-accent-deep);
+}
+
+.pet-card__head > span:not(.pet-card__toggle) {
+  min-width: 0;
+}
+
+.pet-card__head small {
+  margin-left: auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--pet-paper-2);
+  color: var(--pet-muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.pet-card__toggle {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-left: auto;
+  color: var(--pet-muted);
+  transition: transform 0.18s ease;
+}
+
+.pet-card__head small + .pet-card__toggle {
+  margin-left: 0;
+}
+
+.pet-card summary.pet-card__head {
+  cursor: pointer;
+  list-style: none;
+}
+
+.pet-card summary.pet-card__head::-webkit-details-marker {
+  display: none;
+}
+
+.pet-card[open] > summary .pet-card__toggle {
+  transform: rotate(180deg);
+}
+
+.pet-card__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--pet-ink-2);
+}
+
+.pet-card > .pet-button:last-child {
+  margin-top: auto;
+}
+
+/* ---------- 奖励格 ---------- */
+.pet-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 2px 0;
+}
+
+.pet-reward {
+  position: relative;
+  display: grid;
+  width: 96px;
+  min-height: 86px;
+  grid-template-rows: 38px auto auto;
+  place-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: var(--pet-paper-2);
+  text-align: center;
+}
+
+.pet-reward img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.pet-reward strong {
+  font-size: 12px;
+  font-weight: 800;
   color: var(--pet-ink);
 }
-.pet-friend-treasure {
-  padding: 16px 0;
-  border-bottom: 1px dashed var(--pet-border);
+
+.pet-reward small {
+  overflow: hidden;
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--pet-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.pet-friend-treasure > span {
-  margin-left: 12px;
-  font-size: 12px;
+/* ---------- 比熊之家 ---------- */
+.pet-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid var(--pet-line);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fff9ee, #fdf2de 58%, #fbf7ef);
 }
-.pet-preview {
+
+.pet-hero::after {
+  position: absolute;
+  top: -90px;
+  right: -70px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(213, 154, 79, 0.17), rgba(213, 154, 79, 0) 70%);
+  content: '';
+  pointer-events: none;
+}
+
+.pet-hero__art {
+  display: grid;
+  min-height: 196px;
+  place-items: center;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 46%, #fff 56%, rgba(255, 255, 255, 0) 76%);
+}
+
+.pet-hero__art > svg {
+  width: 186px;
+  height: 186px;
+  filter: drop-shadow(0 14px 16px rgba(150, 110, 50, 0.18));
+}
+
+.pet-hero__main {
+  position: relative;
+  z-index: 1;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pet-hero__head {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 10px;
-  font-size: 12px;
+  gap: 8px;
 }
-.pet-preview > .pet-button {
-  margin-left: auto;
+
+.pet-hero__head h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.25;
 }
-.pet-log-tabs {
+
+.pet-quote {
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 12px 12px 12px 4px;
+  background: #fff;
+  font-size: 13px;
+  color: var(--pet-ink-2);
+}
+
+.pet-growth__top {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-.pet-log {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px dashed var(--pet-border);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
   font-size: 12px;
-}
-.pet-log time {
+  font-weight: 800;
   color: var(--pet-muted);
 }
-.pet-story-banner {
-  position: relative;
-  height: clamp(220px, 29cqw, 320px);
-  overflow: hidden;
-  background: #74bae1;
+
+.pet-growth__top b {
+  color: var(--pet-accent-deep);
+  font-variant-numeric: tabular-nums;
 }
-.pet-story-banner img {
-  position: absolute;
-  inset: 0;
+
+.pet-growth progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #f0e6d4;
+  overflow: hidden;
+  appearance: none;
+}
+
+.pet-growth progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: #f0e6d4;
+}
+
+.pet-growth progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9b767, #d59a4f);
+}
+
+.pet-growth progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9b767, #d59a4f);
+}
+
+.pet-care {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.pet-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--pet-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.pet-cost img {
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid #eedcbb;
+  border-radius: 50%;
+  background: var(--pet-accent-soft);
+  object-fit: contain;
+}
+
+.pet-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pet-quick__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pet-quick__item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pet-quick__item > svg,
+.pet-quick__item > .pet-paw {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.pet-quick__item em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-accent-deep);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+/* ---------- 好友夺宝 ---------- */
+.pet-steal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.pet-steal select {
+  flex: 1 1 180px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-size: 12.5px;
+}
+
+.pet-steal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.pet-steal__treasure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 12px;
+  background: var(--pet-paper);
+}
+
+.pet-steal__treasure > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--pet-muted);
+}
+
+.pet-steal__treasure > header strong {
+  color: var(--pet-ink);
+  font-size: 13px;
+}
+
+.pet-steal__preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pet-paper-2);
+  font-size: 12px;
+  color: var(--pet-ink-2);
+}
+
+.pet-steal__preview .pet-button {
+  margin-left: auto;
+}
+/* ---------- 爪印手记 ---------- */
+.pet-album__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pet-album__head h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.pet-album__head p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--pet-muted);
+}
+
+.pet-album__bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0e6d4;
+}
+
+.pet-album__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9b767, #d59a4f);
+  transition: width 0.3s ease;
+}
+
+.pet-album__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.pet-photo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(120, 100, 60, 0.07);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.pet-photo:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 24px rgba(120, 100, 60, 0.12);
+}
+
+.pet-photo__frame {
+  position: relative;
+  display: grid;
+  aspect-ratio: 539 / 774;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--pet-paper-2);
+}
+
+.pet-photo__frame img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center bottom;
+  object-fit: contain;
 }
-.pet-paper {
-  position: relative;
-  margin-top: -44px;
-  padding: 76px 34px 36px;
-  border: 0 solid transparent;
-  border-image: url('/activity-assets/pet-diary/img_S3Shop_bg.png') 160 0 50 fill / 82px 0 26px / 0 stretch;
+
+.pet-photo__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #c3b8a4;
 }
-.pet-story-paper {
-  border-image-source: url('/activity-assets/pet-diary/img_s3PhotoWall_bg.png');
+
+.pet-photo__empty > svg,
+.pet-photo__empty > .pet-paw {
+  width: 28px;
+  height: 28px;
 }
-.pet-story-title {
-  display: block;
-  width: min(100%, 760px);
-  height: auto;
-  margin: 0 auto 28px;
+
+.pet-photo__empty small {
+  font-size: 11.5px;
+  font-weight: 700;
 }
-.pet-story-paper .pet-section-title {
-  max-width: 880px;
-  margin: auto;
-}
-.pet-stories {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
-  gap: 34px 28px;
-  max-width: 880px;
-  margin: 28px auto 8px;
-}
-.pet-story {
-  position: relative;
-  min-width: 0;
+
+.pet-photo__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
   text-align: center;
 }
-.pet-photo {
-  position: relative;
-  aspect-ratio: 539 / 774;
-  overflow: hidden;
-  background: url('/activity-assets/pet-diary/img_s3PhotoWall_photoBg.png') center / 100% 100%;
+
+.pet-photo__body strong {
+  font-size: 13px;
+  font-weight: 800;
 }
-.pet-photo img {
-  position: absolute;
-  inset: 4% 5%;
-  display: block;
-  width: 90%;
-  height: 92%;
-  object-fit: contain;
+
+.pet-photo--locked {
+  border-style: dashed;
+  border-color: var(--pet-line-strong);
+  background: #faf8f3;
+  box-shadow: none;
 }
-.pet-photo img.pet-photo-placeholder {
-  inset: 0;
-  width: 100%;
-  height: 100%;
+
+.pet-photo--locked:hover {
+  transform: none;
+  box-shadow: none;
 }
-.pet-photo-pin {
-  position: absolute;
-  top: -9px;
-  left: -7px;
-  width: 28px;
-  height: auto;
+
+.pet-photo--locked .pet-photo__frame {
+  background: #f3efe7;
 }
-.pet-story p {
-  font-size: 12px;
-  margin: 8px 0 13px;
-}
-.pet-caption {
-  display: block;
-  width: 90%;
-  height: 50px;
-  object-fit: contain;
-  margin: 5px auto 12px;
-}
-.pet-story.locked .pet-photo {
-  background: transparent;
-}
-.pet-story .pet-button {
-  font-size: 12px;
-}
-.pet-story-claim img {
-  width: 25px;
-  height: 25px;
-  object-fit: contain;
-}
-.pet-shop-banner {
-  position: relative;
-  height: clamp(230px, 28cqw, 305px);
-  overflow: hidden;
-  background: #75bce1;
-}
-.pet-shop-banner img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center bottom;
-}
-.pet-shop-caption {
+
+/* ---------- 拾物小铺 ---------- */
+.pet-notice {
   display: flex;
   align-items: center;
-  justify-content: center;
-  max-width: 740px;
-  min-height: 62px;
-  margin: -8px auto 38px;
-  padding: 9px 34px;
-  border: 0 solid transparent;
-  border-image: url('/activity-assets/pet-diary/img_S3Shop_tips_bg.png') 0 50 fill / 0 36px / 0 stretch;
-  color: #b77949;
-  font-size: clamp(13px, 2.1cqw, 21px);
-  font-weight: 800;
-  text-align: center;
+  gap: 8px;
+  margin: 0;
+  padding: 11px 14px;
+  border: 1px solid #eedcbb;
+  border-radius: 12px;
+  background: var(--pet-accent-soft);
+  color: #8a6520;
+  font-size: 12.5px;
+  font-weight: 700;
 }
+
+.pet-notice > svg,
+.pet-notice > .pet-paw {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
 .pet-goods {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 32px 22px;
-  max-width: 950px;
-  margin: 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
 }
-.pet-product {
+
+.pet-goods__item {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 26px 10px 8px;
-  border: 0 solid transparent;
-  border-image: url('/activity-assets/pet-diary/img_S3Shop_rarity_bg_3.png') 50 0 85 fill / 36px 0 54px / 0 stretch;
-  background: none;
-  color: #9f724a;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--pet-ink);
   cursor: pointer;
-  transition: transform 150ms ease;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
 }
-.pet-product--gold {
-  border-image-source: url('/activity-assets/pet-diary/img_S3Shop_rarity_bg_4.png');
+
+.pet-goods__item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(120, 100, 60, 0.1);
 }
-.pet-product:hover {
-  transform: translateY(-3px);
-}
-.pet-product-image {
+
+.pet-goods__thumb {
   display: grid;
+  width: 72px;
+  height: 72px;
   place-items: center;
-  width: 100%;
-  aspect-ratio: 1;
-  overflow: hidden;
-  background: url('/activity-assets/pet-diary/img_S3Shop_icon_bg.png') center / 100% 100%;
+  border: 1px solid #eedcae;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #fdf6e6, #f7ebd5);
 }
-.pet-product-image img {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
+
+.pet-goods__thumb img {
+  width: 46px;
+  height: 46px;
   object-fit: contain;
 }
-.pet-product-name {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  margin: 5px 0;
-  font-size: 14px;
+
+.pet-goods__item strong {
+  font-size: 12.5px;
   font-weight: 800;
   line-height: 1.4;
   text-align: center;
 }
-.pet-price {
+
+.pet-goods__price {
   display: flex;
-  align-items: center;
-  justify-content: center;
   flex-wrap: wrap;
-  min-height: 38px;
-  width: 100%;
-  background: url('/activity-assets/pet-diary/img_S3Shop_rarity_3.png') center / 100% 100%;
-  color: #ff6249;
-  font-size: 19px;
+  justify-content: center;
+  gap: 4px 10px;
+  font-size: 11.5px;
   font-weight: 800;
-  text-shadow:
-    1px 1px #fff8e6,
-    -1px -1px #fff8e6,
-    1px -1px #fff8e6,
-    -1px 1px #fff8e6;
+  color: var(--pet-accent-deep);
+  font-variant-numeric: tabular-nums;
 }
-.pet-product--gold .pet-price {
-  background-image: url('/activity-assets/pet-diary/img_S3Shop_rarity_4.png');
-}
-.pet-price > span {
+
+.pet-goods__price span {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
 }
-.pet-price img {
-  width: 28px;
-  height: 28px;
+
+.pet-goods__price img {
+  width: 16px;
+  height: 16px;
   object-fit: contain;
 }
-.pet-product--sold .pet-product-image {
+
+.pet-goods__sold {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1eee8;
+  color: var(--pet-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.pet-goods__item--sold {
+  filter: grayscale(0.85);
+  opacity: 0.7;
+}
+
+/* ---------- 节令小礼 ---------- */
+.pet-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pet-terms button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 15px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-ink-2);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pet-terms button.is-active {
+  border-color: #c1873a;
+  background: var(--pet-accent-soft);
+  color: var(--pet-accent-deep);
+}
+
+.pet-terms button.is-locked {
   opacity: 0.6;
 }
-.pet-product-sold {
-  position: absolute;
-  top: 30%;
-  left: 50%;
-  padding: 4px 15px;
-  border-radius: 20px;
-  background: #785b42dc;
-  color: #fff9df;
-  transform: translateX(-50%) rotate(-8deg);
-  white-space: nowrap;
+
+.pet-terms button .i-carbon-locked {
+  width: 13px;
+  height: 13px;
 }
-.pet-shop-footer {
-  margin-top: 38px;
-  padding-top: 24px;
-  border-top: 1px dashed #d9b680;
-  text-align: center;
-}
-.pet-shop-footer p {
-  margin: 0 0 16px;
-  color: var(--pet-muted);
-  font-size: 12px;
-}
-.pet-solar {
-  display: flex;
-  flex-direction: column;
-  height: 100cqh;
-  min-height: 540px;
-  padding-bottom: 16px;
-  color: #235674;
-}
-.pet-solar-scene {
-  position: relative;
-  flex: 1;
-  min-height: 320px;
-  overflow: hidden;
-  background: #c1dde5;
-}
-.pet-solar-scene--bailu {
-  background: #8dc5e2;
-}
-.pet-solar-scene > img {
-  position: absolute;
-  object-fit: contain;
-}
-.pet-solar-landscape {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover !important;
-  object-position: center 54%;
-}
-.pet-solar-lettering {
-  position: absolute;
-  top: 25%;
-  right: 27%;
-  display: flex;
-  align-items: flex-start;
+
+.pet-solar__card {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 20px;
+  padding: 18px;
+  border: 1px solid var(--pet-line);
+  border-radius: 16px;
+  background: #fff;
 }
-.pet-solar-lettering img:first-child {
-  width: 95px;
-  height: auto;
+
+.pet-scene {
+  border: 1px solid var(--pet-line-soft);
 }
-.pet-solar-lettering img:last-child {
-  width: 44px;
-  height: auto;
-  margin-top: 145px;
-}
-.pet-term-tabs {
-  position: absolute;
-  top: 140px;
-  left: 30px;
+
+.pet-solar__info {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  min-width: 0;
 }
-.pet-term-tabs button {
+
+.pet-solar__info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.pet-solar__info .pet-button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+/* ---------- 底部栏目 ---------- */
+.pet-nav {
+  flex: none;
+  padding: 6px 10px;
+  border-top: 1px solid var(--pet-line-soft);
+  background: #fff;
+}
+
+.pet-nav__inner {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.pet-nav__inner > button {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 80px;
-  height: 56px;
-  padding: 0;
-  border: 2px solid #c1e2ed;
-  border-radius: 16px;
-  background: #d5ecf4e8;
-  box-shadow: 0 3px 0 #397fa42b;
-  color: #286486;
-  font-size: 17px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.pet-term-tabs button.selected {
-  border-color: #6cacc2;
-  background: #f4fcff;
-  color: #235d78;
-}
-.pet-term-tabs span {
-  font-size: 12px;
-}
-.pet-solar-upcoming {
-  position: absolute;
-  inset: 140px 20% auto;
-  text-align: center;
-}
-.pet-solar-upcoming h2 {
-  margin: 40px 0 12px;
-  font-family: 'KaiTi', serif;
-  font-size: 68px;
-}
-.pet-solar-upcoming p {
-  font-size: 14px;
-}
-.pet-solar-gift {
-  position: relative;
-  flex: none;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 10px 24px;
-  margin-top: 0;
-  padding: 30px 38px;
-  border-top: 1px solid #ffffff80;
-  border-radius: 28px 28px 0 0;
-  color: #315b67;
-  background: #e5eee2;
-}
-.pet-solar-gift h2 {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 800;
-}
-.pet-solar-gift p {
-  margin: 3px 0 0;
-  font-size: 12px;
-  opacity: 0.75;
-}
-.pet-solar-gift > .pet-button {
-  grid-column: 2;
-  grid-row: 1 / 3;
-}
-.pet-inline-rewards {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-.pet-inline-rewards > span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.pet-inline-rewards img {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
-}
-.pet-diary--solar .pet-content {
-  background: #e5eee2;
-}
-.pet-diary--solar .pet-rules {
-  margin-top: 14px;
-  border-color: #c4d9c8;
-  background: #f4f5e7c9;
-}
-.pet-status {
-  flex: none;
-  max-height: 25%;
-  overflow: auto;
-  padding: 8px 12px;
-  background: #fff1d1;
-}
-.pet-message {
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: #edf0d1;
-  color: #6c7d30;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.pet-message + .pet-message {
-  margin-top: 6px;
-}
-.pet-message--error {
-  background: #f7dfca;
-  color: #a35739;
-}
-.pet-message--warning {
-  background: #f8edc9;
-  color: #8b723c;
-}
-.pet-message button {
-  margin-left: 8px;
-  padding: 0;
+  gap: 3px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 4px;
   border: 0;
-  color: inherit;
-  background: none;
-  text-decoration: underline;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--pet-muted);
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.pet-nav__inner > button.is-active {
+  background: var(--pet-accent-soft);
+  color: var(--pet-accent-deep);
+}
+
+.pet-nav__icon {
+  display: block;
+  width: 21px;
+  height: 21px;
+  flex: none;
+}
+
+.pet-nav__badge {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--ui-danger);
+}
+
+/* ---------- 弹窗 ---------- */
+.pet-dialog {
+  width: min(480px, calc(100vw - 28px));
+  max-height: min(86vh, 720px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--pet-line);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pet-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.pet-dialog::backdrop {
+  background: rgba(38, 32, 24, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.pet-dialog__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 54px;
+  padding: 0 12px 0 18px;
+  border-bottom: 1px solid var(--pet-line-soft);
+  background: var(--pet-paper);
+}
+
+.pet-dialog__head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-dialog__close {
+  display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--pet-line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--pet-ink-2);
   cursor: pointer;
 }
-.pet-exchange-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  width: min(450px, calc(100vw - 40px));
-  max-width: none;
-  max-height: calc(100dvh - 44px);
-  margin: 0;
-  padding: 0;
-  transform: translate(-50%, -50%);
-  overflow: visible;
-  border: 9px solid #d59261;
-  border-radius: 28px;
-  color: #89533a;
-  background: #fff0ce;
-  box-shadow:
-    0 6px 0 #a86237,
-    0 24px 70px #30231c40;
-}
-.pet-exchange-dialog::backdrop {
-  background: #242c20a3;
-}
-.pet-record-dialog {
-  width: min(620px, calc(100vw - 40px));
-}
-.pet-record-dialog .pet-dialog-close {
-  padding: 0;
-}
-.pet-record-dialog .pet-dialog-close svg {
-  display: block;
-  width: 26px;
-  height: 26px;
+
+.pet-dialog__close svg {
+  width: 15px;
+  height: 15px;
   fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
+  stroke: currentcolor;
+  stroke-width: 2;
   stroke-linecap: round;
 }
-.pet-exchange-dialog > header {
-  position: relative;
-  margin: -1px -1px 0;
-  padding: 4px 30px 14px;
-  border-radius: 17px 17px 0 0;
-  background: #ce926d;
-  text-align: center;
+
+.pet-dialog__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px 20px;
 }
-.pet-exchange-dialog h2 {
-  margin: 0;
-  color: #fff5e7;
-  font-size: 24px;
-  font-weight: 800;
-}
-.pet-dialog-close {
-  position: absolute;
-  top: -21px;
-  right: -20px;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  padding: 0 0 6px;
-  border: 3px solid #f6c291;
-  border-radius: 45%;
-  color: #fff7df;
-  background: #e39c6b;
-  box-shadow: 0 3px 0 #b5754c;
-  font-size: 44px !important;
-  font-weight: 800 !important;
-  line-height: 1;
-  cursor: pointer;
-}
-.pet-dialog-body {
-  max-height: calc(100dvh - 124px);
-  overflow: auto;
-  padding: 24px;
-  border-radius: 0 0 18px 18px;
-}
-.pet-exchange-product {
+
+.pet-dialog__product {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 24px;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 12px;
+  background: var(--pet-paper-2);
 }
-.pet-exchange-product > img {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
+
+.pet-dialog__product img {
+  width: 56px;
+  height: 56px;
   flex: none;
-  border-radius: 18px;
-  background: #f9e8b9;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #fff;
 }
-.pet-exchange-product h3 {
-  margin: 0 0 8px;
-  font-size: 19px;
+
+.pet-dialog__product div {
+  min-width: 0;
+}
+
+.pet-dialog__product h3 {
+  margin: 0;
+  font-size: 14.5px;
   font-weight: 800;
 }
-.pet-exchange-product p {
-  margin: 0;
-  color: #aa8564;
+
+.pet-dialog__product p {
+  margin: 2px 0 0;
   font-size: 12px;
+  color: var(--pet-ink-2);
 }
-.pet-quantity-label {
-  display: block;
-  margin-bottom: 7px;
-  color: #a5805b;
-  font-size: 12px;
+
+.pet-field {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--pet-ink-2);
 }
+
 .pet-quantity {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px;
-  border: 1px solid #f0d5a1;
-  border-radius: 16px;
-  background: #f7e5bc;
-  box-shadow: inset 0 2px 4px #ae854515;
+  gap: 8px;
 }
+
 .pet-quantity button {
-  display: grid;
-  place-items: center;
   flex: none;
-  min-width: 37px;
-  height: 37px;
-  padding: 0 6px;
-  border: 2px solid #b1a998;
-  border-radius: 9px;
-  color: #fff9ed;
-  background: #868479;
-  box-shadow: 0 3px 0 #655f535e;
-  font-size: 23px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-size: 14px;
   font-weight: 800;
   cursor: pointer;
 }
-.pet-quantity button:last-child {
-  font-size: 12px;
+
+.pet-quantity button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
+
 .pet-quantity input {
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
-  height: 37px;
-  border: 1px solid #dfc691;
-  border-radius: 9px;
-  color: #86613d;
-  background: #fff8e6;
-  text-align: center;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-size: 14px;
   font-weight: 800;
-}
-.pet-exchange-limit {
-  margin: 20px 0 8px;
-  font-size: 13px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.pet-exchange-cost {
+
+.pet-costs {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-height: 31px;
-  color: #ed674a;
-  font-size: 20px;
-  font-weight: 800;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.pet-exchange-cost span {
+
+.pet-costs span {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #eedcbb;
+  border-radius: 999px;
+  background: var(--pet-accent-soft);
+  color: #8a6520;
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
-.pet-exchange-cost img {
-  width: 31px;
-  height: 31px;
+
+.pet-costs img {
+  width: 18px;
+  height: 18px;
   object-fit: contain;
 }
-.pet-exchange-hint {
-  margin: 8px 0 0;
-  text-align: center;
-  color: #aa664c;
-  font-size: 12px;
-}
-.pet-exchange-submit {
+
+.pet-log__tabs {
   display: flex;
-  min-width: 170px;
-  margin: 18px auto 0;
-  font-size: 19px !important;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.pet-dialog-body .pet-message {
-  margin-top: 12px;
+
+.pet-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 10px;
+  background: var(--pet-paper);
+  font-size: 12.5px;
 }
-.pet-diary button:focus-visible,
-.pet-diary summary:focus-visible,
-.pet-diary input:focus-visible,
-.pet-diary select:focus-visible,
-.pet-scroll:focus-visible {
-  outline: 3px solid #749645;
-  outline-offset: 3px;
+
+.pet-log time {
+  font-size: 11.5px;
+  color: var(--pet-muted);
+  font-variant-numeric: tabular-nums;
 }
-@container (max-width: 760px) {
-  .pet-home-top {
-    display: block;
-  }
-  .pet-garden {
-    width: 100%;
-    max-width: 540px;
-    margin: auto;
-  }
-  .pet-gift {
-    max-width: 600px;
-    margin: 28px;
-  }
-  .pet-home-panels {
-    padding: 28px;
-  }
-  .pet-home-bottom {
-    grid-template-columns: 1fr;
-  }
-  .pet-goods {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .pet-stories {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .pet-heading h1 img {
-    width: 230px;
-  }
-  .pet-solar-gift {
-    grid-template-columns: 1fr;
-  }
-  .pet-solar-gift > .pet-button {
-    grid-column: auto;
-    grid-row: auto;
-    justify-self: start;
-    margin-top: 8px;
-  }
+
+.pet-log span {
+  color: var(--pet-ink-2);
 }
-@container (max-width: 520px) {
-  .pet-content {
-    padding-bottom: 20px;
-  }
-  .pet-header {
-    inset: 19px 13px auto;
-    gap: 7px;
-  }
-  .pet-brand,
-  .pet-header-tools {
-    gap: 6px;
-  }
-  .pet-heading h1 img {
-    width: 168px;
-  }
-  .pet-heading h1 {
-    margin-bottom: 7px;
-  }
-  .pet-icon-button {
-    width: 28px;
-    height: 28px;
-  }
-  .pet-countdown {
-    padding: 1px 7px;
-    font-size: 10px;
-  }
-  .pet-refresh {
-    width: 28px;
-    height: 28px;
-    font-size: 12px;
-  }
-  .pet-wallet-menu > summary {
-    min-width: 76px;
-    height: 26px;
-    padding-right: 6px;
-  }
-  .pet-wallet-menu > summary > img {
-    width: 30px;
-    height: 30px;
-  }
-  .pet-wallet-menu > summary > strong {
-    font-size: 12px;
-  }
-  .pet-wallet-menu > summary > span {
-    font-size: 9px;
-  }
-  .pet-wallet {
-    top: 38px;
-    padding: 16px;
-  }
-  .pet-tabs {
-    height: 86px;
-    padding: 0 5px;
-    gap: 0;
-  }
-  .pet-tabs button {
-    padding-bottom: 3px;
-  }
-  .pet-tabs img {
-    width: 70px;
-    height: 70px;
-    max-width: 100%;
-  }
-  .pet-tabs button.selected img {
-    width: 80px;
-    height: 80px;
-    max-width: 100%;
-  }
-  .pet-tabs i {
-    top: 5px;
-    left: calc(50% + 22px);
-  }
-  .pet-dog-plaque {
-    top: 12%;
-    width: 62%;
-  }
-  .pet-dog-plaque h2 {
-    font-size: 16px;
-  }
-  .pet-rarity {
-    font-size: 12px;
-  }
-  .pet-room-shortcuts {
+
+.pet-log strong {
+  color: var(--pet-accent-deep);
+}
+/* ---------- 响应式 ---------- */
+@media (max-width: 1023px) {
+  .pet-hero {
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
-  .pet-room-shortcuts span {
-    font-size: 9px;
+
+  .pet-hero__art {
+    min-height: 170px;
   }
-  .pet-care {
-    bottom: 4%;
+
+  .pet-hero__art > svg {
+    width: 160px;
+    height: 160px;
   }
-  .pet-feed-cost {
-    margin-bottom: 2px;
-    font-size: 14px;
+
+  .pet-solar__card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
-  .pet-feed-cost img {
-    width: 22px;
-    height: 22px;
+}
+
+@media (max-width: 720px) {
+  .pet-content {
+    padding: 14px 14px 20px;
   }
-  .pet-care-note {
-    font-size: 10px;
+
+  .pet-album__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
-  .pet-gift {
-    margin: 24px 16px 0;
-    padding: 25px 22px;
-  }
-  .pet-home-panels {
-    gap: 22px;
-    padding: 26px 16px;
-  }
-  .pet-home-bottom {
-    gap: 22px;
-  }
-  .pet-card {
-    padding: 20px;
-  }
-  .pet-section-title h2 {
-    font-size: 17px;
-  }
-  .pet-section-title > span {
-    font-size: 11px;
-  }
-  .pet-rules {
-    margin-inline: 16px;
-  }
-  .pet-story-banner {
-    height: 210px;
-  }
-  .pet-paper {
-    margin-top: -30px;
-    padding: 55px 15px 28px;
-    border-image-width: 55px 0 20px;
-  }
-  .pet-story-title {
-    margin-bottom: 22px;
-  }
-  .pet-stories {
-    gap: 26px 15px;
-    margin-top: 22px;
-  }
-  .pet-photo-pin {
-    width: 21px;
-    top: -6px;
-    left: -5px;
-  }
-  .pet-story .pet-button {
-    padding: 8px 12px;
-    font-size: 11px;
-  }
-  .pet-caption {
-    height: 42px;
-  }
-  .pet-shop-banner {
-    height: 195px;
-  }
-  .pet-shop-caption {
-    min-height: 43px;
-    padding: 6px 16px;
-    margin: -6px auto 28px;
-    border-image-width: 0 23px;
-    font-size: 12px;
-  }
+
   .pet-goods {
-    gap: 26px 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
-  .pet-product {
-    padding: 15px 5px 6px;
-    gap: 2px;
-    border-image-width: 22px 0 36px;
+
+  .pet-hero {
+    padding: 15px;
   }
-  .pet-product-name {
-    margin: 3px 0;
-    font-size: 10px;
-    line-height: 1.4;
+
+  .pet-hero__art {
+    min-height: 152px;
   }
-  .pet-price {
-    min-height: 28px;
-    font-size: 14px;
+
+  .pet-hero__art > svg {
+    width: 144px;
+    height: 144px;
   }
-  .pet-price img {
+
+  .pet-hero__head h2 {
+    font-size: 19px;
+  }
+
+  .pet-care .pet-button {
+    flex: 1 1 100%;
+  }
+
+  .pet-steal select {
+    flex: 1 1 100%;
+  }
+
+  .pet-steal__preview .pet-button {
+    margin-left: 0;
+  }
+
+  .pet-nav {
+    padding: 6px 8px;
+  }
+
+  .pet-nav__icon {
     width: 20px;
     height: 20px;
   }
-  .pet-shop-footer {
-    margin-top: 28px;
-    padding-top: 20px;
+}
+
+@media (max-width: 520px) {
+  .pet-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .pet-shop-footer p {
-    font-size: 11px;
+
+  .pet-dialog__body {
+    padding: 14px 14px 18px;
   }
-  .pet-shop-footer .pet-button {
-    font-size: 12px;
+
+  .pet-quantity {
+    flex-wrap: wrap;
   }
-  .pet-friend-form {
-    gap: 7px;
+
+  .pet-quantity input {
+    flex: 1 1 72px;
   }
-  .pet-friend-form > .pet-button {
-    padding: 8px;
-    font-size: 12px;
+
+  .pet-quantity button:last-child {
+    flex: 1 1 100%;
   }
-  .pet-log {
-    flex-direction: column;
+}
+
+@media (max-width: 420px) {
+  .pet-header {
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .pet-header__brand {
+    gap: 8px;
+  }
+
+  .pet-title small {
+    display: none;
+  }
+
+  .pet-title h1 {
+    font-size: 16px;
+  }
+
+  .pet-back {
+    justify-content: center;
+    width: 34px;
+    padding: 0;
+  }
+
+  .pet-back__text {
+    display: none;
+  }
+
+  .pet-countdown {
+    height: 30px;
+    padding: 0 9px;
+    font-size: 11.5px;
+  }
+
+  .pet-countdown__label {
+    display: none;
+  }
+
+  .pet-wallet-menu > summary {
+    height: 30px;
+  }
+
+  .pet-nav__inner {
     gap: 4px;
   }
-  .pet-solar-landscape {
-    object-position: center 47%;
-  }
-  .pet-term-tabs {
-    top: 110px;
-    left: 17px;
-    gap: 12px;
-  }
-  .pet-term-tabs button {
-    width: 56px;
-    height: 38px;
-    font-size: 14px;
-  }
-  .pet-solar-lettering {
-    top: 24%;
-    right: 22%;
-    gap: 12px;
-  }
-  .pet-solar-lettering img:first-child {
-    width: 65px;
-  }
-  .pet-solar-lettering img:last-child {
-    width: 30px;
-    margin-top: 110px;
-  }
-  .pet-solar-gift {
-    padding: 24px;
-  }
-  .pet-solar-gift h2 {
-    font-size: 17px;
-  }
-  .pet-inline-rewards {
-    gap: 16px;
-  }
-  .pet-inline-rewards > span {
-    font-size: 11px;
-  }
-  .pet-inline-rewards img {
-    width: 34px;
-    height: 34px;
-  }
-  .pet-exchange-dialog {
-    border-width: 7px;
-  }
-  .pet-dialog-body {
-    padding: 22px 18px;
-  }
-  .pet-exchange-product {
-    gap: 13px;
-  }
-  .pet-exchange-product > img {
-    width: 76px;
-    height: 76px;
-  }
-  .pet-exchange-product h3 {
-    font-size: 17px;
+
+  .pet-reward {
+    width: 88px;
   }
 }
-@container (max-width: 350px) {
-  .pet-heading h1 img {
-    width: 135px;
-  }
-  .pet-header {
-    inset-inline: 11px;
-  }
-  .pet-product-name {
-    font-size: 9px;
-  }
-  .pet-price {
-    font-size: 12px;
-  }
-  .pet-price img {
-    width: 17px;
-    height: 17px;
-  }
-  .pet-growth > span {
-    font-size: 8px;
-  }
-}
-@media (max-width: 1023px) {
-  :global(.page-scroll:has(> .pet-diary)) {
-    padding: 10px 8px calc(90px + env(safe-area-inset-bottom));
-  }
-  .pet-diary.pet-diary {
-    border-radius: 15px;
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
-  .pet-tabs img,
-  .pet-product {
-    transition: none;
+  .pet-diary * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
+}
+
+.pet-empty--tall .activity-spinner {
+  flex: none;
 }
 </style>

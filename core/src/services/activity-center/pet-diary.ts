@@ -141,7 +141,7 @@ function createPetDiaryService(deps: any) {
             seeds: { canClaim: active && isActive(group.seeds?.head) && canClaimSeeds,
                 days: availableSeeds.map(r => ({ day: num(r.unlock_day), claimed: r.claimed === true, claimable: r.claimable === true, rewards: items(r.reward) })) },
             stories: list(state.story?.stories).map(s => { const desc = json(s.selected_desc); return { order: num(s.order), unlocked: s.unlocked === true,
-                claimed: s.claimed === true, animated: s.animated === true, photo: localImage(desc.photo), captionImage: localImage(desc.say), caption: localImage(desc.say) ? '' : String(desc.say || '') }; }),
+                claimed: s.claimed === true, animated: s.animated === true, photo: localImage(desc.photo) }; }),
             charms: { pool: list(battle.charm_daily_pool).map(charmDto), equipped: list(battle.charm_equipped).map(charmDto), all: catalog.ActivityPetTreasureHuntCharm.map(c => charmDto(c.charm_id)),
                 picked: battle.charm_pick_used === true, canChoose: canChooseCharm,
                 freeRefreshRemaining, freeRefreshLimit: refresh.free_refresh_daily_limit,

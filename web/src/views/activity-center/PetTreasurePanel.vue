@@ -12,7 +12,6 @@ const dialog = ref<HTMLDialogElement | null>(null)
 const opened = ref(false)
 const view = ref<'home' | 'queue' | 'logs' | 'charms' | 'choose' | 'rules'>('home')
 const busy = computed(() => !!pending.value || stale.value || !pet.value?.active)
-const art = (name: string) => `/activity-assets/pet-diary/${name}.png${name === 'escort-dog-walk' ? '?v=20260910-full-frame' : ''}`
 const titles = { home: '宝藏护送', queue: '宝藏详情', logs: '护送日志', charms: '锦囊总览', choose: '选择锦囊', rules: '宝藏护送玩法说明' }
 const ready = (t: PetTreasure) => t.status === 3 || (t.status === 2 && t.endTime > 0 && t.endTime <= props.now)
 const treasures = computed(() => [...(pet.value?.treasures || [])].sort((a, b) => a.createdTime - b.createdTime))
@@ -123,20 +122,24 @@ defineExpose({ open })
 </script>
 
 <template>
-  <dialog ref="dialog" class="pet-escort" aria-label="宝藏护送" @close="closed">
+  <dialog ref="dialog" class="escort-dialog" aria-label="宝藏护送" @close="closed">
     <template v-if="pet">
       <header class="escort-header">
-        <button v-if="view !== 'home'" class="escort-round escort-back" aria-label="返回护送" @click="view = 'home'">
+        <button
+          v-if="view !== 'home'"
+          type="button"
+          class="escort-icon-button"
+          aria-label="返回护送首页"
+          @click="view = 'home'"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>
         </button>
-        <img v-if="view === 'home'" :src="art('img_s3Treasure_bg')" alt="宝藏护送" class="escort-title">
-        <h2 v-else>
-          {{ titles[view] }}
-        </h2>
-        <button class="escort-round escort-close" aria-label="关闭宝藏护送" @click="dialog?.close()">
+        <h2>{{ titles[view] }}</h2>
+        <button type="button" class="escort-icon-button" aria-label="关闭宝藏护送" @click="dialog?.close()">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
         </button>
       </header>
+
       <div class="escort-body">
         <p v-if="error" class="escort-feedback escort-error" role="alert">
           {{ error }}
@@ -144,71 +147,69 @@ defineExpose({ open })
         <p v-if="notice" class="escort-feedback" role="status">
           {{ notice }}
         </p>
+
         <nav v-if="view !== 'home' && view !== 'choose'" class="escort-tools" aria-label="护送功能">
-          <button :aria-current="view === 'queue' ? 'page' : undefined" @click="view = 'queue'">
-            <img :src="art('img_s3Treasure_wait')" alt="">待护送 {{ waiting.length }}
+          <button type="button" :aria-current="view === 'queue' ? 'page' : undefined" @click="view = 'queue'">
+            <span class="i-carbon-time" aria-hidden="true" />待护送 {{ waiting.length }}
           </button>
-          <button :aria-current="view === 'logs' ? 'page' : undefined" @click="showLogs">
-            <img :src="art('img_s3Treasure_btn1')" alt="">日志
+          <button type="button" :aria-current="view === 'logs' ? 'page' : undefined" @click="showLogs">
+            <span class="i-carbon-document" aria-hidden="true" />日志
           </button>
-          <button :aria-current="view === 'charms' ? 'page' : undefined" @click="view = 'charms'">
-            <img :src="art('img_s3Treasure_detail')" alt="">锦囊总览
+          <button type="button" :aria-current="view === 'charms' ? 'page' : undefined" @click="view = 'charms'">
+            <span class="i-carbon-star" aria-hidden="true" />锦囊总览
           </button>
         </nav>
+
         <template v-if="view === 'home'">
+          <nav class="escort-tools" aria-label="护送功能">
+            <button type="button" @click="view = 'queue'">
+              <span class="i-carbon-time" aria-hidden="true" />待护送 {{ waiting.length }}
+            </button>
+            <button type="button" @click="showLogs">
+              <span class="i-carbon-document" aria-hidden="true" />日志
+            </button>
+            <button type="button" @click="view = 'charms'">
+              <span class="i-carbon-star" aria-hidden="true" />锦囊总览
+            </button>
+          </nav>
+
           <div class="escort-journey">
-            <section class="escort-scene" :class="{ 'escort-scene--moving': !!current }" aria-label="当前护送">
-              <nav class="escort-tools escort-tools--home" aria-label="护送功能">
-                <button @click="view = 'queue'">
-                  <img :src="art('img_s3Treasure_wait')" alt="">待护送 {{ waiting.length }}
-                </button>
-                <button @click="showLogs">
-                  <img :src="art('img_s3Treasure_btn1')" alt="">日志
-                </button>
-                <button @click="view = 'charms'">
-                  <img :src="art('img_s3Treasure_detail')" alt="">锦囊总览
-                </button>
-              </nav>
-              <div class="escort-time">
-                <h3>{{ current ? '护送中…' : completed.length ? '护送完成' : '空闲中' }}</h3>
-                <div v-if="current" class="escort-progress">
-                  <progress :value="progress" max="100" aria-label="护送进度" />
-                  <span>剩余时间 {{ countdown(current.endTime) }}</span>
+            <div class="escort-stage">
+              <section class="escort-scene" aria-label="当前护送">
+                <PetEscortLandscape :running="opened && !!current" />
+                <div class="escort-time">
+                  <h3>{{ current ? '护送中…' : completed.length ? '护送完成' : '空闲中' }}</h3>
+                  <div v-if="current" class="escort-progress">
+                    <progress :value="progress" max="100" aria-label="护送进度" />
+                    <span>剩余时间 {{ countdown(current.endTime) }}</span>
+                  </div>
+                  <p v-else>
+                    {{ completed.length ? '宝藏已安全抵达，记得领取奖励' : '与成年比熊互动，获得待护送宝藏' }}
+                  </p>
                 </div>
-                <p v-else>
-                  {{ completed.length ? '宝藏已安全抵达，记得领取奖励' : '与成年比熊互动，获得待护送宝藏' }}
-                </p>
-              </div>
-              <PetEscortLandscape :running="opened && !!current" />
+              </section>
               <div v-if="current" class="escort-value">
-                <span>宝藏价值</span><strong><img :src="current.item.image" :alt="current.item.name">{{ current.item.count }}</strong>
+                <span>宝藏价值</span>
+                <strong><img :src="current.item.image" :alt="current.item.name">{{ current.item.count }}</strong>
                 <span>已被挑战：{{ challengeCount(current) }}</span>
               </div>
-              <div v-if="current" class="escort-cart" aria-hidden="true">
-                <img class="escort-box" :src="art('img_s3Treasure_box')" alt="">
-                <img class="escort-wagon" :src="art('img_s3Treasure_a7')" alt="">
-                <picture v-for="side in ['left', 'right']" :key="side" class="escort-wheel" :class="`escort-wheel--${side}`">
-                  <source :srcset="art('img_s3Treasure_a8')" media="(prefers-reduced-motion: reduce)">
-                  <source srcset="/activity-assets/pet-diary/escort-wheel.webp?v=20260910-motion" type="image/webp">
-                  <img :src="art('img_s3Treasure_a8')" alt="">
-                </picture>
-              </div>
-              <picture class="escort-dog" :class="{ 'escort-dog--idle': !current }">
-                <source v-if="current" :srcset="art('escort-dog-walk')" media="(prefers-reduced-motion: reduce)">
-                <source v-if="current" srcset="/activity-assets/pet-diary/escort-dog-walk.webp?v=20260910-full-frame" type="image/webp">
-                <img :src="art(current ? 'escort-dog-walk' : 'escort-dog-idle')" :alt="current ? '比熊护送宝藏' : '比熊等待护送'">
-              </picture>
-            </section>
+            </div>
+
             <section class="escort-charm-current">
               <h3>当前锦囊</h3>
               <article v-for="charm in pet.charms.equipped" :key="charm.id" class="escort-charm-row">
-                <img :src="charm.image" alt=""><div><strong>{{ charm.name }}</strong><p>{{ charm.shortDescription }}</p><small v-if="charm.useLimit >= 0">剩余生效 {{ charm.remaining[0] ?? 0 }} / {{ charm.useLimit }} 次</small></div>
+                <img :src="charm.image" alt="">
+                <div>
+                  <strong>{{ charm.name }}</strong>
+                  <p>{{ charm.shortDescription }}</p>
+                  <small v-if="charm.useLimit >= 0">剩余生效 {{ charm.remaining[0] ?? 0 }} / {{ charm.useLimit }} 次</small>
+                </div>
               </article>
               <p v-if="!pet.charms.equipped.length" class="escort-empty">
                 今日尚未选择锦囊
               </p>
               <div class="escort-charm-actions">
-                <button class="escort-button" :disabled="refreshDisabled" @click="refreshCharms">
+                <button type="button" class="escort-button" :disabled="refreshDisabled" @click="refreshCharms">
                   {{ refreshLabel }}
                 </button>
               </div>
@@ -217,6 +218,7 @@ defineExpose({ open })
               </p>
             </section>
           </div>
+
           <section class="escort-rewards">
             <h3>待领奖励 <span v-if="completed.length">{{ completed.length }} 份</span></h3>
             <div v-if="rewardItems.length" class="escort-reward-items">
@@ -225,14 +227,22 @@ defineExpose({ open })
             <p v-else class="escort-empty">
               暂无宝箱可领
             </p>
-            <button class="escort-button escort-primary" :disabled="busy || !completed.length" @click="diary.operate('openTreasure')">
+            <button type="button" class="escort-button escort-primary" :disabled="busy || !completed.length" @click="diary.operate('openTreasure')">
               {{ pending === 'openTreasure' ? '领取中…' : '领取护送奖励' }}
             </button>
           </section>
-          <button v-if="Number(pet.compensationCount) > 0" class="escort-button escort-compensation" :disabled="busy" @click="diary.operate('compensation')">
+
+          <button
+            v-if="Number(pet.compensationCount) > 0"
+            type="button"
+            class="escort-button escort-compensation"
+            :disabled="busy"
+            @click="diary.operate('compensation')"
+          >
             领取夺宝安慰礼（{{ pet.compensationCount }}）
           </button>
         </template>
+
         <section v-else-if="view === 'queue'" class="escort-list">
           <div class="escort-counts">
             <span>待护送 <b>{{ waiting.length }}</b></span><span>护送中 <b>{{ underway.length }}</b></span><span>待领取 <b>{{ completed.length }}</b></span>
@@ -242,7 +252,10 @@ defineExpose({ open })
             暂无宝藏，与成年比熊互动后再来看看吧
           </p>
           <article v-for="treasure in treasures" :key="treasure.id" class="escort-treasure-card">
-            <header><strong><img :src="art('img_s3Treasure_box')" alt="">宝藏价值 {{ treasure.item.count }} {{ treasure.item.name }}</strong><span>{{ status(treasure) }}</span></header>
+            <header>
+              <strong><span class="escort-head-icon i-carbon-gift" aria-hidden="true" />宝藏价值 {{ treasure.item.count }} {{ treasure.item.name }}</strong>
+              <span>{{ status(treasure) }}</span>
+            </header>
             <dl>
               <div><dt>初始价值</dt><dd>{{ treasure.originalCount }}</dd></div>
               <div><dt>价值变动</dt><dd>{{ difference(treasure) }}</dd></div>
@@ -263,9 +276,11 @@ defineExpose({ open })
             </p>
           </article>
         </section>
+
         <section v-else-if="view === 'logs'" class="escort-list">
           <div class="escort-list-heading">
-            <p>查看好友挑战、宝藏损益及双方锦囊。</p><button class="escort-button" :disabled="!!pending" @click="diary.readExtra('plunder')">
+            <p>查看好友挑战、宝藏损益及双方锦囊。</p>
+            <button type="button" class="escort-button" :disabled="!!pending" @click="diary.readExtra('plunder')">
               刷新日志
             </button>
           </div>
@@ -276,26 +291,42 @@ defineExpose({ open })
             暂无被挑战记录
           </p>
           <article v-for="(entry, index) in plunderRecords || []" :key="`${entry.time}-${index}`" class="escort-log-card">
-            <header><strong>{{ entry.name || '好友' }} <small v-if="entry.level">Lv.{{ entry.level }}</small></strong><time>{{ date(entry.time) }}</time></header>
+            <header>
+              <strong>{{ entry.name || '好友' }} <small v-if="entry.level">Lv.{{ entry.level }}</small></strong>
+              <time>{{ date(entry.time) }}</time>
+            </header>
             <p>{{ entry.fake ? '触发假宝藏' : entry.won ? '对方夺宝成功' : '对方夺宝失败' }}<span v-if="entry.challenge?.id !== '0'"> · {{ entry.challenge?.name }}</span></p>
             <div class="escort-log-change">
               <span>宝藏减少：{{ items(entry.lost) }}</span><span>宝藏增加：{{ items(entry.injected) }}</span>
             </div>
-            <details><summary>挑战详情</summary><p>对方锦囊：{{ charmNames(entry.attackerCharms) }}</p><p>我的锦囊：{{ charmNames(entry.defenderCharms) }}</p><small>对应宝藏：{{ entry.treasureId || '未提供' }}</small></details>
+            <details>
+              <summary>挑战详情</summary><p>对方锦囊：{{ charmNames(entry.attackerCharms) }}</p><p>我的锦囊：{{ charmNames(entry.defenderCharms) }}</p>
+              <small>对应宝藏：{{ entry.treasureId || '未提供' }}</small>
+            </details>
           </article>
         </section>
+
         <section v-else-if="view === 'choose'" class="escort-list escort-choices">
           <template v-if="pet.charms.canChoose">
-            <article v-for="charm in pet.charms.equipped" :key="charm.id" class="escort-charm-row escort-charm-option escort-charm-choice">
+            <article v-for="charm in pet.charms.equipped" :key="charm.id" class="escort-charm-row escort-charm-choice">
               <span class="escort-current-ribbon">当前</span>
-              <img :src="charm.image" alt=""><div><strong>{{ charm.name }}</strong><p>{{ charm.description }}</p><small v-if="charm.useLimit >= 0">剩余生效 {{ charm.remaining[0] ?? 0 }} / {{ charm.useLimit }} 次</small></div>
-              <button class="escort-button" :disabled="busy" @click="chooseCharm(charm.id)">
+              <img :src="charm.image" alt="">
+              <div>
+                <strong>{{ charm.name }}</strong>
+                <p>{{ charm.description }}</p>
+                <small v-if="charm.useLimit >= 0">剩余生效 {{ charm.remaining[0] ?? 0 }} / {{ charm.useLimit }} 次</small>
+              </div>
+              <button type="button" class="escort-button" :disabled="busy" @click="chooseCharm(charm.id)">
                 保留
               </button>
             </article>
-            <article v-for="charm in charmChoices" :key="charm.id" class="escort-charm-row escort-charm-option escort-charm-choice">
-              <img :src="charm.image" alt=""><div><strong>{{ charm.name }}</strong><p>{{ charm.description }}</p></div>
-              <button class="escort-button" :disabled="busy" @click="chooseCharm(charm.id)">
+            <article v-for="charm in charmChoices" :key="charm.id" class="escort-charm-row escort-charm-choice">
+              <img :src="charm.image" alt="">
+              <div>
+                <strong>{{ charm.name }}</strong>
+                <p>{{ charm.description }}</p>
+              </div>
+              <button type="button" class="escort-button" :disabled="busy" @click="chooseCharm(charm.id)">
                 {{ pet.charms.equipped.length ? '替换' : '选择' }}
               </button>
             </article>
@@ -307,32 +338,44 @@ defineExpose({ open })
             本轮选择已完成，返回护送查看当前锦囊。
           </p>
         </section>
+
         <section v-else-if="view === 'charms'" class="escort-list">
           <div class="escort-list-heading">
-            <h3>全部锦囊 · {{ pet.charms.all.length }} 种</h3><button class="escort-button" :disabled="refreshDisabled" @click="refreshCharms">
+            <h3>全部锦囊 · {{ pet.charms.all.length }} 种</h3>
+            <button type="button" class="escort-button" :disabled="refreshDisabled" @click="refreshCharms">
               {{ refreshLabel }}
             </button>
           </div>
           <p v-if="refreshHint" class="escort-note">
             {{ refreshHint }}
           </p>
-          <article v-for="charm in allCharms" :key="charm.id" class="escort-charm-row escort-charm-option">
-            <img :src="charm.image" alt=""><div><strong>{{ charm.name }} <span v-if="pet.charms.equipped.some(c => c.id === charm.id)" class="escort-equipped">当前生效</span></strong><p>{{ charm.description }}</p><small>{{ charm.useLimit < 0 ? '不限生效次数' : `最多生效 ${charm.useLimit} 次` }}</small></div>
+          <article v-for="charm in allCharms" :key="charm.id" class="escort-charm-row">
+            <img :src="charm.image" alt="">
+            <div>
+              <strong>
+                {{ charm.name }}
+                <span v-if="pet.charms.equipped.some(c => c.id === charm.id)" class="escort-equipped">当前生效</span>
+              </strong>
+              <p>{{ charm.description }}</p>
+              <small>{{ charm.useLimit < 0 ? '不限生效次数' : `最多生效 ${charm.useLimit} 次` }}</small>
+            </div>
           </article>
           <p class="escort-note">
             {{ pet.charms.refreshNote }}
           </p>
         </section>
+
         <section v-else class="escort-rules">
           <p v-for="(line, index) in pet.treasureRules" :key="index" :class="{ 'escort-rule-heading': /^[一二三四五六七八九十]+、/.test(line) }">
             {{ line }}
           </p>
         </section>
+
         <footer class="escort-footer">
-          <button class="escort-text" @click="view = view === 'rules' ? 'home' : 'rules'">
+          <button type="button" class="escort-text" @click="view = view === 'rules' ? 'home' : 'rules'">
             {{ view === 'rules' ? '返回护送' : '玩法说明' }}
           </button>
-          <button class="escort-text" :disabled="!!pending" @click="diary.load(diary.accountId)">
+          <button type="button" class="escort-text" :disabled="!!pending" @click="diary.load(diary.accountId)">
             {{ pending === 'load' ? '刷新中…' : '刷新护送状态' }}
           </button>
         </footer>
@@ -342,827 +385,755 @@ defineExpose({ open })
 </template>
 
 <style scoped>
-.pet-escort {
-  width: min(620px, calc(100vw - 24px));
-  max-width: none;
-  max-height: calc(100dvh - 24px);
+.escort-dialog {
+  --pet-accent-deep: #a9762c;
+  --pet-accent-soft: #fbf2e3;
+  --pet-paper: #fffdf8;
+  --pet-paper-2: #fbf5ea;
+  --pet-line: #e9dfcb;
+  --pet-line-soft: #f2ead9;
+  --pet-line-strong: #dfd3ba;
+  --pet-ink: #453d33;
+  --pet-ink-2: #6f6558;
+  --pet-muted: #9a8f80;
+  width: min(760px, calc(100vw - 24px));
+  max-height: min(88vh, 780px);
   padding: 0;
-  border: 7px solid #997654;
-  border-radius: 30px;
-  color: #755333;
-  background: #f8edd2;
-  box-shadow: 0 12px 44px #33291359;
-  font:
-    14px/1.5 'Microsoft YaHei',
-    sans-serif;
-  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--pet-line);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
 }
-.pet-escort::backdrop {
-  background: #332d24a8;
-}
-.pet-escort *,
-.pet-escort *::before,
-.pet-escort *::after {
-  box-sizing: border-box;
-}
-.pet-escort button {
-  font: inherit;
-  cursor: pointer;
-}
-.pet-escort button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-.pet-escort button:focus-visible,
-.pet-escort summary:focus-visible {
-  outline: 3px solid #c1762e;
-  outline-offset: 3px;
-}
-.pet-escort h2,
-.pet-escort h3,
-.pet-escort p {
-  margin: 0;
-}
-.escort-header {
-  position: relative;
+
+.escort-dialog[open] {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 78px;
-  padding: 10px 58px;
-  background: #f3dfa6;
+  flex-direction: column;
 }
+
+.escort-dialog::backdrop {
+  background: rgba(38, 32, 24, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.escort-dialog *,
+.escort-dialog *::before,
+.escort-dialog *::after {
+  box-sizing: border-box;
+}
+
+.escort-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--pet-line-soft);
+  background: var(--pet-paper);
+}
+
 .escort-header h2 {
   flex: 1;
-  font-size: 21px;
-  text-align: center;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.escort-title {
-  width: min(100%, 330px);
-  height: 68px;
-  object-fit: contain;
-}
-.escort-round {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  flex: none;
+
+.escort-icon-button {
   display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 2px solid #d59f65;
-  border-radius: 50%;
-  color: #fff9e6;
-  background: #e7b271;
-  line-height: 1;
+  border: 1px solid var(--pet-line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--pet-ink-2);
+  cursor: pointer;
 }
-.escort-round svg {
-  display: block;
-  width: 22px;
-  height: 22px;
+
+.escort-icon-button svg {
+  width: 15px;
+  height: 15px;
   fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
+  stroke: currentcolor;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.escort-back {
-  left: 13px;
-}
-.escort-close {
-  right: 13px;
-}
+
 .escort-body {
-  position: relative;
-  max-height: calc(100dvh - 126px);
-  padding: 0 16px 14px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.escort-feedback {
-  margin: 10px 0 !important;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #e8ecc9;
-  overflow-wrap: anywhere;
-}
-.escort-error {
-  color: #9c3f2b;
-  background: #f9dcc7;
-}
-.escort-tools {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 13px 0;
-}
-.escort-tools button {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 4px;
-  border: 1px dashed #cbae75;
-  border-radius: 14px;
-  background: #fffae6;
-  color: #7c593a;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.escort-tools button[aria-current] {
-  background: #e7ebc6;
-  border-color: #9fad69;
-}
-.escort-tools img {
-  width: 34px;
-  height: 36px;
-  object-fit: contain;
-}
-.escort-tools--home {
-  position: absolute;
-  top: 62px;
-  right: 4px;
-  z-index: 4;
-  grid-template-columns: 1fr;
-  gap: 9px;
-  width: 60px;
-  padding: 0;
-}
-.escort-tools--home button {
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: #fff9e8;
-  font-size: 12px;
-  text-shadow:
-    0 1px 2px #644932,
-    1px 0 2px #644932,
-    -1px 0 2px #644932;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 18px 20px;
 }
-.escort-tools--home img {
-  width: 39px;
-  height: 41px;
+
+.escort-feedback {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #c4ddcd;
+  border-radius: 10px;
+  background: var(--ui-primary-soft, #e4f1e7);
+  color: #2f6f4b;
+  font-size: 12.5px;
+  font-weight: 700;
 }
+
+.escort-error {
+  border-color: #ecc9cb;
+  background: var(--ui-danger-soft, #fae9ea);
+  color: #a8474e;
+}
+
+/* ---------- 功能入口 ---------- */
+.escort-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.escort-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pet-ink-2);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.escort-tools button[aria-current='page'] {
+  border-color: #c1873a;
+  background: var(--pet-accent-soft);
+  color: var(--pet-accent-deep);
+}
+
+.escort-tools button span {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+/* ---------- 护送主视图 ---------- */
 .escort-journey {
-  padding-bottom: 7px;
-  overflow: hidden;
-  border-radius: 22px 22px 26px 26px;
-  background: #91ab54;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
 }
+
+.escort-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
 .escort-scene {
   position: relative;
-  width: 100%;
-  max-width: 100%;
-  aspect-ratio: 610 / 420;
-  min-height: 300px;
+  height: 296px;
+  min-height: 200px;
   overflow: hidden;
-  background: url('/activity-assets/pet-diary/img_s3Treasure_bg4.png') center / cover;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fdfaf1 0%, #f3ebda 100%);
 }
+
 .escort-time {
   position: relative;
   z-index: 2;
-  width: 72%;
-  margin: auto;
-  padding-top: 12px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(233, 223, 203, 0.9);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(3px);
 }
+
 .escort-time h3 {
-  color: white;
-  text-shadow:
-    0 2px #6c513d,
-    1px 0 #6c513d,
-    -1px 0 #6c513d;
-  font-size: 23px;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 800;
 }
+
 .escort-time p {
-  max-width: 330px;
-  margin: 8px auto;
-  color: #45665b;
+  margin: 0;
+  font-size: 12px;
+  color: var(--pet-ink-2);
 }
+
 .escort-progress {
-  position: relative;
-  max-width: 360px;
-  height: 23px;
-  margin: 6px auto;
-  overflow: hidden;
-  border: 2px solid #795a48;
-  border-radius: 20px;
-  background: #876a55;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
+
+.escort-progress span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--pet-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .escort-progress progress {
   display: block;
   width: 100%;
-  height: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: #f0e6d4;
+  overflow: hidden;
   appearance: none;
-  border: none;
-  background: none;
 }
+
 .escort-progress progress::-webkit-progress-bar {
-  background: transparent;
+  border-radius: 999px;
+  background: #f0e6d4;
 }
+
 .escort-progress progress::-webkit-progress-value {
-  background: #ffcf40;
-  border-radius: 20px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9b767, #d59a4f);
 }
+
 .escort-progress progress::-moz-progress-bar {
-  background: #ffcf40;
-  border-radius: 20px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9b767, #d59a4f);
 }
-.escort-progress span {
-  position: absolute;
-  inset: 0;
-  color: white;
-  font-weight: 700;
-  line-height: 19px;
-  font-size: 12px;
-  text-shadow: 0 1px 2px #543b26;
-}
+
 .escort-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: var(--pet-paper);
+  font-size: 12.5px;
+  color: var(--pet-muted);
+}
+
+.escort-value strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--pet-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.escort-value strong img {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pet-paper-2);
+  object-fit: contain;
+}
+
+/* ---------- 锦囊 ---------- */
+.escort-charm-current {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.escort-charm-current h3,
+.escort-rewards h3,
+.escort-list-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.escort-rewards h3 span {
+  margin-left: 4px;
+  color: var(--pet-accent-deep);
+  font-size: 12px;
+}
+
+.escort-charm-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 12px;
+  background: var(--pet-paper);
+}
+
+.escort-charm-row > img {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 10px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.escort-charm-row > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.escort-charm-row strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.escort-charm-row p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pet-ink-2);
+}
+
+.escort-charm-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--pet-muted);
+}
+
+.escort-charm-row > .escort-button {
+  flex: none;
+  align-self: center;
+}
+
+.escort-charm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.escort-refresh-hint,
+.escort-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pet-muted);
+}
+
+.escort-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--pet-line-strong);
+  border-radius: 12px;
+  color: var(--pet-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.escort-equipped,
+.escort-current-ribbon {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--ui-primary-soft, #e4f1e7);
+  color: var(--ui-primary, #438d63);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.escort-current-ribbon {
   position: absolute;
-  z-index: 2;
-  left: 21%;
-  top: 36%;
+  top: 0;
+  left: 10px;
+  height: 18px;
+  margin: 0;
+  border-radius: 0 0 8px 8px;
+  transform: translateY(0);
+}
+
+.escort-charm-choice {
+  padding-top: 14px;
+}
+
+/* ---------- 奖励 ---------- */
+.escort-rewards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--pet-line);
+  border-radius: 14px;
+  background: var(--pet-paper-2);
+}
+
+.escort-reward-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.escort-reward-items span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--pet-line);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pet-ink-2);
+}
+
+.escort-reward-items img {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  object-fit: contain;
+}
+
+.escort-rewards .escort-button {
+  align-self: flex-start;
+}
+
+/* ---------- 按钮 ---------- */
+.escort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--pet-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--pet-ink);
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    transform 0.12s ease;
+}
+
+.escort-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.escort-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.escort-primary {
+  border-color: #c1873a;
+  background: linear-gradient(180deg, #e2ac60, #cf9243);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(197, 139, 63, 0.26);
+}
+
+.escort-compensation {
+  align-self: flex-start;
+  border-color: #eedcbb;
+  background: var(--pet-accent-soft);
+  color: #8a6520;
+}
+
+.escort-text {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--ui-primary, #438d63);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.escort-text:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- 列表视图 ---------- */
+.escort-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.escort-list > p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pet-ink-2);
+}
+
+.escort-list-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.escort-list-heading p {
+  flex: 1 1 200px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pet-ink-2);
+}
+
+.escort-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.escort-counts span {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 35%;
-  padding: 7px 8px 11px;
-  background: url('/activity-assets/pet-diary/img_s3Treasure_bg1.png') center / 100% 100%;
-  font-size: 12px;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: var(--pet-paper);
+  font-size: 11.5px;
   font-weight: 700;
-  line-height: 1.35;
+  color: var(--pet-muted);
 }
-.escort-value strong {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 22px;
-  line-height: 1.2;
-}
-.escort-value img {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-.escort-cart {
-  position: absolute;
-  left: 29%;
-  bottom: 9%;
-  width: 18%;
-  aspect-ratio: 88 / 82;
-}
-.escort-box {
-  position: absolute;
-  width: 69%;
-  left: 16%;
-  top: 0;
-  transform-origin: center bottom;
-}
-.escort-wagon {
-  position: absolute;
-  width: 100%;
-  bottom: 8.5%;
-}
-.escort-wheel {
-  position: absolute;
-  width: 24%;
-  bottom: 0;
-  display: block;
-  transform-origin: center bottom;
-}
-.escort-wheel img,
-.escort-dog img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.escort-wheel--left {
-  left: 6%;
-}
-.escort-wheel--right {
-  right: 6%;
-}
-.escort-dog {
-  position: absolute;
-  display: block;
-  width: 21%;
-  aspect-ratio: 128 / 132;
-  left: 51%;
-  bottom: 9%;
-}
-.escort-dog--idle {
-  left: 50%;
-  transform: translateX(-50%);
-}
-/* Official Cocos clip: 49 / 60 seconds; keep its held poses and short transitions. */
-.escort-scene--moving .escort-wheel {
-  animation: pet-escort-wheel 0.816667s linear infinite paused;
-}
-.escort-scene--moving .escort-wagon {
-  animation: pet-escort-wagon 0.816667s linear infinite paused;
-}
-.escort-scene--moving .escort-box {
-  animation: pet-escort-box 0.816667s linear infinite paused;
-}
-.pet-escort[open] .escort-scene--moving .escort-wheel,
-.pet-escort[open] .escort-scene--moving .escort-wagon,
-.pet-escort[open] .escort-scene--moving .escort-box {
-  animation-play-state: running;
-}
-@keyframes pet-escort-wheel {
-  0%,
-  22.449%,
-  97.959%,
-  100% {
-    transform: scale(1.1, 0.9);
-  }
-  24.49%,
-  46.939%,
-  73.469%,
-  95.918% {
-    transform: scale(1.05, 1);
-  }
-  48.98%,
-  71.429% {
-    transform: scale(1, 1.1);
-  }
-}
-@keyframes pet-escort-wagon {
-  0%,
-  22.449%,
-  97.959%,
-  100% {
-    transform: translateY(0);
-  }
-  24.49%,
-  46.939%,
-  73.469%,
-  95.918% {
-    transform: translateY(-1.4px);
-  }
-  48.98%,
-  71.429% {
-    transform: translateY(-2.8px);
-  }
-}
-@keyframes pet-escort-box {
-  0%,
-  22.449%,
-  97.959%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  24.49%,
-  46.939% {
-    transform: translateY(-0.2px) scale(1.025, 0.975);
-  }
-  48.98%,
-  71.429% {
-    transform: translateY(-2px) scale(1.05, 0.95);
-  }
-  73.469%,
-  95.918% {
-    transform: translateY(-1.9px) scale(0.958, 1.042);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .escort-scene--moving .escort-wheel,
-  .escort-scene--moving .escort-wagon,
-  .escort-scene--moving .escort-box {
-    animation: none;
-  }
-}
-.escort-charm-current {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  margin: 0 6px;
-  padding: 13px 18px 17px;
-  border: 0;
-  border-radius: 26px;
-  background: #c8d5aa;
-}
-.escort-charm-current::before {
-  position: absolute;
-  inset: 5px;
-  content: '';
-  border: 1px dashed #b4c08d;
-  border-radius: 18px;
-  pointer-events: none;
-}
-.escort-charm-current > h3 {
-  grid-column: 1 / -1;
-  margin-top: -30px !important;
-  justify-self: center;
-  padding: 0 10px;
-  background: transparent;
-  color: #7c8c51;
-  font-weight: 800;
-  -webkit-text-stroke: 5px #d7e3b6;
-  paint-order: stroke fill;
-}
-.escort-charm-current .escort-charm-row strong {
-  font-size: 16px;
-  color: #fffef0;
-  text-shadow:
-    0 1px 2px #627d39,
-    1px 0 #627d39,
-    -1px 0 #627d39;
-}
-.escort-charm-current .escort-charm-row p {
-  color: #a76840;
-  font-weight: 700;
-}
-.escort-charm-current .escort-charm-actions {
-  align-self: center;
-  margin-top: 0;
-}
-.escort-refresh-hint {
-  grid-column: 1 / -1;
-  text-align: right;
-  font-size: 11px;
-  color: #7d704b;
-}
-.escort-charm-current > h3,
-.escort-rewards > h3 {
-  margin-bottom: 10px;
-  color: #78854b;
-  text-align: center;
-  font-size: 18px;
-  letter-spacing: 2px;
-}
-.escort-charm-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.escort-charm-row > img {
-  flex: none;
-  width: 64px;
-  height: 70px;
-  object-fit: contain;
-}
-.escort-charm-row > div {
-  flex: 1;
-  min-width: 0;
-}
-.escort-charm-row strong {
+
+.escort-counts b {
   font-size: 17px;
+  font-weight: 800;
+  color: var(--pet-accent-deep);
+  font-variant-numeric: tabular-nums;
 }
-.escort-charm-row p {
-  margin-top: 4px;
-}
-.escort-charm-row small {
-  color: #8c7b55;
-}
-.escort-charm-actions {
+
+.escort-treasure-card {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 10px;
-}
-.escort-button {
-  border: 2px solid #a87749;
-  border-radius: 24px;
-  padding: 6px 15px;
-  color: #fffbea;
-  background: #b88555;
-  font-weight: 700 !important;
-  white-space: nowrap;
-}
-.escort-choices {
-  padding-top: 8px;
-}
-.escort-charm-choice {
-  position: relative;
-  margin: 14px 0 24px;
-  border: 5px solid #b7956e;
-  border-radius: 22px;
-  background: #fff3d5 url('/activity-assets/pet-diary/img_s3Treasure_bg1.png') center / 100% 100%;
-  box-shadow: 0 4px #97704b55;
-}
-.escort-charm-choice .escort-button {
-  min-width: 72px;
-  padding: 8px 14px;
-  border: 2px dashed #fff7d0;
-  outline: 2px solid #f1cf68;
-  border-radius: 18px;
-  color: #a9702e;
-  background: #ffdc60;
-  box-shadow: 0 3px #b7956e55;
-}
-.escort-current-ribbon {
-  position: absolute;
-  top: -12px;
-  left: -5px;
-  padding: 1px 10px;
-  transform: rotate(-5deg);
-  border: 2px solid #86c69a;
-  color: #fff;
-  background: #4caa77;
-  font-weight: 700;
-}
-.escort-primary {
-  display: block;
-  min-width: 190px;
-  max-width: 100%;
-  min-height: 48px;
-  margin: 14px auto 0;
-  color: #855332;
-  border-color: #d6a750;
-  background: #ffda68;
-  font-size: 18px !important;
-}
-.escort-primary:disabled {
-  background: #b7b29c;
-  border-color: #999681;
-  color: #faf5df;
-  opacity: 0.85;
-}
-.escort-rewards {
-  margin: 22px 0 0;
-  padding: 16px 12px;
-  border: 2px dashed #d7c598;
-  border-radius: 18px;
-}
-.escort-rewards h3 {
-  color: #aa8961;
-}
-.escort-rewards h3 span {
-  font-size: 12px;
-  letter-spacing: 0;
-}
-.escort-reward-items {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.escort-reward-items span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.escort-reward-items img {
-  width: 33px;
-  height: 33px;
-  object-fit: contain;
-}
-.escort-empty {
-  padding: 23px 8px;
-  color: #aa9e7b;
-  text-align: center;
-}
-.escort-compensation {
-  display: block;
-  margin: 14px auto 0;
-}
-.escort-list {
-  padding: 7px 0;
-}
-.escort-list > p {
-  margin-bottom: 15px;
-}
-.escort-counts {
-  display: flex;
-  justify-content: space-around;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 13px 6px;
+  padding: 14px;
+  border: 1px solid var(--pet-line);
   border-radius: 14px;
-  background: #e5e6c1;
+  background: #fff;
 }
-.escort-list-heading {
+
+.escort-treasure-card > header,
+.escort-log-card > header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 9px 0 16px;
-}
-.escort-treasure-card,
-.escort-log-card,
-.escort-charm-option {
-  margin-bottom: 14px;
-  padding: 16px;
-  border: 1px solid #ddcba2;
-  border-radius: 16px;
-  background: #fff9e8;
-}
-.escort-treasure-card header,
-.escort-log-card header {
-  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--pet-muted);
 }
-.escort-treasure-card header strong {
-  display: flex;
+
+.escort-treasure-card > header strong,
+.escort-log-card > header strong {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  color: var(--pet-ink);
+  font-size: 13.5px;
+  font-weight: 800;
 }
-.escort-treasure-card header img {
-  width: 27px;
-  height: 31px;
-  object-fit: contain;
+
+.escort-head-icon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: var(--pet-accent-deep);
 }
-.escort-treasure-card header > span {
-  padding: 2px 9px;
-  background: #e0e8bd;
-  color: #637b3b;
-  border-radius: 15px;
-  font-size: 12px;
-}
+
 .escort-treasure-card dl {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 13px 8px;
-  margin: 15px 0;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  margin: 0;
 }
-.escort-treasure-card dt,
-.escort-treasure-card small {
-  color: #a08d6c;
-  font-size: 12px;
+
+.escort-treasure-card dl > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pet-paper-2);
 }
+
+.escort-treasure-card dt {
+  font-size: 11px;
+  color: var(--pet-muted);
+}
+
 .escort-treasure-card dd {
-  margin: 3px 0 0;
-  font-size: 17px;
-  font-weight: 700;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
-.escort-treasure-card p {
-  margin-top: 8px;
+
+.escort-treasure-card > p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pet-ink-2);
 }
+
+.escort-treasure-card > small {
+  font-size: 11.5px;
+  color: var(--pet-muted);
+}
+
+/* ---------- 日志 ---------- */
+.escort-log-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.escort-log-card > p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pet-ink-2);
+}
+
 .escort-log-card time {
-  font-size: 12px;
-  color: #a08d6c;
+  font-size: 11.5px;
+  color: var(--pet-muted);
+  font-variant-numeric: tabular-nums;
 }
+
 .escort-log-change {
-  display: grid;
-  gap: 4px;
-  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pet-paper-2);
+  font-size: 12px;
+  color: var(--pet-ink-2);
 }
+
 .escort-log-card details {
-  padding-top: 8px;
-  border-top: 1px dashed #decba6;
+  font-size: 12px;
+  color: var(--pet-ink-2);
 }
+
 .escort-log-card summary {
+  color: var(--ui-primary, #438d63);
+  font-weight: 800;
   cursor: pointer;
 }
+
 .escort-log-card details p {
-  margin-top: 8px;
+  margin: 6px 0;
 }
-.escort-log-card small {
-  overflow-wrap: anywhere;
+
+.escort-log-card details small {
+  color: var(--pet-muted);
 }
-.escort-equipped {
-  display: inline-block;
-  padding: 2px 7px;
-  border-radius: 10px;
-  background: #e2ebc6;
-  color: #6d843e;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.escort-note {
-  color: #9f8d70;
-  font-size: 12px;
-}
+
+/* ---------- 说明 ---------- */
 .escort-rules {
-  padding: 5px 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
+
 .escort-rules p {
-  margin: 8px 0;
-  white-space: pre-line;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--pet-ink-2);
 }
+
 .escort-rule-heading {
-  margin-top: 20px !important;
+  margin-top: 4px !important;
+  color: var(--pet-ink) !important;
+  font-size: 13.5px !important;
   font-weight: 800;
-  font-size: 18px;
 }
+
+/* ---------- 页脚 ---------- */
 .escort-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 17px;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--pet-line-soft);
 }
-.escort-text {
-  padding: 5px 0;
-  border: 0;
-  color: #a4845b;
-  background: transparent;
-  font-size: 12px !important;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+
+.escort-dialog button {
+  font-family: inherit;
 }
-@media (max-width: 430px) {
-  .pet-escort {
+
+@media (max-width: 720px) {
+  .escort-dialog {
     width: calc(100vw - 16px);
-    border-width: 5px;
-    border-radius: 23px;
+    max-height: calc(100vh - 24px);
   }
+
   .escort-body {
-    padding: 0 10px 12px;
+    padding: 14px 14px 18px;
   }
-  .escort-header {
-    min-height: 65px;
+
+  .escort-journey {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .escort-header h2 {
-    font-size: 17px;
-  }
-  .escort-title {
-    height: 56px;
-  }
-  .escort-tools {
-    gap: 5px;
-  }
-  .escort-tools button {
-    flex-direction: column;
-    gap: 2px;
-    font-size: 12px;
-  }
-  .escort-tools img {
-    width: 30px;
-    height: 32px;
-  }
-  .escort-tools--home {
-    right: 3px;
-    top: 74px;
-    width: 47px;
-    gap: 8px;
-  }
-  .escort-tools--home img {
-    width: 33px;
-    height: 35px;
-  }
+
   .escort-scene {
-    min-height: 300px;
+    height: 230px;
+    min-height: 190px;
   }
-  .escort-time h3 {
-    font-size: 21px;
+
+  .escort-tools button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
-  .escort-value {
-    left: 17%;
-    width: 42%;
-    top: 33%;
-  }
-  .escort-cart {
-    left: 25%;
-    width: 23%;
-  }
-  .escort-dog {
-    width: 27%;
-    left: 52%;
-  }
-  .escort-dog--idle {
-    left: 50%;
-  }
-  .escort-charm-current {
-    padding: 14px 10px;
-    gap: 8px;
-  }
-  .escort-charm-row {
-    gap: 9px;
-  }
-  .escort-charm-row > img {
-    width: 52px;
-    height: 58px;
-  }
-  .escort-charm-row strong {
-    font-size: 15px;
-  }
-  .escort-charm-row p {
-    font-size: 12px;
-  }
-  .escort-charm-option {
-    flex-wrap: wrap;
-    padding: 13px;
-  }
-  .escort-charm-option > button {
-    margin-left: auto;
-  }
-  .escort-treasure-card {
-    padding: 13px;
+
+  .escort-treasure-card dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 350px) {
-  .escort-charm-current {
-    grid-template-columns: 1fr;
-  }
-  .escort-charm-current .escort-charm-actions {
-    justify-content: flex-end;
+
+@media (prefers-reduced-motion: reduce) {
+  .escort-dialog * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
 </style>

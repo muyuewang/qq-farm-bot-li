@@ -153,7 +153,7 @@ test('successful live feeding capture updates balances, growth and the unlocked 
     assert.equal(result.snapshot.nurture.feedCount,1);
     assert.equal(result.snapshot.stories[0].unlocked,true);
     assert.equal(result.snapshot.stories[0].claimed,false);
-    assert.ok(result.snapshot.stories[0].photo.endsWith('/img_s3PhotoWall_photo0.png'));
+    assert.ok(result.snapshot.stories[0].photo.endsWith('/img_s3PhotoWall_photo0.webp'));
 });
 
 test('user-triggered live story claim capture provides the gift and prevents duplicate claims', async () => {
