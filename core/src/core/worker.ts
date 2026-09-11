@@ -20,6 +20,7 @@ const { runExclusiveAutomationTask } = require('../services/automation-lock');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
+const { createPetDiaryAutomation, isPetDiaryAutomationEnabled } = require('../services/pet-diary-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -374,6 +375,13 @@ function stopMysteryShopTimer(): void {
     workerScheduler.clear('mystery_shop_after_save');
 }
 
+function stopPetDiaryTimer(): void {
+    workerScheduler.clear('pet_diary_initial');
+    workerScheduler.clear('pet_diary_interval');
+    workerScheduler.clear('pet_diary_after_save');
+    workerScheduler.clear('pet_diary_treasure_ready');
+}
+
 
 /**
  * 登录完成后的启动序列。
@@ -411,6 +419,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startUnifiedScheduler();
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
+        startPetDiaryTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }
@@ -439,6 +448,57 @@ function startMysteryShopTimer(): void {
     if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) return;
     workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
+    });
+}
+
+const PET_DIARY_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+async function runPetDiaryTick(): Promise<void> {
+    if (!loginReady) return;
+    const automation = getAutomation() || {};
+    if (!isPetDiaryAutomationEnabled(automation)) return;
+    const { getPetDiary, operatePetDiary } = require('../services/activity-center');
+    const { getServerTimeSec } = require('../utils/utils');
+    const { runPetDiaryAutomation } = createPetDiaryAutomation({
+        getPetDiary,
+        operatePetDiary,
+        getServerTimeSec,
+        log,
+        getFriendsList,
+        getFriend: (gid: string) => require('../services/friend').getFriendLandsDetail(gid, false),
+    });
+    try {
+        const result = await runPetDiaryAutomation({
+            adopt: automation.pet_diary_adopt === true,
+            feed: automation.pet_diary_feed === true,
+            draw: automation.pet_diary_draw === true,
+            story: automation.pet_diary_story_claim === true,
+            seeds: automation.pet_diary_seed_claim === true,
+            solar: automation.pet_diary_solar_claim === true,
+            treasure: automation.pet_diary_treasure_open === true,
+            compensation: automation.pet_diary_compensation_claim === true,
+            battle: automation.pet_diary_battle === true,
+            charm: automation.pet_diary_charm_equip === true,
+        });
+        if (result?.nextTreasureEndMs) {
+            workerScheduler.clear('pet_diary_treasure_ready');
+            workerScheduler.setTimeoutTask('pet_diary_treasure_ready', result.nextTreasureEndMs, () => {
+                runExclusiveAutomationTask('pet_diary_treasure', runPetDiaryTick).catch(() => null);
+            });
+        }
+    } catch (e: any) {
+        log('活动', `萌宠日记自动任务失败: ${e.message}`, { module: 'activity', event: '萌宠日记自动', result: 'error' });
+    }
+}
+
+function startPetDiaryTimer(): void {
+    stopPetDiaryTimer();
+    if (!loginReady || !isPetDiaryAutomationEnabled(getAutomation())) return;
+    workerScheduler.setTimeoutTask('pet_diary_initial', 15000, () => {
+        runExclusiveAutomationTask('pet_diary', runPetDiaryTick).catch(() => null);
+    });
+    workerScheduler.setIntervalTask('pet_diary_interval', PET_DIARY_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('pet_diary', runPetDiaryTick).catch(() => null);
     });
 }
 
@@ -500,6 +560,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             }
 
             startMysteryShopTimer();
+            startPetDiaryTimer();
         }
     }
 

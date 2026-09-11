@@ -261,6 +261,58 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
 
         <section class="farm-card rounded-2xl p-4">
           <div class="mb-4 flex items-start gap-3">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-pink-50 text-pink-600 dark:bg-pink-900/25 dark:text-pink-400">
+              <span class="i-carbon-pets text-xl" />
+            </div>
+            <div>
+              <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                萌宠成长日记
+              </h4>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                领养、投喂、寻宝、手记、种子、节令、宝藏与好友夺宝
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_adopt" label="自动领养比熊" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_feed" label="自动投喂" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_draw" label="自动寻宝" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_story_claim" label="自动领取手记" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_seed_claim" label="自动领取种子礼包" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_solar_claim" label="自动领取节令小礼" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_treasure_open" label="自动领取宝藏" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_compensation_claim" label="自动领取夺宝补偿" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_charm_equip" label="自动选择锦囊" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.pet_diary_battle" label="自动好友夺宝（会掠夺好友）" />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-orange-500 dark:text-orange-400">
+            自动夺宝会消耗挑战书并掠夺好友护送中的宝藏，请确认后开启。
+          </p>
+        </section>
+
+        <section class="farm-card rounded-2xl p-4">
+          <div class="mb-4 flex items-start gap-3">
             <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
               <span class="i-carbon-store text-xl" />
             </div>
