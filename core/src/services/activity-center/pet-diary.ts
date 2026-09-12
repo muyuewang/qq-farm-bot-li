@@ -158,12 +158,16 @@ function createPetDiaryService(deps: any) {
         };
     }
     async function readSnapshot() {
+        const gap = () => new Promise(resolve => setTimeout(resolve, 500));
         const group = await readGroup();
         const warnings: string[] = [];
+        await gap();
         try { const shop = await operate(SHOP_ID, 7); if (!shop.data?.shop) fail('拾物小铺目录缺失'); group.shop = shop.data; }
         catch (error: any) { group.shop = null; warnings.push(`拾物小铺：${error.message}`); }
+        await gap();
         let bag = null; let solar = null;
         try { bag = await balances(); } catch { warnings.push('背包读取失败，消耗资源的操作已暂停'); }
+        await gap();
         try { solar = await getCurrentSolarTerms(); } catch { warnings.push('节令小礼读取失败，请稍后刷新'); }
         return normalize(group, bag, solar, warnings);
     }

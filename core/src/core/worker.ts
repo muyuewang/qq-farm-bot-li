@@ -494,7 +494,7 @@ async function runPetDiaryTick(): Promise<void> {
 function startPetDiaryTimer(): void {
     stopPetDiaryTimer();
     if (!loginReady || !isPetDiaryAutomationEnabled(getAutomation())) return;
-    workerScheduler.setTimeoutTask('pet_diary_initial', 15000, () => {
+    workerScheduler.setTimeoutTask('pet_diary_initial', 60000, () => {
         runExclusiveAutomationTask('pet_diary', runPetDiaryTick).catch(() => null);
     });
     workerScheduler.setIntervalTask('pet_diary_interval', PET_DIARY_CHECK_INTERVAL_MS, () => {
