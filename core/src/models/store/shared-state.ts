@@ -127,6 +127,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     bagSeedPriority: [],
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
+    bagSeedMultiLandReservationEnabled: false,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,

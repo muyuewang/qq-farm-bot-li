@@ -98,6 +98,7 @@ export interface AccountConfig {
   /** seedId -> 允许种植的土地类型。缺 key 视为不限制。 */
   bagSeedLandTypes: Record<string, FertilizerLandType[]>;
   bagSeedFallbackStrategy: BagSeedFallbackStrategy;
+  bagSeedMultiLandReservationEnabled: boolean;
   autoAcceptFriendMinLevel: number;
   autoAcceptRequireOwnLevel: boolean;
   autoAcceptHarvestStealEnabled: boolean;
