@@ -15,6 +15,7 @@ export interface PetInfo {
   level: number
   status: number
   owned: boolean
+  activatable: boolean
   active: boolean
 }
 
@@ -238,6 +239,31 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
+  async function activateDog(requestedAccountId: string, dogId: number) {
+    const id = String(requestedAccountId || '').trim()
+    if (!id || operatingDogId.value)
+      return null
+    operatingDogId.value = dogId
+    error.value = ''
+    try {
+      const res = await api.post('/api/pets/activate', { dogId }, { headers: { 'x-account-id': id }, skipErrorToast: true } as any)
+      if (!res.data?.ok) {
+        error.value = getApiErrorMessage(res.data, '宠物激活失败')
+        return null
+      }
+      if (accountId.value === id)
+        snapshot.value = res.data.data as PetSnapshot
+      return res.data.data
+    }
+    catch (cause: any) {
+      error.value = getApiErrorMessage(cause, '宠物激活失败')
+      return null
+    }
+    finally {
+      operatingDogId.value = 0
+    }
+  }
+
   async function deployDog(requestedAccountId: string, dogId: number) {
     const id = String(requestedAccountId || '').trim()
     if (!id || operatingDogId.value)
@@ -307,6 +333,7 @@ export const usePetStore = defineStore('pet', () => {
     fetchProtectLogs,
     claimDogSkillGifts,
     useDogFood,
+    activateDog,
     deployDog,
     withdrawDog,
     clear,

@@ -22,10 +22,30 @@ const {
     compareHandshakeUrls,
     redactHandshakeCode,
 } = require('../../tools/analyze-keepalive-capture');
+const { loadProto } = require('../dist/utils/proto');
+const { buildHeartbeatBody, buildLoginBody } = require('../dist/utils/network');
+
+// 官方抓包 ws_00001_SEND.bin（会话版本 1.14.0.4_20260911）解密后的 Login 请求体。
+const OFFICIAL_LOGIN_BODY =
+    '180022002a1c0a11312e31342e302e345f3230323630393131120757696e646f777330003a0731323334353637'
+    + '42180a0012001a0022002a086f746865722d717130023a0042004a00';
+// 官方抓包 ws_00114_SEND.bin 解密后的 Heartbeat 请求体（gid 由抓包解出）。
+const OFFICIAL_HEARTBEAT_BODY = '08f9d6ffc5041211312e31342e302e345f32303236303931311800';
+const OFFICIAL_HEARTBEAT_GID = 1220537209;
+
+test('login request body reproduces the official capture byte for byte', async () => {
+    await loadProto();
+    assert.equal(buildLoginBody().toString('hex'), OFFICIAL_LOGIN_BODY);
+});
+
+test('heartbeat request body reproduces the official capture byte for byte', async () => {
+    await loadProto();
+    assert.equal(buildHeartbeatBody(OFFICIAL_HEARTBEAT_GID).toString('hex'), OFFICIAL_HEARTBEAT_BODY);
+});
 
 test('default client version has a release timestamp', () => {
-    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.0.3_20260909');
-    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1789111371648);
+    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.0.4_20260911');
+    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1789352998016);
 });
 
 test('newer timestamp wins when resolving the client version', () => {

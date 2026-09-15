@@ -1450,6 +1450,65 @@ watch(pet, (value) => {
   font-weight: 800;
 }
 
+/* ---------- 今日锦囊 ---------- */
+.pet-charm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--pet-line-soft);
+  border-radius: 12px;
+  background: var(--pet-paper);
+}
+
+.pet-charm > img {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 1px solid var(--pet-line);
+  border-radius: 12px;
+  background: var(--pet-paper-2);
+  object-fit: contain;
+}
+
+.pet-charm > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pet-charm strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.pet-charm strong small {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ui-primary-soft, #e4f1e7);
+  color: var(--ui-primary, #438d63);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.7;
+}
+
+.pet-charm p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pet-ink-2);
+}
+
+.pet-charm > div > span {
+  font-size: 11.5px;
+  color: var(--pet-muted);
+}
+
 /* ---------- 好友夺宝 ---------- */
 .pet-steal {
   display: flex;
@@ -2171,12 +2230,29 @@ watch(pet, (value) => {
   }
 
   .pet-nav {
-    padding: 6px 8px;
+    padding: 4px 6px;
+  }
+
+  .pet-nav__inner {
+    gap: 4px;
+  }
+
+  .pet-nav__inner > button {
+    height: 44px;
+    min-height: 44px;
+    gap: 2px;
+    border-radius: 10px;
+    font-size: 11px;
   }
 
   .pet-nav__icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .pet-nav__badge {
+    top: 7px;
+    margin-left: 6px;
   }
 }
 

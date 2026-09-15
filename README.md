@@ -1,6 +1,6 @@
 # QQ 农场多账号挂机 + Web 面板
 
-基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、作物与超变图鉴、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20260911`，游戏协议版本为 `1.14.0.3_20260909`。
+基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、作物与超变图鉴、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20260914`，游戏协议版本为 `1.14.0.4_20260911`。
 
 > [!IMPORTANT]
 > 首次启动会创建默认管理员 `admin` / `admin`，Web 面板默认端口为 `3007`。对外部署后请立即修改密码，并避免将未加防护的管理端口直接暴露到公网。
@@ -372,6 +372,7 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - [雨落成诗活动协议与实现](docs/weather-activity.md)
 - [神秘商人、游戏商城与购买协议](docs/shop-protocols.md)
 - [好友宠物缓存与每日同步](docs/friend-pet-cache.md)
+- [个人页宠物协议](docs/pet-protocols.md)
 
 ## 免责声明
 

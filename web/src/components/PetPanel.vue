@@ -99,26 +99,46 @@ function canUseFood(food: DogFoodInfo) {
 }
 
 function operationTitle(pet: PetInfo) {
-  if (!pet.owned)
-    return '未获得宠物，无法操作'
-  return pet.active ? '收回当前宠物' : '将该宠物上场'
+  if (pet.owned)
+    return pet.active ? '收回当前宠物' : '将该宠物上场'
+  return pet.activatable ? '消耗背包中的宠物卡激活该宠物' : '没有宠物卡，无法激活'
 }
 
 function dogActionLabel(pet: PetInfo) {
-  if (!pet.owned)
-    return '未获得'
-  return pet.active ? '收回' : '上场'
+  if (pet.owned)
+    return pet.active ? '收回' : '上场'
+  return pet.activatable ? '激活' : '未获得'
 }
 
-function dogActionType(pet: PetInfo): 'default' | 'success' | 'warning' {
+function dogActionType(pet: PetInfo): 'default' | 'info' | 'success' | 'warning' {
   if (!pet.owned)
-    return 'default'
+    return pet.activatable ? 'info' : 'default'
   return pet.active ? 'warning' : 'success'
 }
 
+function dogStatusLabel(pet: PetInfo) {
+  if (pet.active)
+    return '上场中'
+  if (pet.owned)
+    return '已获得'
+  return pet.activatable ? '待激活' : '未获得'
+}
+
+function isPetLocked(pet: PetInfo) {
+  return !pet.owned && !pet.activatable
+}
+
 async function handlePetOperation(pet: PetInfo) {
-  if (!pet.owned || operatingDogId.value)
+  if (operatingDogId.value || isPetLocked(pet))
     return
+  if (!pet.owned) {
+    const activated = await petStore.activateDog(currentAccountId.value, pet.id)
+    if (activated)
+      toastStore.success(`已激活 ${pet.name}`)
+    else
+      toastStore.error(error.value || '激活宠物失败')
+    return
+  }
   const result = pet.active
     ? await petStore.withdrawDog(currentAccountId.value, pet.id)
     : await petStore.deployDog(currentAccountId.value, pet.id)
@@ -309,12 +329,12 @@ watch(currentAccountId, () => {
         <div class="pet-grid">
           <article
             v-for="pet in dogs" :key="pet.id" class="pet-tile"
-            :class="{ 'pet-tile--locked': !pet.owned, 'pet-tile--active': pet.active }"
+            :class="{ 'pet-tile--locked': isPetLocked(pet), 'pet-tile--active': pet.active }"
           >
             <div class="pet-tile__top">
-              <div class="pet-avatar" :class="{ 'pet-avatar--locked': !pet.owned }">
+              <div class="pet-avatar" :class="{ 'pet-avatar--locked': isPetLocked(pet) }">
                 <img :src="pet.image" :alt="pet.name" loading="lazy">
-                <span v-if="!pet.owned" class="pet-avatar__lock i-carbon-locked" />
+                <span v-if="isPetLocked(pet)" class="pet-avatar__lock i-carbon-locked" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
@@ -325,13 +345,13 @@ watch(currentAccountId, () => {
                 </div>
                 <div
                   class="pet-tile__status"
-                  :class="{ 'pet-tile__status--active': pet.active, 'pet-tile__status--owned': pet.owned && !pet.active }"
+                  :class="{ 'pet-tile__status--active': pet.active, 'pet-tile__status--owned': pet.owned && !pet.active, 'pet-tile__status--activatable': pet.activatable }"
                 >
                   <span
                     class="status-dot"
-                    :class="{ 'status-dot--owned': pet.owned, 'status-dot--active': pet.active }"
+                    :class="{ 'status-dot--owned': pet.owned, 'status-dot--active': pet.active, 'status-dot--activatable': pet.activatable }"
                   />
-                  {{ pet.active ? '上场中' : (pet.owned ? '已获得' : '未获得') }}
+                  {{ dogStatusLabel(pet) }}
                 </div>
               </div>
             </div>
@@ -351,8 +371,8 @@ watch(currentAccountId, () => {
             </div>
             <NButton
               size="small" ghost block :type="dogActionType(pet)" class="pet-action"
-              :class="pet.active ? 'pet-action--withdraw' : (pet.owned ? 'pet-action--deploy' : 'pet-action--locked')"
-              :loading="operatingDogId === pet.id" :disabled="!pet.owned || !!operatingDogId"
+              :class="pet.active ? 'pet-action--withdraw' : (pet.owned ? 'pet-action--deploy' : (pet.activatable ? 'pet-action--activate' : 'pet-action--locked'))"
+              :loading="operatingDogId === pet.id" :disabled="isPetLocked(pet) || !!operatingDogId"
               :title="operationTitle(pet)" @click="handlePetOperation(pet)"
             >
               {{ dogActionLabel(pet) }}
@@ -741,6 +761,10 @@ watch(currentAccountId, () => {
   font-weight: 700;
 }
 
+.pet-tile__status--activatable {
+  color: #3d6f9e;
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
@@ -755,6 +779,10 @@ watch(currentAccountId, () => {
 .status-dot--active {
   background: #2f9a55;
   box-shadow: 0 0 0 3px rgba(47, 154, 85, 0.13);
+}
+
+.status-dot--activatable {
+  background: #5b8fc0;
 }
 
 .pet-tile__detail {
@@ -821,6 +849,10 @@ watch(currentAccountId, () => {
 
 :deep(.pet-action--withdraw .n-button__border) {
   border-color: rgba(204, 126, 31, 0.68);
+}
+
+:deep(.pet-action--activate .n-button__border) {
+  border-color: rgba(64, 124, 178, 0.62);
 }
 
 :deep(.pet-action--locked .n-button__border) {

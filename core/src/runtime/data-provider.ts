@@ -153,6 +153,9 @@ function createDataProvider(options: DataProviderOptions) {
         getPetInfo: (accountRef: string) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getPetInfo')
         ),
+        activateDog: (accountRef: string, dogId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'activateDog', dogId)
+        ),
         deployDog: (accountRef: string, dogId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'deployDog', dogId)
         ),

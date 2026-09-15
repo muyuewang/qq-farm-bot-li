@@ -300,6 +300,8 @@ async function loadProto(): Promise<void> {
     // 狗狗
     types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
     types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+    types.ActivateDogRequest = root.lookupType('gamepb.dogpb.ActivateDogRequest');
+    types.ActivateDogReply = root.lookupType('gamepb.dogpb.ActivateDogReply');
     types.DeployDogRequest = root.lookupType('gamepb.dogpb.DeployDogRequest');
     types.DeployDogReply = root.lookupType('gamepb.dogpb.DeployDogReply');
     types.WithdrawDogRequest = root.lookupType('gamepb.dogpb.WithdrawDogRequest');

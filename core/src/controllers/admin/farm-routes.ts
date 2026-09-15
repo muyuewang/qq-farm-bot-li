@@ -423,6 +423,19 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 激活未获得的宠物（DogService.ActivateDog，消耗背包中的宠物卡）。
+    app.post('/api/pets/activate', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const dogId = Math.max(0, Number(req.body?.dogId) || 0);
+            if (!dogId) return res.status(400).json({ ok: false, error: '缺少 dogId' });
+            res.json({ ok: true, data: await ctx.provider.activateDog(id, dogId) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 上场已获得宠物（DogService.DeployDog）。
     app.post('/api/pets/deploy', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);

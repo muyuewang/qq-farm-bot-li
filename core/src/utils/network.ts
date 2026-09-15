@@ -834,23 +834,36 @@ function handleNotify(msg: any): void {
 }
 
 // ============ 登录 ============
-async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void): Promise<void> {
+// 官方 QQ 抓包（会话版本 1.14.0.4_20260911）的字段存在性：device_info 只写 client_version 和
+// sys_software，report_data 显式写出全部空字符串字段，extra 显式为空。protobufjs 按调用方是否
+// 赋值决定是否写默认值，所以这里必须保持字段集合与官方一致，不能只留非默认值。
+function buildLoginBody(): Buffer {
     const di = CONFIG.deviceInfo || {};
-    const body = types.LoginRequest.encode(types.LoginRequest.create({
+    return Buffer.from(types.LoginRequest.encode(types.LoginRequest.create({
         sharer_id: toLong(0),
         sharer_open_id: '',
         device_info: {
             client_version: di.clientVersion || CONFIG.clientVersion,
             sys_software: di.sysSoftware || 'Windows',
-            screen_width: 0,
         },
         share_cfg_id: toLong(0),
         scene_id: '1234567',
         report_data: {
+            callback: '',
+            cd_extend_info: '',
+            click_id: '',
+            clue_token: '',
             minigame_channel: 'other-qq',
             minigame_platid: 2,
+            req_id: '',
+            trackid: '',
         },
-    })).finish();
+        extra: Buffer.alloc(0),
+    })).finish());
+}
+
+async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void): Promise<void> {
+    const body = buildLoginBody();
 
     await sendMsg(context, 'gamepb.userpb.UserService', 'Login', body, {
         expectedErrorCodes: new Set(),
@@ -948,6 +961,14 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
 // ============ 心跳 ============
 const HEARTBEAT_REQUEST_TIMEOUT = 20000;
 
+function buildHeartbeatBody(gid: number): Buffer {
+    return Buffer.from(types.HeartbeatRequest.encode(types.HeartbeatRequest.create({
+        gid: toLong(gid),
+        client_version: CONFIG.clientVersion,
+        field_3: toLong(0),
+    })).finish());
+}
+
 function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.clear('heartbeat_interval');
     lastHeartbeatResponse = Date.now();
@@ -957,11 +978,7 @@ function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
         if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid) return;
 
-        const body = types.HeartbeatRequest.encode(types.HeartbeatRequest.create({
-            gid: toLong(userState.gid),
-            client_version: CONFIG.clientVersion,
-            field_3: toLong(0),
-        })).finish();
+        const body = buildHeartbeatBody(userState.gid);
         try {
             const { body: replyBody } = await sendMsgAsync(
                 'gamepb.userpb.UserService',
@@ -1130,6 +1147,7 @@ function getWs(): WebSocket | null { return ws; }
 
 module.exports = {
     connect, cleanup, getWs,
+    buildLoginBody, buildHeartbeatBody,
     sendMsgAsync, sendMsgNoReply,
     getGatewayLoad, isGatewayIdleForBackground, waitForGatewayIdle,
     GatewayError, GatewayBusyError,

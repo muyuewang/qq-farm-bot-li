@@ -150,12 +150,22 @@ function getBagFoodCounts(bagReply: any): Map<number, number> {
     return counts;
 }
 
-function getDogDefinition(id: number, raw: any, currentDogId: number, skillUsages: any[]): any {
+function getAvailableItemCount(bagReply: any, itemId: number, uid: number): number {
+    return getBagItems(bagReply)
+        .filter((item: any) => normalizeId(item?.id) === itemId && (uid <= 0 || normalizeId(item?.uid) === uid))
+        .filter((item: any) => !(item?.locked === true || item?.locked === 1 || item?.locked === '1'))
+        .reduce((total: number, item: any) => total + Math.max(0, normalizeId(item?.count)), 0);
+}
+
+function getDogDefinition(id: number, raw: any, currentDogId: number, skillUsages: any[], bagReply: any): any {
     const info: any = getItemById(id) || {};
     const price = normalizeId(raw?.price);
     const rarity = normalizeId(info?.rarity);
     const obtainCondition = PET_OBTAIN_CONDITIONS[id] || '游戏内活动或购买获得';
     const owned = normalizeId(raw?.owned ?? raw?.field_7) === 1 || id === currentDogId;
+    // 抓包确认：图鉴 field 6 置 1 与“背包含同 ID 宠物卡”逐项一致，两者取或，
+    // 任一来源缺失时激活按钮仍然可用；已获得的宠物不再提示激活。
+    const activatable = !owned && (normalizeId(raw?.field_6) === 1 || getAvailableItemCount(bagReply, id, 0) > 0);
 
     const skills = getPetSkills(id, info, skillUsages);
 
@@ -172,6 +182,7 @@ function getDogDefinition(id: number, raw: any, currentDogId: number, skillUsage
         level: normalizeId(raw?.level),
         status: normalizeId(raw?.status),
         owned,
+        activatable,
         active: id === currentDogId,
     };
 }
@@ -181,12 +192,12 @@ function buildPetSnapshot(reply: any, bagReply: any): any {
     const skillUsages = getRawSkillUsages(reply);
     const currentDogId = normalizeId(reply?.current_dog_id ?? reply?.currentDogId);
     const byId = new Map<number, any>(rawDogs.map((dog: any) => [normalizeId(dog?.id), dog]));
-    const dogs = PET_IDS.map((id: number) => getDogDefinition(id, byId.get(id) || {}, currentDogId, skillUsages));
+    const dogs = PET_IDS.map((id: number) => getDogDefinition(id, byId.get(id) || {}, currentDogId, skillUsages, bagReply));
 
     // 保留服务端新增的宠物，避免客户端配置尚未更新时静默丢失数据。
     for (const raw of rawDogs) {
         const id = normalizeId(raw?.id);
-        if (id > 0 && !PET_IDS.includes(id)) dogs.push(getDogDefinition(id, raw, currentDogId, skillUsages));
+        if (id > 0 && !PET_IDS.includes(id)) dogs.push(getDogDefinition(id, raw, currentDogId, skillUsages, bagReply));
     }
 
     const bagCounts = getBagFoodCounts(bagReply);
@@ -263,6 +274,30 @@ async function getPetInfo(): Promise<any> {
     return buildPetSnapshot(reply, bagReply);
 }
 
+async function activateDog(dogIdInput: any): Promise<any> {
+    const dogId = normalizeId(dogIdInput);
+    if (!dogId) throw new Error('缺少宠物 ID');
+
+    const before = await getPetInfo();
+    const pet = before.dogs.find((entry: any) => entry.id === dogId);
+    if (!pet) throw new Error('该宠物不在图鉴中');
+    if (pet.owned) throw new Error('该宠物已获得，无需重复激活');
+    if (!pet.activatable) throw new Error('背包中没有该宠物的卡片，无法激活');
+
+    // 真实抓包：DogService.ActivateDog({ field 1: dog_id }) 会消耗背包中的宠物卡，
+    // 并把图鉴项标记为已获得（GetDogInfo field 7），之后才能真正上场。
+    const body: Uint8Array = types.ActivateDogRequest.encode(
+        types.ActivateDogRequest.create({ dog_id: dogId }),
+    ).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.dogpb.DogService', 'ActivateDog', body);
+    const reply = types.ActivateDogReply.decode(replyBody);
+    const snapshot = await getPetInfo();
+    const activated = snapshot.dogs.find((entry: any) => entry.id === dogId);
+    if (!activated?.owned) throw new Error('宠物激活状态未更新，请稍后重试');
+    log('宠物', `激活${pet.name}`, { module: 'dog', event: '激活宠物', result: 'ok', dogId });
+    return { ...snapshot, operation: { type: 'activate', dogId }, reply };
+}
+
 async function deployDog(dogIdInput: any): Promise<any> {
     const dogId = normalizeId(dogIdInput);
     if (!dogId) throw new Error('缺少宠物 ID');
@@ -270,7 +305,8 @@ async function deployDog(dogIdInput: any): Promise<any> {
     const before = await getDogInfo();
     const dog = getRawDogs(before).find((entry: any) => normalizeId(entry?.id) === dogId);
     const owned = normalizeId(dog?.owned ?? dog?.field_7) === 1 || dogId === normalizeId(before?.current_dog_id ?? before?.currentDogId);
-    if (!dog || !owned) throw new Error('未获得该宠物，无法上场');
+    if (!dog) throw new Error('该宠物不在图鉴中');
+    if (!owned) throw new Error(normalizeId(dog?.field_6) === 1 ? '该宠物尚未激活，请先激活' : '未获得该宠物，无法上场');
 
     const body: Uint8Array = types.DeployDogRequest.encode(
         types.DeployDogRequest.create({ dog_id: dogId }),
@@ -299,13 +335,6 @@ async function withdrawDog(): Promise<any> {
     return { ...snapshot, operation: { type: 'withdraw', dogId: currentDogId }, reply };
 }
 
-function getAvailableFoodCount(bagReply: any, itemId: number, uid: number): number {
-    return getBagItems(bagReply)
-        .filter((item: any) => normalizeId(item?.id) === itemId && (uid <= 0 || normalizeId(item?.uid) === uid))
-        .filter((item: any) => !(item?.locked === true || item?.locked === 1 || item?.locked === '1'))
-        .reduce((total: number, item: any) => total + Math.max(0, normalizeId(item?.count)), 0);
-}
-
 async function useDogFood(itemIdInput: any, countInput: any = 1, uidInput: any = 0): Promise<any> {
     const itemId = normalizeId(itemIdInput);
     const count = Math.max(1, Math.trunc(normalizeId(countInput) || 1));
@@ -325,7 +354,7 @@ async function useDogFood(itemIdInput: any, countInput: any = 1, uidInput: any =
         }
 
         const bagReply = await getBag();
-        const available = getAvailableFoodCount(bagReply, itemId, uid);
+        const available = getAvailableItemCount(bagReply, itemId, uid);
         if (available < count) {
             throw new Error(`狗粮可用数量不足：需要 ${count}，当前 ${available}`);
         }
@@ -377,6 +406,7 @@ module.exports = {
     PET_IDS,
     DOG_FOOD_DURATIONS,
     getPetInfo,
+    activateDog,
     deployDog,
     withdrawDog,
     useDogFood,
