@@ -6,7 +6,7 @@ export {};
 const protobuf = require('protobufjs');
 const { sendMsgAsync, getUserState } = require('../../utils/network');
 const { types } = require('../../utils/proto');
-const { toLong, toNum, sleep, randomDelay, logWarn } = require('../../utils/utils');
+const { toLong, toNum, sleep, randomDelay, log, logWarn } = require('../../utils/utils');
 
 // 操作限制更新回调 (由 friend.js 设置)
 let onOperationLimitsUpdate: ((limits: any) => void) | null = null;
@@ -110,6 +110,18 @@ async function fertilizeOne(landId: number, fertilizerId: number = NORMAL_FERTIL
     return reply;
 }
 
+function getGatewayErrorCode(error: any): number {
+    const fromField = toNum(error?.code ?? error?.errorCode ?? error?.error_code);
+    if (fromField > 0) return fromField;
+    const match = String(error?.message || '').match(/\bcode=(\d+)\b/i);
+    return match ? toNum(match[1]) : 0;
+}
+
+function isSkippableFertilizeLandError(error: any): boolean {
+    const code = getGatewayErrorCode(error);
+    return code === 1001024 || code === 1001025;
+}
+
 /**
  * 施肥 - 必须逐块进行，服务器不支持批量
  * 游戏中拖动施肥间隔很短，这里用 50ms
@@ -125,9 +137,19 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
             await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
             successCount++;
         } catch (error) {
-            // 施肥失败（可能肥料不足），停止继续
-            if (propagateErrors) throw error;
-            break;
+            if (isSkippableFertilizeLandError(error)) {
+                log('施肥', `第 ${landId} 块地当前不能施肥，已跳过`, {
+                    module: 'farm',
+                    event: '施肥',
+                    result: 'skip',
+                    landId,
+                    code: getGatewayErrorCode(error),
+                });
+            } else if (propagateErrors) {
+                throw error;
+            } else {
+                break;
+            }
         }
         if (landIds.length > 1) await sleep(50);  // 50ms 间隔
     }
@@ -252,6 +274,7 @@ module.exports = {
     encodeOwnFarmingRequest,
     fertilizeOne,
     fertilize,
+    isSkippableFertilizeLandError,
     fertilizeOrganicLoop,
     removePlant,
     upgradeLand,

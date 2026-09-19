@@ -7,6 +7,9 @@ const {
     analyzeLands,
     classifyHarvestedLandsByMap,
     getCurrentPhase,
+    getNormalFertilizerTargetsFromLands,
+    getOrganicFertilizerTargetsFromLands,
+    filterLandIdsForNormalFertilizer,
     resolveRemovableHarvestedLands,
 } = require('../dist/services/farm/land-analysis');
 
@@ -177,4 +180,42 @@ test('analyzeLands treats morning glory final remaining phase as harvestable', (
         land(8, { id: MORNING_GLORY_ID, season: 1, phases: [{ phase: PlantPhase.GERMINATION, begin_time: now - 10 }] }),
     ]);
     assert.deepEqual(status.harvestable, [8]);
+});
+
+function growingPhases(now = Math.floor(Date.now() / 1000)) {
+    return [
+        { phase: PlantPhase.GERMINATION, begin_time: now - 10 },
+        { phase: PlantPhase.MATURE, begin_time: now + 3600 },
+    ];
+}
+
+test('getNormalFertilizerTargetsFromLands includes only growing lands with remaining normal fertilizer', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const lands = [
+        land(1, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 1, phases: growingPhases(now) }),
+        land(2, { id: MUSHROOM_ID, season: 2, phases: growingPhases(now) }),
+        land(3, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 0, phases: growingPhases(now) }),
+        land(4, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 1, phases: [{ phase: PlantPhase.DEAD, begin_time: now }] }),
+        land(5, { id: RADISH_ID, season: 1, left_inorc_fert_times: 1, phases: [{ phase: PlantPhase.MATURE, begin_time: now - 10 }] }),
+    ];
+    assert.deepEqual(getNormalFertilizerTargetsFromLands(lands), [1]);
+});
+
+test('getOrganicFertilizerTargetsFromLands still includes lands with left_inorc_fert_times 0', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const lands = [
+        land(2, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 0, phases: growingPhases(now) }),
+        land(4, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 1, phases: [{ phase: PlantPhase.DEAD, begin_time: now }] }),
+    ];
+    assert.deepEqual(getOrganicFertilizerTargetsFromLands(lands), [2]);
+});
+
+test('filterLandIdsForNormalFertilizer keeps unknown empties and drops exhausted growing lands', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const lands = [
+        land(1, { id: MUSHROOM_ID, season: 2, left_inorc_fert_times: 1, phases: growingPhases(now) }),
+        land(2, { id: MUSHROOM_ID, season: 2, phases: growingPhases(now) }),
+        land(3, null),
+    ];
+    assert.deepEqual(filterLandIdsForNormalFertilizer([1, 2, 3, 99], lands), [1, 3, 99]);
 });

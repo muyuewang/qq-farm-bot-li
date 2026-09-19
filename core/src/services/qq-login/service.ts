@@ -297,7 +297,7 @@ async function queryLoginStatus(taskId: string): Promise<QqLoginTask> {
     return taskPublic(task);
 }
 
-async function getMiniappCode(taskId: string): Promise<string> {
+async function getMiniappCode(taskId: string): Promise<{ code: string; nickname: string }> {
     loginSettings();
     const task = globalThis._qqLoginTask;
     
@@ -305,7 +305,7 @@ async function getMiniappCode(taskId: string): Promise<string> {
         throw new Error('登录任务不存在或已过期');
     }
     
-    if (task.result) return task.result.code;
+    if (task.result) return { code: task.result.code, nickname: task.result.nickname };
     
     if (task.status !== 'confirmed') {
         throw new Error('请先完成 QQ 扫码确认');
@@ -367,7 +367,7 @@ async function getMiniappCode(taskId: string): Promise<string> {
             console.error('[QQ Login] 登出失败:', error.message);
         });
     
-    return authCode;
+    return { code: authCode, nickname: task.result.nickname };
 }
 
 async function cancelLoginTask(taskId: string): Promise<void> {

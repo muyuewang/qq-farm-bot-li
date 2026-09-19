@@ -81,7 +81,7 @@ message PlantInfo {
     bytes stealers = 14;                       // 偷菜的人 (服务端格式不一致，需手动解析)
     int64 grow_sec = 15;                       // 生长秒数
     bool stealable = 16;                       // 是否可偷
-    int64 left_inorc_fert_times = 17;          // 剩余施肥次数
+    int64 left_inorc_fert_times = 17;          // 本季普通肥剩余可施次数
     int64 left_fruit_num = 18;                 // 剩余果实数
     int64 steal_intimacy_level = 19;           // 偷菜亲密度等级
     repeated int64 mutant_config_ids = 20;     // 变异配置ID

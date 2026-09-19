@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   normalFertilizerDisabled?: boolean
   organicFertilizerDisabled?: boolean
   organicFertilizerLabel?: string
+  normalFertilizerLabel?: string
   showFarmingAction?: boolean
   farmingPending?: boolean
   farmingDisabled?: boolean
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<{
   normalFertilizerDisabled: false,
   organicFertilizerDisabled: false,
   organicFertilizerLabel: '',
+  normalFertilizerLabel: '',
   showFarmingAction: false,
   farmingPending: false,
   farmingDisabled: false,
@@ -197,11 +199,11 @@ function requestFarming(event: Event) {
     emit('farm', props.land)
 }
 
-const organicRemainingText = computed(() => {
-  const left = land.value?.leftInorcFertTimes
-  if (left == null || Number.isNaN(Number(left)))
+const normalRemainingText = computed(() => {
+  const left = Number(land.value?.leftInorcFertTimes)
+  if (!Number.isFinite(left) || left <= 0)
     return ''
-  return `有机剩 ${Math.max(0, Number(left))}`
+  return `普通剩 ${left}`
 })
 
 function interactionEffectBadges(land: any) {
@@ -451,10 +453,10 @@ function markMutantIconFailed(effect: { id?: number }) {
         <span class="i-carbon-wheat" /> 成熟不可偷
       </span>
       <span
-        v-if="showFertilizerActions && organicRemainingText"
+        v-if="showFertilizerActions && normalRemainingText"
         class="inline-flex items-center gap-0.5 rounded-full bg-lime-100 px-1.5 py-0.5 text-[10px] text-lime-800 font-bold dark:bg-lime-900/40 dark:text-lime-300"
       >
-        <span class="i-carbon-chemistry" /> {{ organicRemainingText }}
+        <span class="i-carbon-chemistry" /> {{ normalRemainingText }}
       </span>
     </div>
 
@@ -477,7 +479,7 @@ function markMutantIconFailed(effect: { id?: number }) {
         type="button"
         class="fertilizer-action fertilizer-action--normal"
         :disabled="fertilizerPending || normalFertilizerDisabled"
-        title="对该地块施一次普通化肥"
+        :title="normalFertilizerDisabled ? (normalFertilizerLabel || '本季已施过普通化肥') : '对该地块施一次普通化肥'"
         @click="requestFertilize($event, 'normal')"
       >
         <span v-if="fertilizerPending" class="i-svg-spinners-90-ring-with-bg" />

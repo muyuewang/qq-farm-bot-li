@@ -6,6 +6,7 @@ const QR_IMAGE_BASE = 'https://open.weixin.qq.com/connect/qrcode/';
 const QR_POLL_URL = 'https://long.open.weixin.qq.com/connect/l/qrconnect';
 const CALLBACK_URL = 'https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_oauth';
 const LOGIN_BUFFER_URL = 'https://yybadaccess.3g.qq.com/pc_yyb_auth/pcyyb_get_wx_login_buffer_auth';
+const USER_INFO_URL = 'https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_get_user_info';
 const OAUTH_APP_ID = 'wxd44977328b36e647';
 const USER_AGENT = 'Mozilla/5.0';
 const LOGIN_BUFFER_ACCESS_KEY = 'wgrdg373hy26ww2';
@@ -17,6 +18,7 @@ export interface WxLoginSession {
     uuid: string;
     oauthCode?: string;
     openid?: string;
+    nickname?: string;
     loginBuffer?: string;
 }
 
@@ -77,6 +79,87 @@ function requiredCookie(cookies: Map<string, string>, name: string): string {
     return value;
 }
 
+/**
+ * Keep the OAuth callback parser as a fallback. The authoritative profile is
+ * fetched from pcyyb_get_user_info after the login buffer is issued.
+ */
+function extractNickname(body: Buffer): string | undefined {
+    let callbackData: unknown;
+    try {
+        callbackData = JSON.parse(body.toString('utf8'));
+    } catch {
+        return undefined;
+    }
+
+    if (!callbackData || typeof callbackData !== 'object') return undefined;
+    let userInfo = (callbackData as Record<string, unknown>).user_info;
+    if (typeof userInfo === 'string') {
+        try {
+            userInfo = JSON.parse(userInfo);
+        } catch {
+            return undefined;
+        }
+    }
+    if (!userInfo || typeof userInfo !== 'object') return undefined;
+
+    const info = userInfo as Record<string, unknown>;
+    for (const key of ['nickname', 'nick_name', 'nickName']) {
+        const value = info[key];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return undefined;
+}
+
+function extractUserInfoNickname(data: unknown): string | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const info = data as Record<string, unknown>;
+    for (const key of ['nick_name', 'nickname', 'nickName']) {
+        const value = info[key];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+
+    // Some responses wrap the profile in user_info; the Go endpoint normally
+    // returns nick_name at the top level, but accepting both keeps parsing
+    // compatible with deployed response variants.
+    let nested = info.user_info;
+    if (typeof nested === 'string') {
+        try {
+            nested = JSON.parse(nested);
+        } catch {
+            nested = undefined;
+        }
+    }
+    return extractUserInfoNickname(nested);
+}
+
+async function fetchUserInfo(
+    cookies: Map<string, string>,
+    openid: string,
+    accessToken: string,
+): Promise<unknown> {
+    const timestamp = String(Date.now());
+    const nonce = String(crypto.randomInt(0, 10000));
+    const requestId = String(crypto.randomInt(1000, 10000));
+    const signature = crypto.createHash('md5').update(`${timestamp}${nonce}`).digest('hex');
+    const response = await request(USER_INFO_URL, cookies, {
+        headers: {
+            'Ual-Access-Access-Token': accessToken,
+            'Ual-Access-Login-Type': '2',
+            'Ual-Access-Openid': openid,
+            'Ual-Access-Businessid': 'pc_yyb',
+            'Ual-Access-Guid': 'web',
+            'Ual-Access-Nonce': nonce,
+            'Ual-Access-Requestid': requestId,
+            'Ual-Access-Signature': signature,
+            'Ual-Access-Timestamp': timestamp,
+        },
+    });
+    if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Unable to obtain WeChat user info (HTTP ${response.status})`);
+    }
+    return JSON.parse(response.body.toString('utf8'));
+}
+
 export class WxLoginService {
     async createQrSession(): Promise<{ session: WxLoginSession; qr: Buffer }> {
         const cookies = new Map<string, string>();
@@ -123,6 +206,7 @@ export class WxLoginService {
         const params = new URLSearchParams({ login_type: 'WX', code: session.oauthCode, state: 'web' });
         const callback = await request(`${CALLBACK_URL}?${params}`, session.cookies);
         if (callback.status < 200 || callback.status >= 400) throw new Error(`WeChat authorization callback failed (HTTP ${callback.status})`);
+        const nickname = extractNickname(callback.body);
         const openid = requiredCookie(session.cookies, 'openid');
         const accessToken = requiredCookie(session.cookies, 'accesstoken');
         const payload = JSON.stringify({ extInfo: { listS: { unionid: { value: [openid] }, user_id: { value: [openid] }, access_token: { value: [accessToken] } }, listI: { user_type: { value: [0] } } } });
@@ -137,8 +221,16 @@ export class WxLoginService {
         const data = JSON.parse(response.body.toString('utf8'));
         const loginBuffer = data?.code === 0 ? data?.ext_info?.list_s?.login_buffer?.value?.[0] : '';
         if (typeof loginBuffer !== 'string' || !loginBuffer) throw new Error('WeChat login buffer response is invalid');
+        let userInfoNickname: string | undefined;
+        try {
+            const userInfo = await fetchUserInfo(session.cookies, openid, accessToken);
+            userInfoNickname = extractUserInfoNickname(userInfo);
+        } catch {
+            // The Go implementation treats profile lookup as best effort.
+        }
         session.cookies.clear();
         session.openid = openid;
+        session.nickname = userInfoNickname || nickname;
         session.loginBuffer = loginBuffer;
         return { openid, loginBuffer };
     }
@@ -152,6 +244,7 @@ export class WxLoginService {
         session.cookies.clear();
         session.oauthCode = undefined;
         session.openid = undefined;
+        session.nickname = undefined;
         session.loginBuffer = undefined;
     }
 }

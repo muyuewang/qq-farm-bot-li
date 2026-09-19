@@ -25,11 +25,16 @@ function int64String(value: any): string {
     return /^-?\d+$/.test(text) ? text : '0';
 }
 
+// 本季普通（无机）肥剩余可施次数；proto3 下 0 不落盘，缺省或 <=0 表示本季已施过。
 function getLeftInorcFertTimes(plant: any): number | null {
     if (!plant || !Object.hasOwn(plant, 'left_inorc_fert_times')) {
         return null;
     }
     return toNum(plant.left_inorc_fert_times);
+}
+
+function canApplyNormalFertilizer(plant: any): boolean {
+    return (getLeftInorcFertTimes(plant) || 0) > 0;
 }
 
 function normalizePositiveId(value: any): string {
@@ -481,15 +486,47 @@ function getOrganicFertilizerTargetsFromLands(lands: any[]): number[] {
         if (!currentPhase) continue;
         if (currentPhase.phase === PlantPhase.DEAD) continue;
 
-        // 服务端有该字段时，<=0 说明该地当前不能再施有机肥
-        if (Object.hasOwn(plant, 'left_inorc_fert_times')) {
-            const leftTimes = toNum(plant.left_inorc_fert_times);
-            if (leftTimes <= 0) continue;
-        }
+        targets.push(landId);
+    }
+    return targets;
+}
+
+function getNormalFertilizerTargetsFromLands(lands: any[]): number[] {
+    const list: any[] = Array.isArray(lands) ? lands : [];
+    const targets: number[] = [];
+    for (const land of list) {
+        if (!land || !land.unlocked) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+
+        const plant = land.plant;
+        if (!plant || !plant.phases || plant.phases.length === 0) continue;
+        const currentPhase = getCurrentPhase(plant.phases, false, '', toNum(plant.id));
+        if (!currentPhase) continue;
+        if (currentPhase.phase === PlantPhase.DEAD) continue;
+        if (currentPhase.phase === PlantPhase.MATURE) continue;
+        if (!canApplyNormalFertilizer(plant)) continue;
 
         targets.push(landId);
     }
     return targets;
+}
+
+function filterLandIdsForNormalFertilizer(landIds: number[], lands: any[]): number[] {
+    const ids: number[] = Array.isArray(landIds) ? landIds : [];
+    if (ids.length === 0) return [];
+    const list: any[] = Array.isArray(lands) ? lands : [];
+    if (list.length === 0) return [...ids];
+
+    const applyable = new Set(getNormalFertilizerTargetsFromLands(list));
+    const knownPlanted = new Set<number>();
+    for (const land of list) {
+        const id = toNum(land && land.id);
+        if (!id) continue;
+        const plant = land.plant;
+        if (plant && Array.isArray(plant.phases) && plant.phases.length > 0) knownPlanted.add(id);
+    }
+    return ids.filter(id => applyable.has(id) || !knownPlanted.has(id));
 }
 
 function getFastMatureLands(lands: any[], thresholdSec: number = 300): number[] {
@@ -521,10 +558,6 @@ function getFastMatureLands(lands: any[], thresholdSec: number = 300): number[] 
         const timeToMature = matureBeginTime - nowSec;
 
         if (timeToMature <= threshold && timeToMature >= 0) {
-            if (Object.hasOwn(plant, 'left_inorc_fert_times')) {
-                const leftTimes = toNum(plant.left_inorc_fert_times);
-                if (leftTimes <= 0) continue;
-            }
             targets.push(landId);
         }
     }
@@ -1073,6 +1106,9 @@ module.exports = {
     buildFarmSocialEventDetails,
     buildLandDetail,
     getOrganicFertilizerTargetsFromLands,
+    getNormalFertilizerTargetsFromLands,
+    filterLandIdsForNormalFertilizer,
+    canApplyNormalFertilizer,
     getFastMatureLands,
     getSlaveLandIds,
     hasPlantData,

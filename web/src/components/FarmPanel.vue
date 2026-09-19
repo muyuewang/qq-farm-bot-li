@@ -251,15 +251,13 @@ function isFertilizeCandidate(land: any) {
     && Number(land?.matureInSec) > 0
 }
 
-function canOrganicFertilize(land: any) {
-  const left = land?.leftInorcFertTimes
-  return left == null || Number(left) > 0
+function canNormalFertilize(land: any) {
+  return Number(land?.leftInorcFertTimes) > 0
 }
 
-function organicFertilizerLabel(land: any) {
-  const left = land?.leftInorcFertTimes
-  if (left != null && Number(left) <= 0)
-    return '已无法再施有机肥'
+function normalFertilizerLabel(land: any) {
+  if (!canNormalFertilize(land))
+    return '本季已施过普通化肥'
   return ''
 }
 
@@ -273,8 +271,8 @@ function formatFertilizerRemaining(sec: number) {
 async function handleFertilize(land: any, fertilizerType: FertilizerType) {
   if (!currentAccountId.value || fertilizePending.value || !isFertilizeCandidate(land))
     return
-  if (fertilizerType === 'organic' && !canOrganicFertilize(land)) {
-    toast.info('该地块已无法再施有机肥')
+  if (fertilizerType === 'normal' && !canNormalFertilize(land)) {
+    toast.info('本季已施过普通化肥')
     return
   }
 
@@ -652,9 +650,9 @@ onUnmounted(() => {
               :selection-label="interactionLandSelectionLabel(land)"
               :show-fertilizer-actions="showManualFertilizerButtons && isFertilizeCandidate(land)"
               :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
-              :normal-fertilizer-disabled="fertilizePending"
-              :organic-fertilizer-disabled="fertilizePending || !canOrganicFertilize(land)"
-              :organic-fertilizer-label="organicFertilizerLabel(land)"
+              :normal-fertilizer-disabled="fertilizePending || !canNormalFertilize(land)"
+              :normal-fertilizer-label="normalFertilizerLabel(land)"
+              :organic-fertilizer-disabled="fertilizePending"
               :show-farming-action="isLandFarmingCandidate(land)"
               :farming-pending="farmingLandId === land.id"
               :farming-disabled="farmingLandId !== null || operating"

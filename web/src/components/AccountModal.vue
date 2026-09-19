@@ -39,6 +39,7 @@ let wxFlowVersion = 0
 let wxPollController: AbortController | undefined
 let wxPollInFlight: Promise<void> | undefined
 let wxPollKey = ''
+let wxPendingCode = ''
 const qqTaskId = ref('')
 const qqStatus = ref('')
 const qqError = ref('')
@@ -49,6 +50,8 @@ let qqFlowVersion = 0
 let qqPollController: AbortController | undefined
 let qqPollInFlight: Promise<void> | undefined
 let qqPollKey = ''
+let qqPendingCode = ''
+let qrNameSubmitTimer: ReturnType<typeof setTimeout> | undefined
 
 const wechatQrLoginEnabled = computed(() => loginSettingsLoaded.value && loginSettings.value.wechatQrLogin)
 const qqQrLoginEnabled = computed(() => loginSettingsLoaded.value && loginSettings.value.qqQrLogin)
@@ -89,6 +92,62 @@ async function addAccount(data: any) {
   }
 
   return false
+}
+
+function clearQrNameSubmitTimer() {
+  if (qrNameSubmitTimer) {
+    clearTimeout(qrNameSubmitTimer)
+    qrNameSubmitTimer = undefined
+  }
+}
+
+async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: string) {
+  const name = form.name.trim() || nickname
+  if (platform === 'wx')
+    wxPendingCode = code
+  else
+    qqPendingCode = code
+
+  if (!name) {
+    if (platform === 'wx') {
+      wxStatus.value = '登录授权已完成，等待填写账号备注'
+      wxError.value = '未获取到微信昵称，请填写账号备注'
+    }
+    else {
+      qqStatus.value = '登录授权已完成，等待填写账号备注'
+      qqError.value = '未获取到 QQ 昵称，请填写账号备注'
+    }
+    return
+  }
+
+  form.name = name
+  await submitPendingQrAccount(platform)
+}
+
+async function submitPendingQrAccount(platform: 'wx' | 'qq') {
+  const name = form.name.trim()
+  const code = platform === 'wx' ? wxPendingCode : qqPendingCode
+  if (!name || !code || !props.show || activeLoginTab.value !== `${platform}_qr`)
+    return
+
+  if (platform === 'wx') {
+    wxPendingCode = ''
+    wxError.value = ''
+    wxStatus.value = '正在添加账号...'
+  }
+  else {
+    qqPendingCode = ''
+    qqError.value = ''
+    qqStatus.value = '正在添加账号...'
+  }
+
+  const saved = await addAccount({ name, code, platform, loginType: 'manual' })
+  if (!saved && props.show && activeLoginTab.value === `${platform}_qr`) {
+    if (platform === 'wx')
+      wxPendingCode = code
+    else
+      qqPendingCode = code
+  }
 }
 
 async function loadLoginSettings() {
@@ -206,6 +265,8 @@ function resetWxLogin() {
   wxError.value = ''
   wxQrUrl.value = ''
   wxLoading.value = false
+  wxPendingCode = ''
+  clearQrNameSubmitTimer()
 }
 
 function isWxFlowActive(taskId: string, flowVersion: number) {
@@ -215,19 +276,15 @@ function isWxFlowActive(taskId: string, flowVersion: number) {
 async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
-  if (!form.name.trim()) {
-    wxError.value = '请先填写账号备注'
-    return
-  }
   const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`)
   if (!isWxFlowActive(taskId, flowVersion))
     return
   const code = String(codeResult.data?.data?.code || '').trim()
+  const nickname = String(codeResult.data?.data?.nickname || '').trim()
   if (!code)
     throw new Error('未获取到登录 Code')
 
-  // Deliberately use the same account API and payload as the manual form.
-  await addAccount({ name: form.name, code, platform: 'wx', loginType: 'manual' })
+  await addQrAccount('wx', code, nickname)
 }
 
 async function confirmWxLogin(taskId: string, flowVersion: number) {
@@ -262,11 +319,6 @@ async function pollWxLoginRequest(taskId: string, flowVersion: number) {
       wxStatus.value = '已扫码，请在手机上确认'
     }
     else if (status === 'authorized') {
-      if (!form.name.trim()) {
-        wxError.value = '请先填写账号备注'
-        wxPollTimer = setTimeout(() => void pollWxLogin(taskId, flowVersion), 1200)
-        return
-      }
       stopWxPolling()
       await confirmWxLogin(taskId, flowVersion)
       return
@@ -374,6 +426,8 @@ function resetQqLogin() {
   qqError.value = ''
   qqQrUrl.value = ''
   qqLoading.value = false
+  qqPendingCode = ''
+  clearQrNameSubmitTimer()
 }
 
 function isQqFlowActive(taskId: string, flowVersion: number) {
@@ -398,14 +452,10 @@ async function getQqCodeAndAdd(taskId: string, flowVersion: number) {
       return
     const payload = ensureQqApiOk(response, '获取小程序授权 Code 失败')
     const code = String(payload?.data?.code || '').trim()
+    const nickname = String(payload?.data?.nickname || '').trim()
     if (!code)
       throw new Error('未获取到登录 Code')
-    await addAccount({
-      name: form.name,
-      code,
-      platform: 'qq',
-      loginType: 'manual',
-    })
+    await addQrAccount('qq', code, nickname)
   }
   catch (error: any) {
     if (isQqFlowActive(taskId, flowVersion))
@@ -461,11 +511,6 @@ async function pollQqLoginRequest(taskId: string, flowVersion: number) {
       qqStatus.value = '已扫码，请在手机上确认'
     }
     else if (status === 'confirmed') {
-      if (!form.name.trim()) {
-        qqError.value = '请先填写账号备注'
-        qqPollTimer = setTimeout(() => void pollQqLogin(taskId, flowVersion), 1200)
-        return
-      }
       stopQqPolling()
       await getQqCodeAndAdd(taskId, flowVersion)
       return
@@ -593,6 +638,18 @@ watch(activeLoginTab, (tab) => {
     resetQqLogin()
 })
 
+watch(() => form.name, (name) => {
+  clearQrNameSubmitTimer()
+  if (!name.trim())
+    return
+  const platform = activeLoginTab.value === 'wx_qr'
+    ? 'wx'
+    : activeLoginTab.value === 'qq_qr' ? 'qq' : undefined
+  if (!platform || !(platform === 'wx' ? wxPendingCode : qqPendingCode))
+    return
+  qrNameSubmitTimer = setTimeout(() => void submitPendingQrAccount(platform), 800)
+})
+
 onBeforeUnmount(() => {
   resetWxLogin()
   resetQqLogin()
@@ -670,8 +727,8 @@ onBeforeUnmount(() => {
         <div v-else-if="activeLoginTab === 'wx_qr'" class="space-y-4" role="tabpanel" aria-label="微信扫码登录">
           <BaseInput
             v-model="form.name"
-            label="账号备注（必填）"
-            placeholder="请输入账号备注"
+            label="账号备注（可留空）"
+            placeholder="留空时使用微信昵称"
             class="farm-input"
           />
           <div class="min-h-64 flex flex-col items-center justify-center gap-3">
@@ -700,8 +757,8 @@ onBeforeUnmount(() => {
         <div v-else-if="activeLoginTab === 'qq_qr'" class="space-y-4" role="tabpanel" aria-label="QQ扫码登录">
           <BaseInput
             v-model="form.name"
-            label="账号备注（必填）"
-            placeholder="请输入账号备注"
+            label="账号备注（可留空）"
+            placeholder="留空时使用 QQ 昵称"
             class="farm-input"
           />
           <div class="min-h-64 flex flex-col items-center justify-center gap-3">

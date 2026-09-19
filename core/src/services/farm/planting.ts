@@ -23,6 +23,7 @@ const {
     buildLandMap,
     summarizeLandDetails,
     getOrganicFertilizerTargetsFromLands,
+    filterLandIdsForNormalFertilizer,
     getFastMatureLands,
     normalizeFertilizerLandTypes,
     formatFertilizerLandTypes,
@@ -958,6 +959,21 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let normalTargets: number[] = planted;
     if (landTypeById.size > 0) {
         normalTargets = filterLandIdsByTypes(planted, landTypeById, selectedLandTypes);
+    }
+    if (latestLands.length > 0 && normalTargets.length > 0) {
+        const filtered = filterLandIdsForNormalFertilizer(normalTargets, latestLands);
+        if (filtered.length !== normalTargets.length) {
+            log('施肥', `${reasonLabel}：按普通肥剩余次数筛掉 ${normalTargets.length - filtered.length} 块（还可施 ${filtered.length} 块）`, {
+                module: 'farm',
+                event: eventName,
+                result: 'skip',
+                reason,
+                type: 'normal',
+                count: filtered.length,
+                skipped: normalTargets.length - filtered.length,
+            });
+        }
+        normalTargets = filtered;
     }
 
     let fertilizedNormal: number = 0;
