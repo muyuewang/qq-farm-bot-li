@@ -16,6 +16,10 @@ const {
     getCleanableFarmSocialEventItemIds,
     getNormalFertilizerTargetsFromLands,
     resolveRemovableHarvestedLands,
+    getLandTypeByLevel,
+    normalizeFertilizerLandTypes,
+    filterLandIdsByTypes,
+    ALL_FERTILIZER_LAND_TYPES,
 } = require('./land-analysis');
 const { autoPlantEmptyLands, runFertilizerByConfig } = require('./planting');
 const { checkAndBuyFertilizerBoth } = require('../mall');
@@ -350,9 +354,23 @@ async function runFarmOperation(
         if (isAutomationOn('fertilizer_multi_season') && canApplyNormal) {
             try {
                 const latest = await getAllLands();
-                const targets = getNormalFertilizerTargetsFromLands(
-                    Array.isArray(latest && latest.lands) ? latest.lands : [],
-                );
+                const latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                let targets = getNormalFertilizerTargetsFromLands(latestLands);
+                // 先按施肥土地范围过滤，避免范围外地块每轮都触发"检测到但目标为空"的无效调用。
+                // 过滤规则与 runFertilizerByConfig 内部一致：勾满全部类型视为不限制；确认不了土地类型时跳过本轮。
+                const selectedLandTypes = normalizeFertilizerLandTypes(getAutomation().fertilizer_land_types);
+                if (selectedLandTypes.length > 0 && selectedLandTypes.length < ALL_FERTILIZER_LAND_TYPES.length) {
+                    const landTypeById = new Map<number, string>();
+                    for (const land of latestLands) {
+                        if (!land) continue;
+                        const landId = toNum(land.id);
+                        if (!landId) continue;
+                        landTypeById.set(landId, getLandTypeByLevel(land.level));
+                    }
+                    targets = landTypeById.size > 0
+                        ? filterLandIdsByTypes(targets, landTypeById, selectedLandTypes)
+                        : [];
+                }
                 if (targets.length > 0) {
                     log('施肥', `巡田补肥：检测到 ${targets.length} 块地仍可施普通化肥`, {
                         module: 'farm',
