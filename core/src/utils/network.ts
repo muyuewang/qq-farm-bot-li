@@ -26,6 +26,7 @@ const {
     selectDispatchIndex,
 } = require('./request-priority');
 const { getAmbientRequestClass } = require('./request-context');
+const { TRAFFIC_STATS_LOG_INTERVAL_MS, createTrafficMeter } = require('./traffic-meter');
 const { startAceRuntime, stopAceRuntime } = require('../services/ace');
 
 // ============ 事件发射器 (用于推送通知) ============
@@ -134,6 +135,8 @@ const gatewayTokens = new GatewayTokenProvider();
 let lastHeartbeatResponse = Date.now();
 let lastInboundAt = Date.now();
 let heartbeatMissCount = 0;
+// 出站请求 / 入站帧的按秒记账，只用于日志取证，不参与任何调度判定。
+const trafficMeter = createTrafficMeter();
 
 function settleQueuedRequest(request: QueuedRequest, error?: Error, value?: { body: Buffer; meta: any }): void {
     if (request.settled) return;
@@ -404,6 +407,8 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
     }
     try {
         context.socket.send(encoded);
+        // 出站计数：这是「每秒发多少」的唯一可靠观测点，班次来自在途登记。
+        trafficMeter.recordOutbound(pending ? pending.requestClass : getAmbientRequestClass(), methodName);
     } catch (err: any) {
         if (pending) {
             pendingCallbacks.delete(seq);
@@ -474,7 +479,7 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             const index = requestQueue.indexOf(request);
             if (index >= 0) requestQueue.splice(index, 1);
             const stage = request.seq === null ? 'queued' : 'pending';
-            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`));
+            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, 近60s ${trafficMeter.formatWindow(60000)})`));
             drainRequestQueue();
         });
         if (requestClass === 'background') {
@@ -517,6 +522,10 @@ function handleMessage(data: Buffer): void {
         }
 
         const msgType = meta.message_type;
+
+        // 入站计数：分清「服务端在回包」和「服务端只在推东西」，用于判断链路是慢还是死。
+        if (msgType === 3) trafficMeter.recordInbound('push');
+        else if (msgType === 2) trafficMeter.recordInbound('response');
 
         // Notify
         if (msgType === 3) {
@@ -971,9 +980,20 @@ function buildHeartbeatBody(gid: number): Buffer {
 
 function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.clear('heartbeat_interval');
+    networkScheduler.clear('traffic_stats');
     lastHeartbeatResponse = Date.now();
     lastInboundAt = Date.now();
     heartbeatMissCount = 0;
+
+    // 一分钟一条流量快照：只在真的有过请求时打，空闲连接不产生日志。
+    // 带 gid 是因为多个账号进程的日志写进同一个 combined.log，否则没法按账号统计。
+    networkScheduler.setIntervalTask('traffic_stats', TRAFFIC_STATS_LOG_INTERVAL_MS, () => {
+        if (!isCurrentConnection(context) || context.phase !== 'online') return;
+        const stats = trafficMeter.snapshot(TRAFFIC_STATS_LOG_INTERVAL_MS);
+        if (stats.outbound + stats.responseIn + stats.pushIn === 0) return;
+        log('系统', `Gateway 流量: ${trafficMeter.formatWindow(TRAFFIC_STATS_LOG_INTERVAL_MS)}, `
+            + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, { gid: userState.gid });
+    }, { preventOverlap: true });
 
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
         if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid) return;
@@ -1003,14 +1023,17 @@ function startHeartbeat(context: ConnectionContext): void {
                 '心跳',
                 `心跳未响应 (miss=${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}, `
                 + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
-                + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
+                + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, `
+                + `近60s ${trafficMeter.formatWindow(60000)})`,
+                { gid: userState.gid },
             );
             if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)) return;
 
             log('心跳', '连续心跳超时且连接无入站数据，账号将停止运行...');
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
-                reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
+                reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败，`
+                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}`,
             });
             try { (context.socket as any).terminate(); } catch {}
         }
@@ -1063,6 +1086,7 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
 
     clientSeq = 1;
     serverSeq = 0;
+    trafficMeter.reset();
     const url = new URL(CONFIG.serverUrl);
     url.search = new URLSearchParams({
         platform: CONFIG.platform,
