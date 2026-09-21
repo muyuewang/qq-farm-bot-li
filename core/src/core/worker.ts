@@ -932,6 +932,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getPetInfo':
                 result = await require('../services/pets').getPetInfo();
                 break;
+            case 'activateDog':
+                result = await require('../services/pets').activateDog(args[0]);
+                break;
             case 'deployDog':
                 result = await require('../services/pets').deployDog(args[0]);
                 break;
