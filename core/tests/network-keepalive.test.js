@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    CONFIG,
     DEFAULT_CLIENT_VERSION,
     DEFAULT_CLIENT_VERSION_UPDATED_AT,
     resolveClientVersion,
@@ -32,20 +33,39 @@ const OFFICIAL_LOGIN_BODY =
 // 官方抓包 ws_00114_SEND.bin 解密后的 Heartbeat 请求体（gid 由抓包解出）。
 const OFFICIAL_HEARTBEAT_BODY = '08f9d6ffc5041211312e31342e302e345f32303236303931311800';
 const OFFICIAL_HEARTBEAT_GID = 1220537209;
+// 抓包会话的版本号：固定为抓包当时的值，避免默认版本升级后无法复现官方字节。
+const OFFICIAL_SESSION_VERSION = '1.14.0.4_20260911';
+
+function withSessionVersion(version, run) {
+    const previousVersion = CONFIG.clientVersion;
+    const previousDeviceVersion = CONFIG.deviceInfo.clientVersion;
+    CONFIG.clientVersion = version;
+    CONFIG.deviceInfo.clientVersion = version;
+    try {
+        return run();
+    } finally {
+        CONFIG.clientVersion = previousVersion;
+        CONFIG.deviceInfo.clientVersion = previousDeviceVersion;
+    }
+}
 
 test('login request body reproduces the official capture byte for byte', async () => {
     await loadProto();
-    assert.equal(buildLoginBody().toString('hex'), OFFICIAL_LOGIN_BODY);
+    withSessionVersion(OFFICIAL_SESSION_VERSION, () => {
+        assert.equal(buildLoginBody().toString('hex'), OFFICIAL_LOGIN_BODY);
+    });
 });
 
 test('heartbeat request body reproduces the official capture byte for byte', async () => {
     await loadProto();
-    assert.equal(buildHeartbeatBody(OFFICIAL_HEARTBEAT_GID).toString('hex'), OFFICIAL_HEARTBEAT_BODY);
+    withSessionVersion(OFFICIAL_SESSION_VERSION, () => {
+        assert.equal(buildHeartbeatBody(OFFICIAL_HEARTBEAT_GID).toString('hex'), OFFICIAL_HEARTBEAT_BODY);
+    });
 });
 
 test('default client version has a release timestamp', () => {
-    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.0.4_20260911');
-    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1789352998016);
+    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.1.10_20260916');
+    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1789973734419);
 });
 
 test('newer timestamp wins when resolving the client version', () => {
