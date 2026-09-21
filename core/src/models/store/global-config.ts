@@ -128,10 +128,9 @@ function getLoginSettings(): LoginSettings {
 }
 
 function setLoginSettings(cfg: Partial<LoginSettings> | undefined): LoginSettings {
+    // 地址和 token 由 services/qq-login/service.ts 自己从环境变量与 NapCat token 文件解析，
+    // 这两个表单字段只是可选覆盖，不能当成开启的前置条件。
     const next = normalizeLoginSettings({ ...getLoginSettings(), ...(cfg || {}) });
-    if (next.qqQrLogin && (!next.napCatEndpoint || !next.napCatSignature)) {
-        throw new Error('开启 QQ 扫码登录前，请配置 NapCat 接口地址和接口签名');
-    }
     globalConfig.loginSettings = next;
     saveGlobalConfig();
     return getLoginSettings();
