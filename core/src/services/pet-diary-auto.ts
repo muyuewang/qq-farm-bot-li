@@ -31,20 +31,32 @@ function createPetDiaryAutomation(deps: {
 
     async function runPetDiaryBattles(pet: any): Promise<any> {
         if (!getFriendsList || !getFriend) return pet;
+        // 每一项跳过都要留一行日志：这个开关曾经整轮静默空转，看不出是没次数、没挑战书还是取数取错了。
+        const skip = (text: string) => {
+            log('活动', `萌宠好友夺宝跳过: ${text}`, { module: 'activity', event: '萌宠好友夺宝', result: 'skip' });
+            return pet;
+        };
         const available = (id: string) => pet.balances?.some((item: any) => String(item.id) === id && item.known !== false && Number(item.count) > 0);
-        if (!pet.active || !pet.hunt?.canPlunder || pet.battleCount >= pet.battleLimit || !CHALLENGE_IDS.some(id => available(id))) return pet;
+        if (!pet.active) return skip('活动不在开放时间');
+        if (!pet.hunt?.canPlunder || pet.battleCount >= pet.battleLimit) {
+            return skip(`今日夺宝次数不可用 (${pet.battleCount}/${pet.battleLimit})`);
+        }
+        if (!CHALLENGE_IDS.some(id => available(id))) return skip('背包里没有挑战书 80101/80102/80103');
 
         const friends = [...new Map((await getFriendsList()).map((f: any) => [String(f.gid), f])).values()];
-        if (!friends.length) return pet;
+        if (!friends.length) return skip('好友列表为空');
 
         const budgetMs = 30000;
         const deadline = serverNowMs() + budgetMs;
         let scanned = 0;
         let battles = 0;
+        let malformed = 0;
 
         try {
             for (const friend of friends) {
                 if (serverNowMs() >= deadline) break;
+                // 打过一场之后次数/道具都可能见顶，逐轮复查，别靠进循环前那一次判断。
+                if (!pet.hunt?.canPlunder || pet.battleCount >= pet.battleLimit) break;
                 const gid = String(friend.gid);
                 if (!/^[1-9]\d*$/.test(gid)) continue;
 
@@ -52,10 +64,18 @@ function createPetDiaryAutomation(deps: {
                 try {
                     friendData = await getFriend(gid);
                     scanned++;
-                } catch {
+                } catch (err: any) {
+                    skip(`读取好友 ${gid} 失败，本轮停止: ${err.message}`);
                     break;
                 }
-                if (String(friendData.gid) !== gid) continue;
+                if (!friendData || !Array.isArray(friendData.treasures)) {
+                    malformed++;
+                    continue;
+                }
+                if (String(friendData.gid) !== gid) {
+                    malformed++;
+                    continue;
+                }
 
                 let target: any;
                 let challengeId: string | undefined;
@@ -70,14 +90,25 @@ function createPetDiaryAutomation(deps: {
                 try {
                     const result = await operatePetDiary('battle', { gid, treasureId: target.id, challengeId });
                     battles++;
+                    log('活动', `萌宠好友夺宝 (好友 ${gid}, 宝藏 ${target.item?.name || target.id}, 挑战书 ${challengeId}): ${result?.message || '已发起'}`, {
+                        module: 'activity', event: '萌宠好友夺宝', result: 'success',
+                    });
                     if (!result?.snapshot) break;
                     pet = result.snapshot;
-                } catch {
+                } catch (err: any) {
+                    log('活动', `萌宠好友夺宝失败 (好友 ${gid}): ${err.message}`, {
+                        module: 'activity', event: '萌宠好友夺宝', result: 'error',
+                    });
                     break;
                 }
             }
         } catch {
             // Silently stop on network errors
+        }
+        if (!battles) {
+            log('活动', `萌宠好友夺宝: 扫描 ${scanned} 位好友，没有可夺的护送宝藏${malformed ? `（${malformed} 位好友响应异常）` : ''}`, {
+                module: 'activity', event: '萌宠好友夺宝', result: 'skip',
+            });
         }
         return pet;
     }

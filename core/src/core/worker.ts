@@ -457,7 +457,7 @@ async function runPetDiaryTick(): Promise<void> {
     if (!loginReady) return;
     const automation = getAutomation() || {};
     if (!isPetDiaryAutomationEnabled(automation)) return;
-    const { getPetDiary, operatePetDiary } = require('../services/activity-center');
+    const { getPetDiary, operatePetDiary, getPetDiaryFriend } = require('../services/activity-center');
     const { getServerTimeSec } = require('../utils/utils');
     const { runPetDiaryAutomation } = createPetDiaryAutomation({
         getPetDiary,
@@ -465,7 +465,9 @@ async function runPetDiaryTick(): Promise<void> {
         getServerTimeSec,
         log,
         getFriendsList,
-        getFriend: (gid: string) => require('../services/friend').getFriendLandsDetail(gid, false),
+        // 必须走萌宠自己的好友接口（Operate 47）：它才返回 { gid, treasures[] }。
+        // 农田那个 getFriendLandsDetail 只有 lands/summary/career，夺宝判定会全部落空。
+        getFriend: (gid: string) => getPetDiaryFriend(gid),
     });
     try {
         const result = await runPetDiaryAutomation({
