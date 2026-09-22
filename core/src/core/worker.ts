@@ -803,7 +803,7 @@ function handleTerminalDisconnect(payload: any): void {
     const code = Number(payload?.code) || 0;
     const reason = String(payload?.reason || '连接已断开');
     const phase = String(payload?.phase || 'unknown');
-    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`);
+    log('系统', `连接已断开，本进程不再复用旧 Code 重连（是否用原 Code 重启由主进程决定）(source=${source}, code=${code}, phase=${phase})`);
     saveStats();
     quiesceBot(`连接断开: ${source}`);
     sendToMaster({

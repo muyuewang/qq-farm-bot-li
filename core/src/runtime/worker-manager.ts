@@ -2,6 +2,10 @@ export {};
 const { createScheduler } = require('../services/scheduler');
 
 const DEFAULT_API_CALL_TIMEOUT_MS = 10000;
+// 掉线后先用原 Code 把账号进程重启一次，试不动才发下线提醒交人工。
+const DEFAULT_CODE_RETRY_DELAY_MS = 3000;
+// 同一个 Code 在这个窗口内只试一次，避免网络抖动变成反复登录风暴。
+const DEFAULT_CODE_RETRY_MIN_INTERVAL_MS = 600000;
 // 好友现场天气需要逐个 Enter/Leave，单批最多 5 位好友；
 // 好友列表只读缓存或拉一次名单，给的余量少一些。
 const API_CALL_TIMEOUTS_MS: Record<string, number> = {
@@ -33,6 +37,9 @@ interface WorkerManagerOptions {
     deleteAccount: (id: string) => void;
     onStatusSync?: (accountId: string, status: any, accountName?: string) => void;
     onWorkerLog?: (entry: any, accountId: string, accountName?: string) => void;
+    // 掉线自动重试的节拍，默认取上面的常量（单测里会压到毫秒级）。
+    codeRetryDelayMs?: number;
+    codeRetryMinIntervalMs?: number;
 }
 
 function createWorkerManager(options: WorkerManagerOptions) {
@@ -56,9 +63,29 @@ function createWorkerManager(options: WorkerManagerOptions) {
         deleteAccount,
         onStatusSync,
         onWorkerLog,
+        codeRetryDelayMs = DEFAULT_CODE_RETRY_DELAY_MS,
+        codeRetryMinIntervalMs = DEFAULT_CODE_RETRY_MIN_INTERVAL_MS,
     } = options;
     const managerScheduler = createScheduler('worker_manager');
     const useThreadRuntime = runtimeMode === 'thread' && !(processRef as any).pkg && typeof WorkerThread === 'function';
+    // 每个账号记一次「用哪个 Code 试过重启、什么时候试的」。这里必须放在 manager 而不是 worker 上：
+    // 重启会把 workers[accountId] 整个换成新对象，挂在 worker 上的标记跟着就没了。
+    const codeRetryStates = new Map<string, { code: string; at: number }>();
+
+    /**
+     * 能不能拿原 Code 再试一次。只认「会话已经建立起来、之后被外侧拆掉」这一类掉线：
+     * 握手阶段就被拒（400 / phase=connecting）说明 Code 本身无效，重发只会再吃一个 400；
+     * 被别的终端踢掉走的是 account_kicked，重试等于和真人抢登录。
+     */
+    function shouldRetryWithStoredCode(accountId: string, account: any, phase: string, handshakeCode: number): boolean {
+        if (phase !== 'online') return false;
+        if (handshakeCode === 400) return false;
+        const code = String(account && account.code ? account.code : '');
+        if (!code) return false;
+        const rec = codeRetryStates.get(accountId);
+        if (rec && rec.code === code && Date.now() - rec.at < codeRetryMinIntervalMs) return false;
+        return true;
+    }
 
     function createThreadWorker(account: any): any {
         const workerOptions: any = {
@@ -125,6 +152,9 @@ function createWorkerManager(options: WorkerManagerOptions) {
             name: account.name,
             nick: account.nick || '',
             avatar: account.avatar || '',
+            // 掉线自动重试用的是这份快照（原 Code），不是账本里可能已被改过的最新对象；
+            // 真换了新 Code 会走 restartWorker→startWorker，引用自然跟着换新。
+            accountRef: account,
             stopping: false,
             disconnectedSince: 0,
             autoDeleteTriggered: false,
@@ -185,6 +215,9 @@ function createWorkerManager(options: WorkerManagerOptions) {
 
     function stopWorker(accountId: string): void {
         const worker = workers[accountId];
+        // 面板上的手动停止 / 删除账号都要作废待执行的原 Code 重试，
+        // 否则 3 秒后会把用户刚停掉（甚至删掉）的账号又拉起来。
+        managerScheduler.clear(`code_retry_${accountId}`);
         if (!worker) return;
 
         const proc = worker.process;
@@ -388,6 +421,34 @@ function createWorkerManager(options: WorkerManagerOptions) {
                     try { req.reject(new Error('账号连接已断开')); } catch {}
                 }
                 worker.requests.clear();
+            }
+            // 先用原 Code 重启试一次，这一次不发下线提醒——提醒的语义是「需要人工」，
+            // 真试不动了再走下面的老路径发。
+            if (!worker.stopping && shouldRetryWithStoredCode(accountId, worker.accountRef, phase, code)) {
+                const retryAccount = worker.accountRef;
+                const retryCode = String(retryAccount.code || '');
+                codeRetryStates.set(accountId, { code: retryCode, at: Date.now() });
+                log('系统', `账号 ${worker.name} 连接已断开，先用原 Code 重启试一次 (source=${source}, code=${code}, phase=${phase})`, {
+                    accountId: String(accountId),
+                    accountName: worker.name,
+                    source,
+                    code,
+                    phase,
+                });
+                addAccountLog(
+                    'disconnect_retry',
+                    `账号 ${worker.name} 连接已断开，先用原 Code 重启试一次`,
+                    accountId,
+                    worker.name,
+                    { source, code, reason, phase },
+                );
+                stopWorker(accountId);
+                managerScheduler.setTimeoutTask(`code_retry_${accountId}`, codeRetryDelayMs, () => {
+                    if (workers[accountId]) return;
+                    log('系统', `账号 ${worker.name} 用原 Code 重启`, { accountId: String(accountId), accountName: worker.name });
+                    restartWorker(retryAccount);
+                });
+                return;
             }
             log('系统', `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`, {
                 accountId: String(accountId),
