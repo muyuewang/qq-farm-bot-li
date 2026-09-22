@@ -27,6 +27,7 @@ const {
 } = require('./request-priority');
 const { getAmbientRequestClass } = require('./request-context');
 const { TRAFFIC_STATS_LOG_INTERVAL_MS, createTrafficMeter } = require('./traffic-meter');
+const { createStallProbe } = require('./stall-probe');
 const { startAceRuntime, stopAceRuntime } = require('../services/ace');
 
 // ============ 事件发射器 (用于推送通知) ============
@@ -137,6 +138,8 @@ let lastInboundAt = Date.now();
 let heartbeatMissCount = 0;
 // 出站请求 / 入站帧的按秒记账，只用于日志取证，不参与任何调度判定。
 const trafficMeter = createTrafficMeter();
+// 定时器停顿探针：判定「墙钟/单调钟/事件循环/CPU 限流」谁出了问题，同样只用于取证。
+const stallProbe = createStallProbe({ intervalMs: TRAFFIC_STATS_LOG_INTERVAL_MS });
 
 function settleQueuedRequest(request: QueuedRequest, error?: Error, value?: { body: Buffer; meta: any }): void {
     if (request.settled) return;
@@ -988,6 +991,14 @@ function startHeartbeat(context: ConnectionContext): void {
     // 一分钟一条流量快照：只在真的有过请求时打，空闲连接不产生日志。
     // 带 gid 是因为多个账号进程的日志写进同一个 combined.log，否则没法按账号统计。
     networkScheduler.setIntervalTask('traffic_stats', TRAFFIC_STATS_LOG_INTERVAL_MS, () => {
+        // 停顿探测放在最前面：连接掉到非 online、或者这一分钟没流量而提前返回时，
+        // 恰恰是最需要知道进程有没有被卡住的时刻。
+        const stall = stallProbe.tick();
+        if (stall) {
+            logWarn('系统', `Gateway 停顿: ${stallProbe.format(stall)}, 在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, {
+                gid: userState.gid,
+            });
+        }
         if (!isCurrentConnection(context) || context.phase !== 'online') return;
         const stats = trafficMeter.snapshot(TRAFFIC_STATS_LOG_INTERVAL_MS);
         if (stats.outbound + stats.responseIn + stats.pushIn === 0) return;
@@ -1033,7 +1044,7 @@ function startHeartbeat(context: ConnectionContext): void {
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
                 reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败，`
-                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}`,
+                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}，停顿: ${stallProbe.summary()}`,
             });
             try { (context.socket as any).terminate(); } catch {}
         }
@@ -1087,6 +1098,8 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
     clientSeq = 1;
     serverSeq = 0;
     trafficMeter.reset();
+    // 重连的空档不算停顿：丢掉旧基线，让新连接的第一个 tick 重新起算。
+    stallProbe.reset();
     const url = new URL(CONFIG.serverUrl);
     url.search = new URLSearchParams({
         platform: CONFIG.platform,
@@ -1138,7 +1151,19 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
     (socket as any).on('close', (closeCode: any, closeReason: any) => {
         const reason = Buffer.isBuffer(closeReason) ? closeReason.toString('utf8') : String(closeReason || '');
         console.warn(`[WS] 连接关闭 (code=${closeCode})`);
-        finalizeConnection(context, { source: 'ws_close', code: Number(closeCode) || 0, reason });
+        // 被动断开时把停顿归因和最后 60s 流量直接打成一条 warn：payload.reason 只会进下线推送文案，
+        // 不会写进 combined.log，取证必须落在日志里。主动关闭不打，避免制造噪音。
+        if (!context.intentionalClose && !context.finalized) {
+            logWarn('系统', `连接被外侧拆除 (code=${Number(closeCode) || 0}, phase=${context.phase})，`
+                + `停顿: ${stallProbe.summary()}，近60s ${trafficMeter.formatWindow(60000)}, `
+                + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, { gid: userState.gid });
+        }
+        // 连接被外侧拆掉时（1006 这类没有 close 帧的），把停顿归因一起带上，省得再去比对时间戳。
+        finalizeConnection(context, {
+            source: 'ws_close',
+            code: Number(closeCode) || 0,
+            reason: reason ? `${reason}｜停顿: ${stallProbe.summary()}` : `停顿: ${stallProbe.summary()}`,
+        });
     });
 
     (socket as any).on('error', (err: any) => {

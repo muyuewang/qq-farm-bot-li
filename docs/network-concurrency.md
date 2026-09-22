@@ -113,6 +113,30 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 新连接建立时（`connect()`）清零，不继承上一条连接的速率。
 
+## 停顿取证（只读，不参与调度）
+
+2026-09-22 那次 `ws_close(1006)` 之前，每分钟一条的流量采样里出现了唯一一个 83.15s 的间隔（其余 453 个都是精确 60.00s）——有个 `setInterval` 回调晚了 23 秒才跑，紧接着连接就被对端拆了。`setInterval` 不会自己补回落后的节拍（libuv 按绝对时间重排），所以这 23s 是真实的停顿。
+
+"定时器晚了 23 秒"至少有四种成因，光看日志时间戳分不开，`utils/stall-probe.ts` 每个 tick 同时取五组量来定性：
+
+| 观测 | 来源 | 说明 |
+| --- | --- | --- |
+| 墙钟间隔 | `Date.now()` | 会被 NTP 校时和主机挂起影响 |
+| 单调钟间隔 | `process.hrtime.bigint()` | 挂起/校时期间不走，两者一起涨就排除校时 |
+| 活跃 / 空闲时长 | `performance.eventLoopUtilization()` | **单位是毫秒**；同步代码占住时活跃时间会跟着涨 |
+| 事件循环延迟峰值 | `monitorEventLoopDelay()` | Windows 上对长阻塞不敏感（实测为 0），Linux 容器里才可信 |
+| cgroup CPU 限流 | `/sys/fs/cgroup/cpu.stat` | 取增量，容器配额被打满时 `throttled_usec` 上涨 |
+
+判定顺序（`classify()`）：钟差 > 2s → 时钟跳变或主机挂起；定时器没迟到但延迟峰值超阈值 → 同步阻塞；活跃时间占停顿 60% 以上 → 同步代码占住；有新增限流 → 容器 CPU 配额；活跃 < 20% 且延迟也没涨 → 进程未被调度（热迁移 / 快照 / 宿主抢占 / cgroup 冻结）。
+
+产出三处，全是 `logWarn`，阈值只决定「要不要多打一行」：
+
+- `Gateway 停顿: wall=... mono=... 活跃=... 空闲=... loop延迟峰值=... [限流+..ms/..次] 内存[...] 判定=...`，放在 `traffic_stats` 回调的第一句，掉线或本分钟无流量时照样采样；
+- `连接被外侧拆除 (code=..., phase=...)，停顿: ...，近60s ...`——被动关闭时直接打一条，因为 `payload.reason` 只进下线推送文案，不会写进 `combined.log`；
+- 掉线原因串（`heartbeat_timeout` / `ws_close`）里带 `停顿: 采样N次, 停顿M次, ...; 最长 wall=... 判定=...`。
+
+`connect()` 里和流量计数器一起 `reset()`：停顿统计是**按连接**算的，否则重连时那条几十秒的空档会被当成新连接的一次停顿。
+
 ## 登录后的启动序列
 
 `core/src/core/worker.ts` 的 `runStartupSequence()`。以前是四个错峰定时器（农场 2s / 好友 8s / 每日领取 45s / 神秘商店 60s），每日礼包要等一分钟才领，而那时农场和好友循环已经在跑，几件事叠在一起反而把连接打满。
@@ -137,7 +161,10 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 - `core/src/utils/network.ts` — 排队、发送、`getGatewayLoad()`、`waitForGatewayIdle()`
 - `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定、定时任务的健康度退避、让路错误分类
 - `core/src/utils/request-pressure.ts` — 压力日志节流
+- `core/src/utils/traffic-meter.ts` — 按秒流量桶（只读取证）
+- `core/src/utils/stall-probe.ts` — 定时器停顿归因（只读取证）
 - `core/src/services/automation-lock.ts` — 自动任务全局互斥
 - `core/tests/request-priority.test.js` — 分层与容量的契约测试
+- `core/tests/stall-probe.test.js` — 停顿四种成因的判定测试（墙钟/单调钟/ELU/cgroup 全部依赖注入）
 - `core/tests/low-priority-gate.test.js` — 让路闸门与定时任务退避的契约测试
 - `core/tests/low-priority-gate.test.js` — 空闲判定与让路错误分类
