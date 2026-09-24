@@ -1,0 +1,221 @@
+const PET_DIARY_AUTOMATION_KEYS = [
+    'pet_diary_adopt',
+    'pet_diary_feed',
+    'pet_diary_draw',
+    'pet_diary_story_claim',
+    'pet_diary_seed_claim',
+    'pet_diary_solar_claim',
+    'pet_diary_treasure_open',
+    'pet_diary_compensation_claim',
+    'pet_diary_charm_equip',
+    'pet_diary_battle',
+];
+const CHALLENGE_IDS = ['80101', '80102', '80103'];
+function isPetDiaryAutomationEnabled(automation = {}) {
+    return PET_DIARY_AUTOMATION_KEYS.some(key => automation[key] === true);
+}
+function createPetDiaryAutomation(deps) {
+    const { getPetDiary, operatePetDiary, getServerTimeSec, log, getFriendsList, getFriend } = deps;
+    const spacer = () => new Promise(resolve => setTimeout(resolve, 400));
+    const serverNowMs = () => getServerTimeSec() * 1000;
+    async function runPetDiaryBattles(pet) {
+        if (!getFriendsList || !getFriend)
+            return pet;
+        // 每一项跳过都要留一行日志：这个开关曾经整轮静默空转，看不出是没次数、没挑战书还是取数取错了。
+        const skip = (text) => {
+            log('活动', `萌宠好友夺宝跳过: ${text}`, { module: 'activity', event: '萌宠好友夺宝', result: 'skip' });
+            return pet;
+        };
+        const available = (id) => pet.balances?.some((item) => String(item.id) === id && item.known !== false && Number(item.count) > 0);
+        if (!pet.active)
+            return skip('活动不在开放时间');
+        if (!pet.hunt?.canPlunder || pet.battleCount >= pet.battleLimit) {
+            return skip(`今日夺宝次数不可用 (${pet.battleCount}/${pet.battleLimit})`);
+        }
+        if (!CHALLENGE_IDS.some(id => available(id)))
+            return skip('背包里没有挑战书 80101/80102/80103');
+        const friends = [...new Map((await getFriendsList()).map((f) => [String(f.gid), f])).values()];
+        if (!friends.length)
+            return skip('好友列表为空');
+        const budgetMs = 30000;
+        const deadline = serverNowMs() + budgetMs;
+        let scanned = 0;
+        let battles = 0;
+        let malformed = 0;
+        try {
+            for (const friend of friends) {
+                if (serverNowMs() >= deadline)
+                    break;
+                // 打过一场之后次数/道具都可能见顶，逐轮复查，别靠进循环前那一次判断。
+                if (!pet.hunt?.canPlunder || pet.battleCount >= pet.battleLimit)
+                    break;
+                const gid = String(friend.gid);
+                if (!/^[1-9]\d*$/.test(gid))
+                    continue;
+                let friendData;
+                try {
+                    friendData = await getFriend(gid);
+                    scanned++;
+                }
+                catch (err) {
+                    skip(`读取好友 ${gid} 失败，本轮停止: ${err.message}`);
+                    break;
+                }
+                if (!friendData || !Array.isArray(friendData.treasures)) {
+                    malformed++;
+                    continue;
+                }
+                if (String(friendData.gid) !== gid) {
+                    malformed++;
+                    continue;
+                }
+                let target;
+                let challengeId;
+                for (const id of CHALLENGE_IDS) {
+                    if (!available(id))
+                        continue;
+                    target = friendData.treasures?.find((t) => t.status === 2 && t.endTime > serverNowMs()
+                        && t.previews?.some((p) => String(p.challengeId) === id && p.canStart === true));
+                    if (target) {
+                        challengeId = id;
+                        break;
+                    }
+                }
+                if (!target || !challengeId)
+                    continue;
+                try {
+                    const result = await operatePetDiary('battle', { gid, treasureId: target.id, challengeId });
+                    battles++;
+                    log('活动', `萌宠好友夺宝 (好友 ${gid}, 宝藏 ${target.item?.name || target.id}, 挑战书 ${challengeId}): ${result?.message || '已发起'}`, {
+                        module: 'activity', event: '萌宠好友夺宝', result: 'success',
+                    });
+                    if (!result?.snapshot)
+                        break;
+                    pet = result.snapshot;
+                }
+                catch (err) {
+                    log('活动', `萌宠好友夺宝失败 (好友 ${gid}): ${err.message}`, {
+                        module: 'activity', event: '萌宠好友夺宝', result: 'error',
+                    });
+                    break;
+                }
+            }
+        }
+        catch {
+            // Silently stop on network errors
+        }
+        if (!battles) {
+            log('活动', `萌宠好友夺宝: 扫描 ${scanned} 位好友，没有可夺的护送宝藏${malformed ? `（${malformed} 位好友响应异常）` : ''}`, {
+                module: 'activity', event: '萌宠好友夺宝', result: 'skip',
+            });
+        }
+        return pet;
+    }
+    async function runPetDiaryAutomation(flags) {
+        const step = async (enabled, event, ready, action, params = {}) => {
+            try {
+                if (!enabled || !ready())
+                    return false;
+                const result = await operatePetDiary(action, params);
+                if (result?.snapshot)
+                    pet = result.snapshot;
+                const rewards = (result?.rewards || []).map((item) => `${item.name}x${item.count}`).join(', ');
+                log('活动', `萌宠日记${event}完成${rewards ? `，${rewards}` : ''}`, {
+                    module: 'activity', event: `萌宠日记${event}`, result: 'success',
+                });
+                return true;
+            }
+            catch (err) {
+                log('活动', `萌宠日记${event}失败: ${err.message}`, {
+                    module: 'activity', event: `萌宠日记${event}`, result: 'error',
+                });
+                return false;
+            }
+        };
+        let pet = await getPetDiary();
+        if (!pet || pet.active !== true)
+            return;
+        // 领养比熊
+        await step(flags.adopt, '领养比熊', () => pet.nurture?.initialized !== true, 'initialize');
+        // 投喂（最多12次直到成年）
+        let fed = 0;
+        while (flags.feed && pet.nurture?.canFeed === true && fed < 12) {
+            if (!await step(true, '投喂', () => true, 'feed'))
+                break;
+            fed++;
+            await spacer();
+        }
+        // 领取比熊（成年后）
+        await step(flags.adopt, '领取比熊', () => pet.nurture?.adult === true && pet.nurture?.dogGranted !== true, 'claimDog');
+        // 选锦囊（投喂之后，寻宝之前）
+        if (flags.charm && pet.charms?.canChoose && pet.charms.pool?.length) {
+            await step(true, '选择锦囊', () => true, 'equipCharm', { charmId: pet.charms.pool[0].id });
+        }
+        // 寻宝（最多12次）
+        let drawn = 0;
+        while (flags.draw && pet.hunt?.canDraw === true && drawn < 12) {
+            if (!await step(true, '寻宝', () => true, 'draw'))
+                break;
+            drawn++;
+            await spacer();
+        }
+        // 领取爪印手记
+        if (flags.story) {
+            let claimed = 0;
+            while (claimed < 20) {
+                const story = (pet.stories || []).find((item) => item.unlocked && !item.claimed);
+                if (!story)
+                    break;
+                if (!await step(true, '领取手记', () => true, 'story', { order: story.order }))
+                    break;
+                claimed++;
+                await spacer();
+            }
+        }
+        // 领取种子礼包
+        await step(flags.seeds, '领取种子礼包', () => pet.seeds?.canClaim === true, 'seeds');
+        // 领取节令小礼
+        if (flags.solar) {
+            for (const term of (pet.solarTerms?.terms || [])) {
+                if (term.canClaim !== true)
+                    continue;
+                await step(true, `领取${term.name || '节令'}好礼`, () => true, 'solar', { termId: term.id });
+                await spacer();
+            }
+        }
+        // 开启宝藏
+        const treasureReady = () => (pet.treasures || []).some((item) => item.status === 3
+            || (item.status === 2 && item.endTime > 0 && item.endTime <= serverNowMs()));
+        if (flags.treasure) {
+            let opened = 0;
+            while (treasureReady() && opened < 20) {
+                if (!await step(true, '开启宝藏', () => true, 'openTreasure'))
+                    break;
+                opened++;
+                await spacer();
+            }
+        }
+        // 领取夺宝补偿
+        await step(flags.compensation, '领取夺宝补偿', () => BigInt(String(pet.compensationCount || '0')) > 0n, 'compensation');
+        // 好友夺宝
+        if (flags.battle) {
+            pet = await runPetDiaryBattles(pet);
+        }
+        // 设置精准唤醒定时器（宝藏护送完成时）
+        let nextTreasureEndMs;
+        if (flags.treasure) {
+            const nowMs = serverNowMs();
+            const nextEnd = (pet.treasures || [])
+                .filter((item) => item.status === 2 && item.endTime > nowMs)
+                .map((item) => item.endTime)
+                .sort((a, b) => a - b)[0];
+            if (nextEnd) {
+                nextTreasureEndMs = Math.max(1000, nextEnd - nowMs + 2000);
+            }
+        }
+        return { nextTreasureEndMs };
+    }
+    return { runPetDiaryAutomation, isPetDiaryAutomationEnabled };
+}
+module.exports = { createPetDiaryAutomation, isPetDiaryAutomationEnabled, PET_DIARY_AUTOMATION_KEYS };
+//# sourceMappingURL=pet-diary-auto.js.map

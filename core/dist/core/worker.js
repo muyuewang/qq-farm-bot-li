@@ -1,0 +1,1260 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+/**
+ * 子进程 Worker - 负责运行单个账号的挂机逻辑
+ */
+const { parentPort, workerData } = require('node:worker_threads');
+const { CONFIG, updateRuntimeConfig } = require('../config/config');
+const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
+const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
+const { checkAndClaimEmails } = require('../services/email');
+const { getEmailDailyState } = require('../services/email');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
+const { getInteractRecords } = require('../services/interact');
+const { processInviteCodes } = require('../services/invite');
+const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
+const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
+const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
+const { runExclusiveAutomationTask } = require('../services/automation-lock');
+const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
+const { refreshActivityWindows } = require('../services/activity-windows');
+const { createPetDiaryAutomation, isPetDiaryAutomationEnabled } = require('../services/pet-diary-auto');
+const { createAutumnAutomation, isAutumnAutomationEnabled, AUTUMN_CHECK_INTERVAL_MS } = require('../services/autumn-activities-auto');
+const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
+const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
+const { setRecordGoldExpHook } = require('../services/status');
+const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
+const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently, openCharitySettlementGiftPacksSilently, } = require('../services/warehouse');
+const { checkAndClaimDogSkillGifts } = require('../services/dog-skill-gifts');
+const { isGatewayHealthyForBusiness, nextBusinessBackoffMs } = require('../utils/low-priority-gate');
+const { connect, cleanup, getWs, getUserState, networkEvents, getGatewayLoad } = require('../utils/network');
+const { loadProto } = require('../utils/proto');
+const { runWithRequestClass } = require('../utils/request-context');
+const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
+const workerConfig = CONFIG;
+if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
+    process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
+}
+function sendToMaster(payload) {
+    if (process.send) {
+        process.send(payload);
+        return;
+    }
+    if (parentPort) {
+        parentPort.postMessage(payload);
+    }
+}
+function onMasterMessage(handler) {
+    if (process.send) {
+        process.on('message', handler);
+    }
+    if (parentPort) {
+        parentPort.on('message', handler);
+    }
+}
+function exitWorker(code = 0) {
+    if (parentPort) {
+        try {
+            parentPort.close();
+        }
+        catch { }
+        return;
+    }
+    process.exit(code);
+}
+// 捕获日志发送给主进程
+setLogHook((tag, msg, isWarn, meta) => {
+    sendToMaster({
+        type: 'log',
+        data: {
+            time: formatSystemDateTime24(),
+            tag,
+            msg,
+            isWarn,
+            meta: meta || {},
+        }
+    });
+});
+// 捕获金币经验变化
+setRecordGoldExpHook((gold, exp) => {
+    // 更新内部统计
+    const { recordGoldExp } = require('../services/stats');
+    recordGoldExp(gold, exp);
+    // 发送给主进程
+    sendToMaster({ type: 'stat_update', data: { gold, exp } });
+});
+let isRunning = false;
+let loginReady = false;
+let appliedConfigRevision = 0;
+let unifiedSchedulerRunning = false;
+let farmTaskRunning = false;
+let nextFarmRunAt = 0;
+let friendTaskRunning = false;
+let nextFriendRunAt = 0;
+// 网关卡住时两条定时任务各自的退避时长（毫秒），0 表示按正常间隔跑
+const businessBackoffMs = { farm: 0, friend: 0 };
+let lastStatusHash = '';
+let lastStatusSentAt = 0;
+let onSellGain = null;
+let onFarmHarvested = null;
+let onDogSkillGiftPending = null;
+let harvestSellRunning = false;
+let onWsError = null;
+let onDisconnected = null;
+let wsErrorHandledAt = 0;
+let shutdownStarted = false;
+let runtimeGeneration = 0;
+let lastDailyRunDate = '';
+const workerScheduler = createScheduler('worker');
+async function runDailyRoutines(force = false) {
+    if (!loginReady)
+        return;
+    try {
+        await checkAndClaimEmails(force);
+        await openCharitySettlementGiftPacksSilently();
+        await checkDailyShareStatus(force);
+        await performDailyMonthCardGift(force);
+        await buyFreeGifts(force);
+        await performDailyVipGift(force);
+    }
+    catch (e) {
+        log('系统', `每日任务调度失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
+    }
+}
+function stopDailyRoutineTimer() {
+    workerScheduler.clear('daily_routine_interval');
+}
+function startDailyRoutineTimer(runImmediately = true) {
+    stopDailyRoutineTimer();
+    lastDailyRunDate = getSystemDateKey();
+    // 新账号登录后强制执行一次领取
+    if (runImmediately)
+        runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
+    workerScheduler.setIntervalTask('daily_routine_interval', 30 * 1000, () => {
+        if (!loginReady)
+            return;
+        const today = getSystemDateKey();
+        if (today === lastDailyRunDate)
+            return;
+        lastDailyRunDate = today;
+        runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
+    });
+}
+function normalizeIntervalRangeSec(minSec, maxSec, fallbackSec) {
+    const fallback = Math.max(1, Number.parseInt(fallbackSec, 10) || 1);
+    let min = Math.max(1, Number.parseInt(minSec, 10) || fallback);
+    let max = Math.max(1, Number.parseInt(maxSec, 10) || fallback);
+    if (min > max)
+        [min, max] = [max, min];
+    return { min, max };
+}
+function applyIntervalsToRuntime(intervals) {
+    const data = (intervals && typeof intervals === 'object') ? intervals : {};
+    const farmLegacy = Math.max(1, Number.parseInt(data.farm, 10) || 2);
+    const farmRange = normalizeIntervalRangeSec(data.farmMin, data.farmMax, farmLegacy);
+    CONFIG.farmCheckIntervalMin = farmRange.min * 1000;
+    CONFIG.farmCheckIntervalMax = farmRange.max * 1000;
+    CONFIG.farmCheckInterval = CONFIG.farmCheckIntervalMin;
+    // 好友帮助、偷菜、放虫放草共用一个好友任务间隔。
+    const helpMin = Number.parseInt(data.helpMin, 10) || 12;
+    const helpMax = Number.parseInt(data.helpMax, 10) || 15;
+    const stealMin = Number.parseInt(data.stealMin, 10) || 12;
+    const stealMax = Number.parseInt(data.stealMax, 10) || 15;
+    const friendMin = data.friendMin ?? Math.min(helpMin, stealMin);
+    const friendMax = data.friendMax ?? Math.min(helpMax, stealMax);
+    const friendRange = normalizeIntervalRangeSec(friendMin, friendMax, 12);
+    workerConfig.friendCheckIntervalMin = friendRange.min * 1000;
+    workerConfig.friendCheckIntervalMax = friendRange.max * 1000;
+}
+function randomIntervalMs(minMs, maxMs) {
+    const minSec = Math.max(1, Math.floor(Math.max(1000, Number(minMs) || 1000) / 1000));
+    const maxSec = Math.max(minSec, Math.floor(Math.max(1000, Number(maxMs) || minSec * 1000) / 1000));
+    if (maxSec === minSec)
+        return minSec * 1000;
+    const sec = minSec + Math.floor(Math.random() * (maxSec - minSec + 1));
+    return sec * 1000;
+}
+function resetUnifiedSchedule() {
+    const farmMs = randomIntervalMs(CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000, CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000);
+    const friendMs = randomIntervalMs(workerConfig.friendCheckIntervalMin || 12000, workerConfig.friendCheckIntervalMax || 15000);
+    const now = Date.now();
+    nextFarmRunAt = now + farmMs;
+    nextFriendRunAt = now + friendMs;
+    businessBackoffMs.farm = 0;
+    businessBackoffMs.friend = 0;
+}
+const BUSINESS_TICK_LABEL = { farm: '农场定时任务', friend: '好友定时任务' };
+function describeGatewayStall(load) {
+    const parts = [];
+    const misses = Number(load && load.heartbeatMisses) || 0;
+    const oldest = Number(load && load.oldestPendingAgeMs) || 0;
+    if (misses > 0)
+        parts.push(`心跳漏 ${misses} 次`);
+    if (oldest > 0)
+        parts.push(`最老在途 ${(oldest / 1000).toFixed(1)}s`);
+    parts.push(`pending=${Number(load && load.pending) || 0}`);
+    parts.push(`queued=${Number(load && load.queued) || 0}`);
+    return parts.join(', ');
+}
+/**
+ * 网关卡住（心跳漏拍或有在途请求超过 5 秒没回包）时定时任务整轮让路，把连接留给心跳和 ACE 上报。
+ * 返回本轮需要推迟的毫秒数，0 表示可以正常跑。日志只在进入/退出退避时各打一次，避免刷屏。
+ */
+function nextBusinessTickDeferMs(kind) {
+    const load = getGatewayLoad();
+    if (isGatewayHealthyForBusiness(load)) {
+        if (businessBackoffMs[kind] > 0) {
+            businessBackoffMs[kind] = 0;
+            log('系统', `网关已恢复，${BUSINESS_TICK_LABEL[kind]}回到正常间隔`, {
+                module: 'system',
+                event: '网关退避',
+                result: 'resume',
+                requestClass: kind,
+            });
+        }
+        return 0;
+    }
+    const firstDefer = businessBackoffMs[kind] === 0;
+    const backoffMs = nextBusinessBackoffMs(businessBackoffMs[kind]);
+    businessBackoffMs[kind] = backoffMs;
+    if (firstDefer) {
+        logWarn('系统', `网关无回包，${BUSINESS_TICK_LABEL[kind]}退避 ${Math.round(backoffMs / 1000)}s (${describeGatewayStall(load)})`, {
+            module: 'system',
+            event: '网关退避',
+            result: 'defer',
+            requestClass: kind,
+            backoffMs,
+        });
+    }
+    return backoffMs;
+}
+async function runFarmTick(auto) {
+    if (farmTaskRunning)
+        return;
+    const farmDeferMs = nextBusinessTickDeferMs('farm');
+    if (farmDeferMs > 0) {
+        nextFarmRunAt = Date.now() + farmDeferMs;
+        return;
+    }
+    farmTaskRunning = true;
+    const farmMs = randomIntervalMs(CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000, CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000);
+    try {
+        // 自己农场的定时任务统一挂在 farm 班次：优先级高于好友任务，低于用户前台操作。
+        await runWithRequestClass('farm', async () => {
+            if (auto.farm)
+                await checkFarm();
+            if (auto.task)
+                await checkAndClaimTasks();
+            if (auto.email !== false)
+                await openCharitySettlementGiftPacksSilently();
+            if (auto.fertilizer_gift)
+                await openFertilizerGiftPacksSilently();
+        });
+    }
+    catch {
+        // ignore
+    }
+    finally {
+        nextFarmRunAt = Date.now() + farmMs;
+        farmTaskRunning = false;
+    }
+}
+// ============ 好友统一任务：偷菜、帮助、放虫放草 ============
+async function runFriendTick(auto) {
+    if (friendTaskRunning)
+        return;
+    const friendMs = randomIntervalMs(workerConfig.friendCheckIntervalMin || 12000, workerConfig.friendCheckIntervalMax || 15000);
+    // friend 总开关仍控制好友任务总入口；关闭时也要推进到期时间，避免调度器每秒空转。
+    if (!auto.friend) {
+        nextFriendRunAt = Date.now() + friendMs;
+        return;
+    }
+    const friendDeferMs = nextBusinessTickDeferMs('friend');
+    if (friendDeferMs > 0) {
+        nextFriendRunAt = Date.now() + friendDeferMs;
+        return;
+    }
+    friendTaskRunning = true;
+    try {
+        // checkFriends 内部保留各自开关、经验上限、黑名单和每日捣乱次数判断。
+        // 好友农场任务排在自己农场之后，前台操作永远优先于它。
+        await runWithRequestClass('friend', () => checkFriends());
+    }
+    catch (e) {
+        log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
+    }
+    finally {
+        nextFriendRunAt = Date.now() + friendMs;
+        friendTaskRunning = false;
+    }
+}
+async function runUnifiedTick() {
+    if (!unifiedSchedulerRunning || !loginReady)
+        return;
+    const now = Date.now();
+    const dueFarm = now >= nextFarmRunAt;
+    const dueFriend = now >= nextFriendRunAt;
+    if (!dueFarm && !dueFriend)
+        return;
+    const auto = getAutomation();
+    // 串行执行而非并行，避免并发请求过多导致超时
+    if (dueFarm)
+        await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto));
+    if (dueFriend)
+        await runExclusiveAutomationTask('friend_tick', () => runFriendTick(auto));
+}
+function scheduleUnifiedNextTick() {
+    if (!unifiedSchedulerRunning)
+        return;
+    workerScheduler.clear('unified_next_tick');
+    if (!loginReady)
+        return;
+    const now = Date.now();
+    const nextAt = Math.min(Number(nextFarmRunAt) || (now + 1000), Number(nextFriendRunAt) || (now + 1000));
+    const delayMs = Math.max(1000, nextAt - now); // 最低 1 秒
+    workerScheduler.setTimeoutTask('unified_next_tick', delayMs, async () => {
+        try {
+            await runUnifiedTick();
+        }
+        finally {
+            scheduleUnifiedNextTick();
+        }
+    });
+}
+function startUnifiedScheduler() {
+    if (unifiedSchedulerRunning)
+        return;
+    unifiedSchedulerRunning = true;
+    resetUnifiedSchedule();
+    scheduleUnifiedNextTick();
+}
+function stopUnifiedScheduler() {
+    unifiedSchedulerRunning = false;
+    farmTaskRunning = false;
+    friendTaskRunning = false;
+    workerScheduler.clear('unified_next_tick');
+}
+function stopMysteryShopTimer() {
+    workerScheduler.clear('mystery_shop_initial');
+    workerScheduler.clear('mystery_shop_interval');
+    workerScheduler.clear('mystery_shop_after_save');
+}
+function stopPetDiaryTimer() {
+    workerScheduler.clear('pet_diary_initial');
+    workerScheduler.clear('pet_diary_interval');
+    workerScheduler.clear('pet_diary_after_save');
+    workerScheduler.clear('pet_diary_treasure_ready');
+}
+function stopAutumnActivityTimer() {
+    workerScheduler.clear('autumn_activity_initial');
+    workerScheduler.clear('autumn_activity_interval');
+}
+/**
+ * 登录完成后的启动序列。
+ *
+ * 以前这里是四个错峰定时器（2s / 8s / 45s / 60s），结果每日礼包和任务要等到登录一分钟后
+ * 才领，而且那时农场和好友循环已经在跑，几件事叠在一起反而把连接打满。
+ * 现在改成登录动作一结束就**串行**跑完：串行意味着同一时刻只有一个业务请求在飞，
+ * 既领得及时，也不会和心跳抢连接。
+ */
+async function runStartupSequence(canContinue = () => loginReady) {
+    if (!loginReady || !canContinue())
+        return;
+    // 这个序列跑在登录初始化的 await 链上（心跳和 ACE 此时已经启动），
+    // 抛出去会被 network.ts 当成「登录初始化失败」直接掐掉连接，所以整段自己兜住异常。
+    try {
+        // 登录期要领的东西按 farm 班次串行跑完：邮件 / 每日分享 / 月卡 / 免费礼包 / VIP → 任务。
+        await runWithRequestClass('farm', async () => {
+            if (!loginReady || !canContinue())
+                return;
+            await runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true));
+            if (!loginReady || !canContinue())
+                return;
+            try {
+                await checkAndClaimTasks();
+            }
+            catch (e) {
+                log('系统', `登录后领取任务失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
+            }
+            if (!loginReady || !canContinue())
+                return;
+        });
+        if (!loginReady || !canContinue())
+            return;
+        // 登录串行部分跑完，才挂上主循环和后续周期性定时器，避免启动期任务叠跑。
+        startFarmCheckLoop({ externalScheduler: true });
+        startFriendCheckLoop({ externalScheduler: true });
+        startUnifiedScheduler();
+        startDailyRoutineTimer(false);
+        startMysteryShopTimer();
+        startPetDiaryTimer();
+        startAutumnActivityTimer();
+    }
+    catch (e) {
+        log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
+    }
+}
+function runMysteryShopTick() {
+    if (!loginReady)
+        return Promise.resolve();
+    const { isMysteryShopWatchEnabled, checkMysteryShopTick, } = require('../services/mystery-shop-auto');
+    if (!isMysteryShopWatchEnabled(getAutomation()))
+        return Promise.resolve();
+    return checkMysteryShopTick().then((result) => {
+        if (result?.push?.title && result?.push?.content) {
+            sendToMaster({ type: 'push_notify', title: result.push.title, content: result.push.content });
+        }
+    });
+}
+function startMysteryShopTimer() {
+    const { isMysteryShopWatchEnabled, AUTO_BUY_CHECK_INTERVAL_MS, } = require('../services/mystery-shop-auto');
+    stopMysteryShopTimer();
+    if (!loginReady || !isMysteryShopWatchEnabled(getAutomation()))
+        return;
+    workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
+    });
+}
+const PET_DIARY_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+async function runPetDiaryTick() {
+    if (!loginReady)
+        return;
+    const automation = getAutomation() || {};
+    if (!isPetDiaryAutomationEnabled(automation))
+        return;
+    const { getPetDiary, operatePetDiary, getPetDiaryFriend } = require('../services/activity-center');
+    const { getServerTimeSec } = require('../utils/utils');
+    const { runPetDiaryAutomation } = createPetDiaryAutomation({
+        getPetDiary,
+        operatePetDiary,
+        getServerTimeSec,
+        log,
+        getFriendsList,
+        // 必须走萌宠自己的好友接口（Operate 47）：它才返回 { gid, treasures[] }。
+        // 农田那个 getFriendLandsDetail 只有 lands/summary/career，夺宝判定会全部落空。
+        getFriend: (gid) => getPetDiaryFriend(gid),
+    });
+    try {
+        const result = await runPetDiaryAutomation({
+            adopt: automation.pet_diary_adopt === true,
+            feed: automation.pet_diary_feed === true,
+            draw: automation.pet_diary_draw === true,
+            story: automation.pet_diary_story_claim === true,
+            seeds: automation.pet_diary_seed_claim === true,
+            solar: automation.pet_diary_solar_claim === true,
+            treasure: automation.pet_diary_treasure_open === true,
+            compensation: automation.pet_diary_compensation_claim === true,
+            battle: automation.pet_diary_battle === true,
+            charm: automation.pet_diary_charm_equip === true,
+        });
+        if (result?.nextTreasureEndMs) {
+            workerScheduler.clear('pet_diary_treasure_ready');
+            workerScheduler.setTimeoutTask('pet_diary_treasure_ready', result.nextTreasureEndMs, () => {
+                runExclusiveAutomationTask('pet_diary_treasure', runPetDiaryTick).catch(() => null);
+            });
+        }
+    }
+    catch (e) {
+        log('活动', `萌宠日记自动任务失败: ${e.message}`, { module: 'activity', event: '萌宠日记自动', result: 'error' });
+    }
+}
+function startPetDiaryTimer() {
+    stopPetDiaryTimer();
+    if (!loginReady || !isPetDiaryAutomationEnabled(getAutomation()))
+        return;
+    workerScheduler.setTimeoutTask('pet_diary_initial', 60000, () => {
+        runExclusiveAutomationTask('pet_diary', runPetDiaryTick).catch(() => null);
+    });
+    workerScheduler.setIntervalTask('pet_diary_interval', PET_DIARY_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('pet_diary', runPetDiaryTick).catch(() => null);
+    });
+}
+// 抽签的「每个服务端日期只抽一次」护栏存在实例里，所以实例必须整个 worker 共用一个：
+// 每轮新建就等于每次定时器触发都忘掉今天已经抽过，半小时一轮能把整期份额抽完。
+let autumnAutomation = null;
+async function runAutumnActivityTick() {
+    if (!loginReady)
+        return;
+    const automation = getAutomation() || {};
+    if (!isAutumnAutomationEnabled(automation))
+        return;
+    if (!autumnAutomation) {
+        const { getAutumnActivity, operateAutumnActivity } = require('../services/autumn-activities');
+        const { getServerTimeSec } = require('../utils/utils');
+        autumnAutomation = createAutumnAutomation({
+            getAutumnActivity,
+            operateAutumnActivity,
+            getServerTimeSec,
+            log,
+        });
+    }
+    await autumnAutomation.runAutumnAutomation({
+        wishDraw: automation.autumn_wish_draw === true,
+        wishClaim: automation.autumn_wish_claim === true,
+        wishChoice: Number(automation.autumn_wish_choice) || 0,
+        happyDaily: automation.autumn_happy_daily === true,
+        happyShare: automation.autumn_happy_share === true,
+        happyMilestones: automation.autumn_happy_milestones === true,
+    });
+}
+function startAutumnActivityTimer() {
+    stopAutumnActivityTimer();
+    if (!loginReady || !isAutumnAutomationEnabled(getAutomation()))
+        return;
+    workerScheduler.setTimeoutTask('autumn_activity_initial', 75000, () => {
+        runExclusiveAutomationTask('autumn_activity', runAutumnActivityTick).catch(() => null);
+    });
+    workerScheduler.setIntervalTask('autumn_activity_interval', AUTUMN_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('autumn_activity', runAutumnActivityTick).catch(() => null);
+    });
+}
+function applyRuntimeConfig(snapshot, syncNow = false) {
+    const rev = Number((snapshot || {}).__revision || 0);
+    if (rev > 0 && rev < appliedConfigRevision) {
+        if (syncNow)
+            syncStatus();
+        return appliedConfigRevision;
+    }
+    const prevAuto = getAutomation();
+    const accountId = process.env.FARM_ACCOUNT_ID || '';
+    if (snapshot && snapshot.systemTimeZone !== undefined) {
+        updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
+    }
+    if (!loginReady && snapshot && snapshot.systemServerUrl !== undefined) {
+        updateRuntimeConfig({ serverUrl: String(snapshot.systemServerUrl || '') });
+    }
+    if (!loginReady && snapshot && snapshot.systemClientVersion !== undefined) {
+        updateRuntimeConfig({ clientVersion: String(snapshot.systemClientVersion || '') });
+    }
+    applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
+    if (rev > appliedConfigRevision)
+        appliedConfigRevision = rev;
+    // 优先使用本次下发的间隔，避免 worker 内部 store 漂移导致回退默认值
+    const incomingIntervals = (snapshot && snapshot.intervals && typeof snapshot.intervals === 'object')
+        ? snapshot.intervals
+        : null;
+    if (incomingIntervals) {
+        applyIntervalsToRuntime(incomingIntervals);
+    }
+    if (loginReady) {
+        refreshFarmCheckLoop(200);
+        refreshFriendCheckLoop(200);
+        resetUnifiedSchedule();
+        scheduleUnifiedNextTick();
+        const hasAutomationPayload = !!(snapshot && snapshot.automation && typeof snapshot.automation === 'object');
+        if (hasAutomationPayload) {
+            const nextAuto = getAutomation();
+            const prevFertilizerMode = String(prevAuto && prevAuto.fertilizer ? prevAuto.fertilizer : '').toLowerCase();
+            const nextFertilizerMode = String(nextAuto && nextAuto.fertilizer ? nextAuto.fertilizer : '').toLowerCase();
+            const fertilizerChanged = prevFertilizerMode !== nextFertilizerMode;
+            if (fertilizerChanged && (nextFertilizerMode === 'both' || nextFertilizerMode === 'organic' || nextFertilizerMode === 'smart')) {
+                workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 600, async () => {
+                    if (!loginReady)
+                        return;
+                    try {
+                        await runExclusiveAutomationTask('fertilizer_immediate', () => runFertilizerByConfig([], { skipNormal: true }));
+                    }
+                    catch (e) {
+                        log('施肥', `保存配置后立即施肥失败: ${e.message}`, {
+                            module: 'farm',
+                            event: '施肥',
+                            result: 'error',
+                        });
+                    }
+                });
+            }
+            startMysteryShopTimer();
+            startPetDiaryTimer();
+            startAutumnActivityTimer();
+        }
+    }
+    if (syncNow)
+        syncStatus();
+    return appliedConfigRevision;
+}
+// 接收主进程指令
+onMasterMessage(async (msg) => {
+    try {
+        if (msg.type === 'start') {
+            await startBot(msg.config);
+        }
+        else if (msg.type === 'stop') {
+            await stopBot();
+        }
+        else if (msg.type === 'api_call') {
+            handleApiCall(msg);
+        }
+        else if (msg.type === 'config_sync') {
+            applyRuntimeConfig(msg.config || {}, true);
+        }
+        else if (msg.type === 'reload_config') {
+            if (typeof loadConfigs === 'function')
+                loadConfigs();
+        }
+    }
+    catch (e) {
+        sendToMaster({
+            type: 'error',
+            error: {
+                message: String(e?.message || e || 'Worker error'),
+                code: e?.code,
+                errorMessage: e?.errorMessage ?? e?.error_message,
+                name: String(e?.name || 'Error'),
+            },
+        });
+    }
+});
+async function startBot(config) {
+    if (isRunning)
+        return;
+    isRunning = true;
+    shutdownStarted = false;
+    runtimeGeneration += 1;
+    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion } = config;
+    if (systemTimeZone !== undefined)
+        updateRuntimeConfig({ timeZone: systemTimeZone });
+    if (systemServerUrl !== undefined)
+        updateRuntimeConfig({ serverUrl: String(systemServerUrl || '') });
+    if (systemClientVersion !== undefined)
+        updateRuntimeConfig({ clientVersion: String(systemClientVersion || '') });
+    CONFIG.platform = platform || 'qq';
+    // 注意：间隔配置由 applyIntervalsToRuntime 统一处理，不要在这里覆盖
+    await loadProto();
+    log('系统', '正在连接服务器...');
+    // 加载保存的配置
+    applyRuntimeConfig(getConfigSnapshot(), false);
+    initStatusBar();
+    setStatusPlatform(CONFIG.platform);
+    if (onWsError) {
+        networkEvents.off('ws_error', onWsError);
+        onWsError = null;
+    }
+    onWsError = (payload) => {
+        if ((Number(payload?.code) || 0) !== 400)
+            return;
+        const now = Date.now();
+        if (now - wsErrorHandledAt < 4000)
+            return;
+        wsErrorHandledAt = now;
+        log('系统', '连接被拒绝，可能需要更新 Code');
+        sendToMaster({
+            type: 'ws_error',
+            code: 400,
+            message: payload?.message || '',
+        });
+        if (isRunning) {
+            handleTerminalDisconnect({
+                source: 'ws_error',
+                code: 400,
+                reason: payload?.message || '连接被拒绝',
+                phase: 'connecting',
+            });
+        }
+    };
+    networkEvents.on('ws_error', onWsError);
+    if (onDisconnected) {
+        networkEvents.off('disconnected', onDisconnected);
+    }
+    onDisconnected = (payload) => {
+        handleTerminalDisconnect(payload);
+    };
+    networkEvents.on('disconnected', onDisconnected);
+    networkEvents.on('kickout', onKickout);
+    const generation = runtimeGeneration;
+    const canContinueLogin = () => isRunning && !shutdownStarted && generation === runtimeGeneration;
+    const onLoginSuccess = async () => {
+        if (!canContinueLogin() || loginReady)
+            return;
+        loginReady = true;
+        if (onSellGain) {
+            networkEvents.off('sell', onSellGain);
+        }
+        onSellGain = (deltaGold) => {
+            const delta = Number(deltaGold || 0);
+            if (!Number.isFinite(delta) || delta <= 0)
+                return;
+            recordOperation('sell', 1);
+        };
+        networkEvents.on('sell', onSellGain);
+        if (onFarmHarvested) {
+            networkEvents.off('farmHarvested', onFarmHarvested);
+        }
+        onFarmHarvested = async () => {
+            if (harvestSellRunning)
+                return;
+            if (!getAutomation().sell)
+                return;
+            harvestSellRunning = true;
+            try {
+                await runExclusiveAutomationTask('harvest_sell', sellAllFruits);
+            }
+            catch (e) {
+                log('仓库', `收获后自动出售失败: ${e.message}`, { module: 'warehouse', event: '收获后出售', result: 'error' });
+            }
+            finally {
+                harvestSellRunning = false;
+            }
+        };
+        networkEvents.on('farmHarvested', onFarmHarvested);
+        if (onDogSkillGiftPending) {
+            networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        }
+        onDogSkillGiftPending = (count) => {
+            const pendingCount = Math.max(0, toNum(count));
+            if (pendingCount <= 0 || !loginReady)
+                return;
+            runExclusiveAutomationTask('dog_skill_gifts', () => checkAndClaimDogSkillGifts(pendingCount)).catch(() => null);
+        };
+        networkEvents.on('dogSkillGiftPending', onDogSkillGiftPending);
+        try {
+            await runExclusiveAutomationTask('activity_windows_refresh', refreshActivityWindows);
+        }
+        catch (e) {
+            logWarn('仓库', `活动时间初始化失败: ${e?.message || e}`);
+        }
+        if (!canContinueLogin())
+            return;
+        // 登录后只拉一次背包，同时初始化点券（1002）和金豆豆（1005）
+        try {
+            const bagReply = await runExclusiveAutomationTask('login_bag_init', getBag);
+            const items = getBagItems(bagReply);
+            let coupon = 0;
+            let goldBean = 0;
+            for (const it of (items || [])) {
+                const id = toNum(it && it.id);
+                if (id === 1002) {
+                    coupon = toNum(it.count);
+                }
+                else if (id === 1005) {
+                    goldBean = toNum(it.count);
+                }
+            }
+            const state = getUserState();
+            state.coupon = Math.max(0, coupon);
+            state.goldBean = Math.max(0, goldBean);
+        }
+        catch {
+            // ignore
+        }
+        // 登录成功后，以当前金币/经验/点券作为统计基线，并清空会话增量
+        const latest = getUserState();
+        const accountId = process.env.FARM_ACCOUNT_ID || '';
+        initStatsWithPersistence(accountId, Number(latest.gold || 0), Number(latest.exp || 0), Number(latest.coupon || 0));
+        resetSessionGains();
+        // 登录成功后启动各模块
+        await runExclusiveAutomationTask('invite_codes', processInviteCodes);
+        if (!canContinueLogin())
+            return;
+        if (getAutomation().fertilizer_gift) {
+            await runExclusiveAutomationTask('fertilizer_gifts_login', openFertilizerGiftPacksSilently).catch(() => 0);
+            if (!canContinueLogin())
+                return;
+        }
+        if (!canContinueLogin())
+            return;
+        // 立即发送一次状态，再串行跑启动序列（不阻塞状态上报）
+        syncStatus();
+        await runExclusiveAutomationTask('startup_sequence', () => runStartupSequence(canContinueLogin));
+    };
+    connect(code, onLoginSuccess);
+    // 启动定时状态同步
+    workerScheduler.setIntervalTask('status_sync', 3000, syncStatus, { preventOverlap: true });
+}
+function detachRuntimeListeners() {
+    networkEvents.off('kickout', onKickout);
+    if (onDisconnected) {
+        networkEvents.off('disconnected', onDisconnected);
+        onDisconnected = null;
+    }
+    if (onWsError) {
+        networkEvents.off('ws_error', onWsError);
+        onWsError = null;
+    }
+    if (onSellGain) {
+        networkEvents.off('sell', onSellGain);
+        onSellGain = null;
+    }
+    if (onFarmHarvested) {
+        networkEvents.off('farmHarvested', onFarmHarvested);
+        onFarmHarvested = null;
+    }
+    if (onDogSkillGiftPending) {
+        networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        onDogSkillGiftPending = null;
+    }
+}
+function quiesceBot(reason) {
+    shutdownStarted = true;
+    runtimeGeneration += 1;
+    isRunning = false;
+    loginReady = false;
+    stopUnifiedScheduler();
+    stopFarmCheckLoop();
+    stopFriendCheckLoop();
+    stopDailyRoutineTimer();
+    cleanupTaskSystem();
+    workerScheduler.clearAll();
+    detachRuntimeListeners();
+    cleanup(reason);
+    syncStatus(true);
+}
+async function stopBot() {
+    if (!shutdownStarted) {
+        saveStats();
+        quiesceBot('主动停止');
+    }
+    exitWorker(0);
+}
+function handleTerminalDisconnect(payload) {
+    if (shutdownStarted)
+        return;
+    const source = String(payload?.source || 'ws_close');
+    const code = Number(payload?.code) || 0;
+    const reason = String(payload?.reason || '连接已断开');
+    const phase = String(payload?.phase || 'unknown');
+    log('系统', `连接已断开，本进程不再复用旧 Code 重连（是否用原 Code 重启由主进程决定）(source=${source}, code=${code}, phase=${phase})`);
+    saveStats();
+    quiesceBot(`连接断开: ${source}`);
+    sendToMaster({
+        type: 'account_disconnected',
+        source,
+        code,
+        reason,
+        phase,
+        connectionId: Number(payload?.connectionId) || 0,
+        at: Number(payload?.at) || Date.now(),
+    });
+    setTimeout(exitWorker, 300, 0);
+}
+function onKickout(payload) {
+    if (shutdownStarted)
+        return;
+    const reason = payload && payload.reason ? payload.reason : '未知';
+    log('系统', `检测到踢下线，准备自动停止账号。原因: ${reason}`);
+    saveStats();
+    quiesceBot(`踢下线: ${reason}`);
+    sendToMaster({ type: 'account_kicked', reason });
+    setTimeout(exitWorker, 300, 0);
+}
+// 处理来自 Admin 面板的直接调用请求 (如: 购买种子、开关设置等)
+async function handleApiCall(msg) {
+    const { id, method, args } = msg;
+    let result = null;
+    let error = null;
+    try {
+        if (method === 'applyRuntimeConfigSnapshot') {
+            const appliedRevision = applyRuntimeConfig((args && args[0]) || {}, true);
+            result = { appliedRevision };
+        }
+        else {
+            if (!isRunning || shutdownStarted || !loginReady) {
+                throw new Error('账号未连接');
+            }
+            switch (method) {
+                case 'getLands':
+                    result = await getLandsDetail(args[0] === true);
+                    break;
+                case 'getIllustratedSnapshot':
+                    result = await require('../services/illustrated').getIllustratedSnapshot();
+                    break;
+                case 'getFriends':
+                    result = await getFriendsList(args[0] === true, 'normal', args[1] === true);
+                    break;
+                case 'getFriendsCache':
+                    result = getFriendsListCacheOnly();
+                    break;
+                case 'clearFriendsCache':
+                    require('../services/friend').clearFriendsListCache();
+                    result = { ok: true };
+                    break;
+                case 'getInteractRecords':
+                    result = await getInteractRecords();
+                    break;
+                case 'getFriendLands':
+                    result = await getFriendLandsDetail(args[0], args[1] === true);
+                    break;
+                case 'getFriendInteractionItems':
+                    result = await require('../services/friend-interaction-items').getFriendInteractionItems(args[0] === true);
+                    break;
+                case 'useFriendInteractionItemBatch':
+                    result = await require('../services/friend-interaction-items').useFriendInteractionItemBatch(args[0], args[1], args[2], args[3] === true);
+                    break;
+                case 'useFriendFarmInteractionItem':
+                    result = await require('../services/friend-interaction-items').useFriendFarmInteractionItem(args[0], args[1], args[2] === true);
+                    break;
+                case 'getSelfInteractionItems':
+                    result = await require('../services/friend-interaction-items').getSelfInteractionItems(args[0] === true);
+                    break;
+                case 'useSelfInteractionItemBatch':
+                    result = await require('../services/friend-interaction-items').useSelfInteractionItemBatch(args[0], args[1], args[2] === true);
+                    break;
+                case 'doFriendOp':
+                    result = await doFriendOperation(args[0], args[1], args[2] === true);
+                    break;
+                case 'delFriend':
+                    result = await deleteFriend(args[0]);
+                    break;
+                case 'getSeeds':
+                    result = await getAvailableSeeds(args[0] === true);
+                    break;
+                case 'getBag':
+                    result = await require('../services/warehouse').getBagDetail();
+                    break;
+                case 'getBagSeeds':
+                    result = await require('../services/warehouse').getBagSeeds();
+                    break;
+                case 'getDiamondBalance':
+                    result = await require('../services/pay').getDiamondBalance();
+                    break;
+                case 'useItem': {
+                    const { useItem: _useItem } = require('../services/warehouse');
+                    const itemId = Number(args[0]) || 0;
+                    const count = Math.max(1, Number(args[1]) || 1);
+                    const uid = Number(args[2]) || 0;
+                    result = await _useItem(itemId, count, [], uid);
+                    break;
+                }
+                case 'sellItems': {
+                    const { sellItems: _sell } = require('../services/warehouse');
+                    const sellList = Array.isArray(args[0]) ? args[0] : [];
+                    result = await _sell(sellList.map((it) => ({
+                        id: it.id,
+                        count: it.count,
+                        uid: it.uid || 0,
+                        expire_time: it.expireTime ?? it.expire_time,
+                    })));
+                    break;
+                }
+                case 'setItemsLocked':
+                    result = await require('../services/warehouse').setItemsLocked(args[0], args[1] === true);
+                    break;
+                case 'getDogSkillGiftStatus': {
+                    const dogGifts = require('../services/dog-skill-gifts');
+                    const info = await dogGifts.getDogInfo();
+                    result = { pendingCount: dogGifts.getPendingGiftCount(info) };
+                    break;
+                }
+                case 'claimDogSkillGifts':
+                    result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts(undefined, true);
+                    break;
+                case 'getPetInfo':
+                    result = await require('../services/pets').getPetInfo();
+                    break;
+                case 'activateDog':
+                    result = await require('../services/pets').activateDog(args[0]);
+                    break;
+                case 'deployDog':
+                    result = await require('../services/pets').deployDog(args[0]);
+                    break;
+                case 'withdrawDog':
+                    result = await require('../services/pets').withdrawDog();
+                    break;
+                case 'useDogFood':
+                    result = await require('../services/pets').useDogFood(args[0], args[1], args[2]);
+                    break;
+                case 'getPetProtectLogs':
+                    result = await require('../services/pets').getProtectLogs();
+                    break;
+                case 'setAutomation': {
+                    const payload = args && args[0] ? args[0] : {};
+                    applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);
+                    result = getAutomation();
+                    break;
+                }
+                case 'doFarmOp':
+                    result = await runFarmOperation(args[0], args[1], args[2] === true); // opType, optional targetLandId
+                    break;
+                case 'fertilizeOwnLand':
+                    result = await fertilizeOwnLand(args[0], args[1]);
+                    break;
+                case 'buyFertilizer': {
+                    const fertilizerType = args[0] || 'organic';
+                    const fertilizerCount = Number(args[1]) || 0;
+                    result = await autoBuyFertilizer(true, fertilizerType, fertilizerCount, args[2] === true);
+                    break;
+                }
+                case 'checkAndBuyFertilizer': {
+                    const options = args[0] || {};
+                    result = await checkAndBuyFertilizerBoth(options, args[1] === true);
+                    break;
+                }
+                case 'getAnalytics': {
+                    const { getPlantRankings } = require('../services/analytics');
+                    result = getPlantRankings(args[0]); // sortBy
+                    break;
+                }
+                case 'getDailyGiftOverview':
+                    result = await getDailyGiftOverview(args[0] === true);
+                    break;
+                case 'getActivityDirectorySnapshot':
+                    result = await require('../services/activity-center').getActivityDirectorySnapshot();
+                    break;
+                case 'getActivityCenterSnapshot':
+                    result = await require('../services/activity-center').getActivityCenterSnapshot();
+                    break;
+                case 'getCurrentSeasonEvent':
+                    result = await require('../services/activity-center').getCurrentSeasonEvent();
+                    break;
+                case 'getCurrentStellarActivity':
+                    result = await require('../services/activity-center').getCurrentStellarActivity();
+                    break;
+                case 'getCurrentStarSandShop':
+                    result = await require('../services/activity-center').getCurrentStarSandShop();
+                    break;
+                case 'getCurrentSolarTerms':
+                    result = await require('../services/activity-center').getCurrentSolarTerms();
+                    break;
+                case 'getCurrentQixiActivity':
+                    result = await require('../services/activity-center').getCurrentQixiActivity();
+                    break;
+                case 'getCurrentCharityRedFlowerActivity':
+                    result = await require('../services/activity-center').getCurrentCharityRedFlowerActivity();
+                    break;
+                case 'getPetDiary':
+                    result = await require('../services/activity-center').getPetDiary();
+                    break;
+                case 'operatePetDiary':
+                    result = await require('../services/activity-center').operatePetDiary(args[0], args[1]);
+                    break;
+                case 'getPetDiaryRecords':
+                    result = await require('../services/activity-center').getPetDiaryRecords(args[0]);
+                    break;
+                case 'getPetDiaryFriend':
+                    result = await require('../services/activity-center').getPetDiaryFriend(args[0]);
+                    break;
+                case 'claimCharityRedFlowerSeeds':
+                    result = await require('../services/activity-center').claimCharityRedFlowerSeeds();
+                    break;
+                case 'donateCharityRedFlowerLove':
+                    result = await require('../services/activity-center').donateCharityRedFlowerLove();
+                    break;
+                case 'claimCharityRedFlowerDailyGift':
+                    result = await require('../services/activity-center').claimCharityRedFlowerDailyGift();
+                    break;
+                case 'claimCharityRedFlowerProgressReward':
+                    result = await require('../services/activity-center').claimCharityRedFlowerProgressReward(args[0]);
+                    break;
+                case 'getCurrentWeatherActivity':
+                    result = await require('../services/activity-center').getCurrentWeatherActivity();
+                    break;
+                case 'buyWeatherBottle':
+                    result = await require('../services/activity-center').buyWeatherBottle(args[0]);
+                    break;
+                case 'collectWeatherBottle':
+                    result = await require('../services/activity-center').collectWeatherBottle(args[0]);
+                    break;
+                case 'lightWeatherResearch':
+                    result = await require('../services/activity-center').lightWeatherResearch(args[0]);
+                    break;
+                case 'summonWeatherRain':
+                    result = await require('../services/activity-center').summonWeatherRain();
+                    break;
+                case 'claimBattlePassRewards':
+                    result = await require('../services/activity-center').claimBattlePassRewards();
+                    break;
+                case 'exchangeStarSandGoods':
+                    result = await require('../services/activity-center').exchangeStarSandGoods(args[0], args[1]);
+                    break;
+                case 'lightConstellation':
+                    result = await require('../services/activity-center').lightConstellation();
+                    break;
+                case 'claimSolarTerm':
+                    result = await require('../services/activity-center').claimSolarTerm(String(args[0] || ''));
+                    break;
+                case 'getCurrentQingMeiActivity':
+                    result = await require('../services/activity-center').getCurrentQingMeiActivity();
+                    break;
+                case 'claimQingMeiDailySeed':
+                    result = await require('../services/activity-center').claimQingMeiDailySeed();
+                    break;
+                case 'startQingMeiBrew':
+                    result = await require('../services/activity-center').startQingMeiBrew(args[0]);
+                    break;
+                case 'continueQingMeiBrew':
+                    result = await require('../services/activity-center').continueQingMeiBrew();
+                    break;
+                case 'settleQingMeiBrew':
+                    result = await require('../services/activity-center').settleQingMeiBrew();
+                    break;
+                case 'claimQixiBridgeRewards':
+                    result = await require('../services/activity-center').claimQixiBridgeRewards();
+                    break;
+                case 'giftQixiSachet':
+                    result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);
+                    break;
+                case 'exchangeWeatherCollectorBottle':
+                    result = await require('../services/activity-center').exchangeWeatherCollectorBottle();
+                    break;
+                case 'getWeatherFriends':
+                    result = await require('../services/activity-center').getWeatherFriends();
+                    break;
+                case 'scanWeatherFriends':
+                    result = await require('../services/activity-center').scanWeatherFriends(args[0]);
+                    break;
+                case 'useWeatherCollectorBottle':
+                    result = await require('../services/activity-center').useWeatherCollectorBottle(args[0]);
+                    break;
+                case 'useWeatherSummonBottle':
+                    result = await require('../services/activity-center').useWeatherSummonBottle();
+                    break;
+                case 'useWeatherFrogBottle':
+                    result = await require('../services/activity-center').useWeatherFrogBottle(args[0]);
+                    break;
+                case 'useWeatherCloudBottle':
+                    result = await require('../services/activity-center').useWeatherCloudBottle(args[0], args[1]);
+                    break;
+                case 'advanceWeatherResearch':
+                    result = await require('../services/activity-center').advanceWeatherResearch(args[0]);
+                    break;
+                case 'getAutumnActivity':
+                    result = await require('../services/autumn-activities').getAutumnActivity(args[0]);
+                    break;
+                case 'operateAutumnActivity':
+                    result = await require('../services/autumn-activities').operateAutumnActivity(args[0], args[1], args[2]);
+                    break;
+                case 'getMallCatalog':
+                    result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
+                    break;
+                case 'purchaseMallProduct':
+                    result = await require('../services/commerce').purchaseMallProduct(args[0], args[1], args[2], args[3]);
+                    break;
+                case 'getMysteryShop':
+                    result = await require('../services/commerce').getMysteryShop();
+                    break;
+                case 'purchaseMysteryOffer':
+                    result = await require('../services/commerce').purchaseMysteryOffer(args[0]);
+                    break;
+                case 'getSchedulers':
+                    result = getSchedulerRegistrySnapshot();
+                    break;
+                default:
+                    error = 'Unknown method';
+            }
+        }
+    }
+    catch (e) {
+        error = {
+            message: String(e?.message || e || 'Worker API error'),
+            code: e?.code,
+            errorMessage: e?.errorMessage ?? e?.error_message,
+            name: String(e?.name || 'Error'),
+        };
+    }
+    sendToMaster({ type: 'api_response', id, result, error });
+}
+async function getDailyGiftOverview(propagateErrors = false) {
+    const auto = getAutomation() || {};
+    const task = getTaskDailyStateLikeApp
+        ? await getTaskDailyStateLikeApp(propagateErrors)
+        : (getTaskClaimDailyState ? getTaskClaimDailyState() : { doneToday: false, lastClaimAt: 0 });
+    const growthTask = getGrowthTaskStateLikeApp
+        ? await getGrowthTaskStateLikeApp(propagateErrors)
+        : { doneToday: false, completedCount: 0, totalCount: 0, tasks: [] };
+    const email = getEmailDailyState ? getEmailDailyState() : { doneToday: false, lastCheckAt: 0 };
+    const free = getFreeGiftDailyState ? getFreeGiftDailyState() : { doneToday: false, lastClaimAt: 0 };
+    const share = getShareDailyState ? getShareDailyState() : { doneToday: false, lastClaimAt: 0 };
+    const vip = getVipDailyState ? getVipDailyState() : { doneToday: false, lastClaimAt: 0 };
+    const month = getMonthCardDailyState ? getMonthCardDailyState() : { doneToday: false, lastClaimAt: 0 };
+    return {
+        date: getSystemDateKey(),
+        growth: {
+            key: 'growth_task',
+            label: '成长任务',
+            doneToday: !!growthTask.doneToday,
+            completedCount: Number(growthTask.completedCount || 0),
+            totalCount: Number(growthTask.totalCount || 0),
+            currentTask: growthTask.currentTask || null,
+            tasks: Array.isArray(growthTask.tasks) ? growthTask.tasks : [],
+        },
+        gifts: [
+            {
+                key: 'task_claim',
+                label: '每日任务',
+                enabled: !!auto.task,
+                doneToday: !!task.doneToday,
+                lastAt: Number(task.lastClaimAt || 0),
+                completedCount: Number(task.completedCount || 0),
+                totalCount: Number(task.totalCount || 3),
+            },
+            // 以下功能默认启用，enabled 固定为 true
+            { key: 'email_rewards', label: '邮箱奖励', enabled: true, doneToday: !!email.doneToday, lastAt: Number(email.lastCheckAt || 0) },
+            { key: 'mall_free_gifts', label: '商城免费礼包', enabled: true, doneToday: !!free.doneToday, lastAt: Number(free.lastClaimAt || 0) },
+            {
+                key: 'daily_share',
+                label: '分享礼包',
+                enabled: true,
+                mode: 'auto_claim',
+                doneToday: !!share.doneToday,
+                checkedToday: !!share.checkedToday,
+                checkStatus: String(share.checkStatus || 'unchecked'),
+                canShare: typeof share.canShare === 'boolean' ? share.canShare : null,
+                lastAt: Number(share.lastClaimAt || share.lastCheckAt || 0),
+            },
+            {
+                key: 'vip_daily_gift',
+                label: '会员礼包',
+                enabled: true,
+                doneToday: !!vip.doneToday,
+                lastAt: Number(vip.lastClaimAt || vip.lastCheckAt || 0),
+                hasGift: Object.hasOwn(vip, 'hasGift') ? !!vip.hasGift : undefined,
+                canClaim: Object.hasOwn(vip, 'canClaim') ? !!vip.canClaim : undefined,
+                result: vip.result || '',
+            },
+            {
+                key: 'month_card_gift',
+                label: '月卡礼包',
+                enabled: true,
+                doneToday: !!month.doneToday,
+                lastAt: Number(month.lastClaimAt || month.lastCheckAt || 0),
+                hasCard: Object.hasOwn(month, 'hasCard') ? !!month.hasCard : undefined,
+                hasClaimable: Object.hasOwn(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
+                result: month.result || '',
+            },
+        ],
+    };
+}
+function syncStatus(force = false) {
+    if (!process.send && !parentPort)
+        return;
+    const userState = getUserState();
+    const ws = getWs();
+    const connected = !!(loginReady && ws && ws.readyState === 1);
+    let expProgress = null;
+    const level = (userState.level ?? statusData.level ?? 0);
+    const exp = (userState.exp ?? statusData.exp ?? 0);
+    if (level > 0 && exp >= 0) {
+        expProgress = getLevelExpProgress(level, exp);
+    }
+    const limits = require('../services/friend').getOperationLimits();
+    const fullStats = require('../services/stats').getStats(statusData, userState, connected, limits);
+    const nowMs = Date.now();
+    const farmRemainSec = Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000));
+    const friendRemainSec = Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000));
+    const visitStrategy = require('../services/friend/visit-strategy');
+    const friendQuiet = !!visitStrategy.inFriendQuietHours();
+    const farmQuiet = !!visitStrategy.inFarmQuietHours();
+    fullStats.nextChecks = {
+        farmRemainSec,
+        helpRemainSec: friendRemainSec,
+        stealRemainSec: friendRemainSec,
+        friendRemainSec,
+        farmQuiet,
+        friendQuiet,
+        helpQuiet: friendQuiet,
+        stealQuiet: friendQuiet,
+    };
+    fullStats.automation = getAutomation();
+    fullStats.preferredSeed = getPreferredSeed();
+    fullStats.levelProgress = expProgress;
+    fullStats.configRevision = appliedConfigRevision;
+    const hash = JSON.stringify(fullStats);
+    const now = Date.now();
+    if (force || hash !== lastStatusHash || now - lastStatusSentAt > 8000) {
+        lastStatusHash = hash;
+        lastStatusSentAt = now;
+        sendToMaster({ type: 'status_sync', data: fullStats });
+    }
+}
+//# sourceMappingURL=worker.js.map
