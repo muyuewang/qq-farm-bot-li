@@ -46,13 +46,6 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Analytics.vue'),
   },
   {
-    path: 'mystery-shop',
-    name: 'mystery-shop',
-    label: '神秘商人',
-    icon: 'i-carbon-store',
-    component: () => import('@/views/MysteryShop.vue'),
-  },
-  {
     path: 'game-mall',
     name: 'game-mall',
     label: '游戏商城',

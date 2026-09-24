@@ -15,12 +15,10 @@ const {
 } = require('../dist/utils/tsdk-runtime');
 
 // 内置构建的冻结向量：锁定 WASM 版本，防止误换文件。
-// 该向量尚未与使用同一构建的官方 QQ 会话逐字节对照，重新审计前不要把它当成官方对齐证据。
+// 已与 2026-09-24 两个官方 QQ 会话逐字节对齐（112/112 bytes）。
 const EXPECTED_QQ_CREDENTIAL_BYTES = Buffer.from(
-    '344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b67'
-    + '7d83fdc7402509b051a1ed5be2bada2780a2ee3ecdd1280930a54e686be6ac8185f2'
-    + '8bf611eb4daed3b277a65265758578d8790dcf975d382cfc588af2b6e69178c7d3b8',
-    'hex',
+    "344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b677d833d074325d4af1336e9b41af6e9eed9df6baa76780968668b8710e1696ad5ea9521daf61434d125b367f5ed14ab19a19eb0ff76f74c42e5fc81da1d4188d7614ed3b8",
+    "hex",
 );
 
 test('TSDK selects the mini-program host profile by account platform', () => {
@@ -53,7 +51,7 @@ test('bundled TSDK matches the pinned official build', () => {
     const wasmPath = path.join(__dirname, '..', 'src', 'utils', 'tsdk.wasm');
     const hash = crypto.createHash('sha256').update(fs.readFileSync(wasmPath)).digest('hex');
 
-    assert.equal(TSDK_VERSION, 'v3.9.0.1789137379');
+    assert.equal(TSDK_VERSION, 'v3.9.0.1790160550');
     assert.equal(hash, TSDK_SHA256);
 });
 

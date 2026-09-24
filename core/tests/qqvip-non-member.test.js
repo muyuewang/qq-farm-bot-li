@@ -1,83 +1,45 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-
-test('non QQ VIP claim result is treated as skipped for the rest of the day', async () => {
-    const networkPath = require.resolve('../dist/utils/network');
-    const protoPath = require.resolve('../dist/utils/proto');
-    const utilsPath = require.resolve('../dist/utils/utils');
-    const qqvipPath = require.resolve('../dist/services/qqvip');
-    const requests = [];
-    const logs = [];
-
-    require.cache[networkPath] = {
-        id: networkPath,
-        filename: networkPath,
-        loaded: true,
-        exports: {
-            sendMsgAsync: async (_serviceName, methodName, _body, options) => {
-                requests.push({ methodName, options });
-                if (methodName === 'ClaimQQVipRewards') {
-                    const error = new Error('gamepb.qqvippb.QQVipService.ClaimQQVipRewards error: code=1021001 non QQ VIP');
-                    error.code = 1021001;
-                    throw error;
-                }
-                return { body: Buffer.alloc(0) };
-            },
-        },
-    };
-    require.cache[protoPath] = {
-        id: protoPath,
-        filename: protoPath,
-        loaded: true,
-        exports: {
-            types: {
-                RefreshVipInfoRequest: createCodec(),
-                RefreshVipInfoReply: createCodec(),
-                GetQQVipRewardsStatusRequest: createCodec(),
-                GetQQVipRewardsStatusReply: createCodec({
-                    reward_statuses: [{ enabled: true, can_claim: true, reward_type: 1 }],
-                }),
-                ClaimQQVipRewardsRequest: createCodec(),
-                ClaimQQVipRewardsReply: createCodec(),
-            },
-        },
-    };
-    require.cache[utilsPath] = {
-        id: utilsPath,
-        filename: utilsPath,
-        loaded: true,
-        exports: {
-            log: (...args) => logs.push(args),
-            toNum: value => Number(value) || 0,
-            getSystemDateKey: () => '2026-09-01',
-        },
-    };
-    delete require.cache[qqvipPath];
-
-    const { performDailyVipGift, getVipDailyState } = require(qqvipPath);
-    assert.equal(await performDailyVipGift(), false);
-    assert.deepEqual(requests.map(request => request.methodName), [
-        'RefreshVipInfo',
-        'GetQQVipRewardsStatus',
-        'ClaimQQVipRewards',
-    ]);
-    assert.deepEqual(requests[2].options.expectedErrorCodes, [1021001, 1021002]);
-    const state = getVipDailyState();
-    assert.equal(state.doneToday, true);
-    assert.equal(state.lastClaimAt, 0);
-    assert.equal(state.result, 'none');
-    assert.equal(state.hasGift, false);
-    assert.equal(state.canClaim, false);
-    assert.equal(logs.at(-1)[2].reason, 'not_qq_vip');
-
-    assert.equal(await performDailyVipGift(), false);
-    assert.equal(requests.length, 3);
-});
-
-function createCodec(decoded = {}) {
-    return {
-        create: value => value,
-        encode: () => ({ finish: () => Buffer.alloc(0) }),
-        decode: () => decoded,
-    };
+function harness(status, claimError) {
+ const calls=[];
+ const mock=(name,exports)=>{const id=require.resolve(name);require.cache[id]={id,filename:id,loaded:true,exports};};
+ const codec=(decoded={})=>({create:v=>v,encode:v=>({finish:()=>v}),decode:()=>decoded});
+ mock('../dist/utils/network',{sendMsgAsync:async (_s,method,body,options)=>{
+  calls.push({method,body,options});
+  if(method==='ClaimQQVipRewards'&&claimError)throw Object.assign(new Error('membership expired'),{code:claimError});
+  return {body:Buffer.alloc(0)};
+ }});
+ mock('../dist/utils/proto',{types:{RefreshVipInfoRequest:codec(),RefreshVipInfoReply:codec(),GetQQVipRewardsStatusRequest:codec(),GetQQVipRewardsStatusReply:codec(status),ClaimQQVipRewardsRequest:codec(),ClaimQQVipRewardsReply:codec({items:[]})}});
+ mock('../dist/utils/utils',{log:()=>{},toNum:v=>Number(v)||0,getSystemDateKey:()=> '2026-09-24'});
+ const id=require.resolve('../dist/services/qqvip');delete require.cache[id];
+ return {service:require(id),calls,mock};
 }
+test('nonmember receives configs but must never claim them',async()=>{
+ const h=harness({is_qq_vip:false,can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5}]});
+ assert.equal(await h.service.performDailyVipGift(),false);
+ assert.deepEqual(h.calls.map(c=>c.method),['RefreshVipInfo','GetQQVipRewardsStatus']);
+ assert.equal(h.service.getVipDailyState().doneToday,true);
+ assert.equal(h.service.getVipDailyState().hasGift,false);
+ await h.service.performDailyVipGift();assert.equal(h.calls.length,2);
+});
+test('membership expiring between check and claim skips rest of day',async()=>{
+ const h=harness({is_qq_vip:true,can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5}]},1021001);
+ assert.equal(await h.service.performDailyVipGift(),false);
+ assert.deepEqual(h.calls[2].body.reward_types,[5]);
+ assert.deepEqual(h.calls[2].options.expectedErrorCodes,[1021001,1021002]);
+ assert.equal(h.service.getVipDailyState().doneToday,true);
+ assert.equal(h.service.getVipDailyState().hasGift,false);
+});
+test('claim uses config IDs and distinct daily/season flags',async()=>{
+ const h=harness({is_qq_vip:true,can_claim:false,rewards_can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5},{type:2,is_enable:true,reward_type:6},{type:2,is_enable:false,reward_type:7}]});
+ assert.equal(await h.service.performDailyVipGift(),true);
+ assert.deepEqual(h.calls[2].body.reward_types,[6]);
+});
+test('free SVIP gift never spends diamonds and checks eligibility and limits',async()=>{
+ const h=harness({}),bought=[];
+ const base={is_free:true,is_available:true,price:{count:0},goods_id:1053};
+ h.mock('../dist/services/mall',{getMallListBySlotType:async slot=>{assert.equal(slot,4);return {goods_list:[base,{...base,goods_id:1054,price:{id:1004,count:110}},{...base,goods_id:1055,is_available:false},{...base,goods_id:1056,purchase_limit:{bought_count:1,limit_count:1}}]};},purchaseMallGoods:async id=>bought.push(id)});
+ assert.equal(await h.service.claimSvipMallFreeGift({is_qq_vip:false,mall_free_can_claim:true}),false);
+ assert.equal(await h.service.claimSvipMallFreeGift({is_qq_vip:true,mall_free_can_claim:true}),true);
+ assert.deepEqual(bought,[1053]);
+});

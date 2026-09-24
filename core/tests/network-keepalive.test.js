@@ -64,8 +64,8 @@ test('heartbeat request body reproduces the official capture byte for byte', asy
 });
 
 test('default client version has a release timestamp', () => {
-    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.1.10_20260916');
-    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1789973734419);
+    assert.equal(DEFAULT_CLIENT_VERSION, '1.14.2.11_20260922');
+    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1790215551955);
 });
 
 test('newer timestamp wins when resolving the client version', () => {

@@ -69,11 +69,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mystery-page">
+  <div class="mystery-panel">
     <header class="mystery-header">
       <div>
         <p>限时来访</p>
-        <h1>神秘商人</h1>
         <span v-if="mystery?.active">距离离开 {{ remaining }}</span>
       </div>
       <button type="button" title="刷新神秘商人" :disabled="mysteryLoading" @click="load">
@@ -105,7 +104,7 @@ onUnmounted(() => {
       <strong>神秘商人暂未出现</strong>
     </div>
 
-    <main v-else class="merchant-scene">
+    <section v-else class="merchant-scene" aria-label="神秘商人商品">
       <section class="merchant-identity">
         <div class="merchant-mark">
           <div class="i-carbon-store" />
@@ -145,7 +144,7 @@ onUnmounted(() => {
           </button>
         </div>
       </article>
-    </main>
+    </section>
 
     <Teleport to="body">
       <Transition name="merchant-dialog">
@@ -184,27 +183,18 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mystery-page {
-  min-height: 100%;
-  color: var(--ui-ink);
-}
 .mystery-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 2px 20px;
-  border-bottom: 1px solid var(--ui-border);
+  gap: 12px;
+  padding: 16px 2px 0;
 }
 .mystery-header p {
   margin: 0 0 4px;
   color: var(--ui-violet);
   font-size: 12px;
   font-weight: 600;
-}
-.mystery-header h1 {
-  margin: 0;
-  font-size: 26px;
-  line-height: 1.2;
 }
 .mystery-header span {
   display: block;
@@ -542,9 +532,6 @@ onUnmounted(() => {
   }
   .offer-content {
     padding: 24px;
-  }
-  .mystery-header h1 {
-    font-size: 24px;
   }
 }
 </style>

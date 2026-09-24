@@ -202,6 +202,7 @@ function openActivity(activity: ActivityDirectoryItemDto) {
         <span class="activity-entry__topline">
           <span class="activity-entry__icon">
             <PetMascot v-if="activity.gameplayKey === 'pet'" stage="puppy" class="activity-entry__pet" />
+            <img v-else-if="['wish', 'happy'].includes(activity.gameplayKey || '')" :src="`/activity-assets/autumn/${activity.gameplayKey}.png`" alt="" width="36" height="36" style="object-fit: contain">
             <span v-else class="i-carbon-calendar" />
           </span>
           <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>

@@ -94,20 +94,23 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
             ? status.reward_statuses
             : [];
         const rewardTypes: number[] = rewardStatuses
-            .filter((item: any) => item && item.enabled === true && item.can_claim === true)
+            .filter((item: any) => item?.is_enable === true && status.is_qq_vip === true
+                && (toNum(item.type) === 1 ? status.can_claim === true : status.rewards_can_claim === true))
             .map((item: any) => toNum(item.reward_type))
             .filter((rewardType: number) => rewardType > 0);
-        lastHasGift = rewardStatuses.some((item: any) => item && item.enabled === true);
+        lastHasGift = rewardStatuses.some((item: any) => item?.is_enable === true && status.is_qq_vip === true);
         lastCanClaim = rewardTypes.length > 0;
+        const mallClaimed = await claimSvipMallFreeGift(status);
+        if (mallClaimed) lastClaimAt = Date.now();
         if (rewardTypes.length === 0) {
             markDoneToday();
-            lastResult = 'none';
-            log('会员', '今日暂无可领取会员礼包', {
+            lastResult = mallClaimed ? 'ok' : 'none';
+            log('会员', mallClaimed ? 'SVIP 商城免费礼包领取成功' : '今日暂无可领取会员礼包', {
                 module: 'task',
                 event: DAILY_KEY,
-                result: 'none',
+                result: mallClaimed ? 'ok' : 'none',
             });
-            return false;
+            return mallClaimed;
         }
         const rep: any = await claimQQVipRewards(rewardTypes);
         const items: any[] = Array.isArray(rep && rep.items) ? rep.items : [];
@@ -158,7 +161,21 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
     }
 }
 
+async function claimSvipMallFreeGift(status: any): Promise<boolean> {
+    if (status.is_qq_vip !== true || status.mall_free_can_claim !== true) return false;
+    const mall = require('./mall');
+    const reply = await mall.getMallListBySlotType(4);
+    const goods = (reply.goods_list || []).filter((v: any) => v.is_free === true && v.is_available === true
+        && toNum(v.price?.count) === 0 && !v.ad_only && !v.share?.share_only
+        && !v.is_owned && (!v.purchase_limit || toNum(v.purchase_limit.limit_count) <= 0 || toNum(v.purchase_limit.bought_count) < toNum(v.purchase_limit.limit_count)));
+    for (const product of goods) await mall.purchaseMallGoods(toNum(product.goods_id), 1);
+    return goods.length > 0;
+}
+
 module.exports = {
+    getQQVipRewardsStatus,
+    refreshVipInfo,
+    claimSvipMallFreeGift,
     performDailyVipGift,
     getVipDailyState: () => ({
         key: DAILY_KEY,

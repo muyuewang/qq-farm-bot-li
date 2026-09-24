@@ -11,32 +11,47 @@ service MallService {
   rpc ClaimMonthCardReward(ClaimMonthCardRewardRequest) returns (ClaimMonthCardRewardReply);
 }
 
-// Requests one mall tab. The client always sends sub_slot_type, including zero.
+// Official field 2 indicates a manual opening; it is not a subcategory.
 message GetMallListBySlotTypeRequest {
   int32 slot_type = 1;
-  int32 sub_slot_type = 2;
+  bool is_manual_open = 2;
 }
 
 // Purchase limits are returned both with a product and after a purchase.
 message PurchaseLimit {
   int32 limit_type = 1;    // 1=daily, 4=activity-period in the captured products.
-  int32 bought_count = 2;  // Omitted when zero in a mall-list response.
-  int32 limit_count = 3;
+  int64 bought_count = 2;
+  int64 limit_count = 3;
 }
 
 message MallGoods {
-  int32 goods_id = 1;
+  int64 goods_id = 1;
   string name = 2;
   int32 goods_type = 3;
   repeated corepb.Item reward_items = 4;
   corepb.Item price = 5;       // Item ID is the currency; count is the unit price.
   bool is_free = 6;
   PurchaseLimit purchase_limit = 7;
-  bool is_limited = 8;
+  bool is_available = 8;
   string discount_text = 9;   // Display text such as "7.4折".
   bool is_discounted = 10;
   int64 discount_end_time = 11;
-  bool is_available = 12;
+  int32 product_type = 12; // 1=common, 2=pet, 3=adornment; NOT availability.
+  string pic = 13;
+  int64 discount_price = 14;
+  int64 promotion_start_time = 15;
+  int64 promotion_end_time = 16;
+  int64 ad_id = 17;
+  bool ad_only = 18;
+  MallShareInfo share = 19;
+  bool is_owned = 20;
+}
+
+message MallShareInfo {
+  int64 share_id = 1;
+  int64 share_free_count = 2;
+  int32 share_status = 3;
+  bool share_only = 4;
 }
 
 message GetMallListBySlotTypeResponse {
@@ -45,15 +60,18 @@ message GetMallListBySlotTypeResponse {
 }
 
 message PurchaseRequest {
-  int32 goods_id = 1;
-  int32 count = 2;
+  int64 goods_id = 1;
+  int64 count = 2;
 }
 
 message PurchaseResponse {
-  int32 goods_id = 1;
-  int32 count = 2;
+  int64 goods_id = 1;
+  bool success = 2;
   repeated corepb.Item reward_items = 3;
+  bool is_first_buy = 4;
   PurchaseLimit purchase_limit = 5;
+  bool share_free = 6;
+  MallShareInfo share = 7;
 }
 
 message GetMonthCardInfosRequest {}

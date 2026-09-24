@@ -4,6 +4,7 @@ package gamepb.activitypb;
 
 import "corepb.proto";
 import "pet-diary.proto";
+import "autumn-activities.proto";
 
 message ActivityContent {
     int64 activity_id = 1;
@@ -120,6 +121,8 @@ message WeatherResearchData {
 }
 
 message ActivityData {
+    ActivityBodyWishSign wish_sign = 119;
+    ActivityBodyShareReward share_reward = 120;
     ActivityContent activity = 1;
     repeated ActivityData children = 2;
     StarSandGoodsList catalog = 102;
@@ -444,6 +447,13 @@ message QixiBridgeRewardResult {
 }
 
 message ActivityOperateReply {
+    WishSignDrawRsp wish_sign_draw = 151;
+    WishSignClaimRsp wish_sign_claim = 152;
+    ShareRewardShareRsp share_reward_share = 153;
+    ShareRewardClaimMilestonesRsp share_reward_claim_milestones = 154;
+    ShareRewardGetLogsRsp share_reward_get_logs = 155;
+    ShareRewardResolveArkRsp share_reward_resolve = 156;
+    ShareRewardClaimDailyRsp share_reward_claim_daily = 157;
     int64 activity_id = 1;
     int64 operate_type = 2;
     ActivityData data = 3;

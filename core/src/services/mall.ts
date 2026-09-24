@@ -28,7 +28,7 @@ let freeGiftLastCheckAt: number = 0;
 async function getMallListBySlotType(slotType: number = 1, subSlotType: number = 0): Promise<any> {
     const body: Uint8Array = types.GetMallListBySlotTypeRequest.encode(types.GetMallListBySlotTypeRequest.create({
         slot_type: Number(slotType) || 1,
-        sub_slot_type: Number(subSlotType) || 0,
+        is_manual_open: Number(subSlotType) === 1,
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.mallpb.MallService', 'GetMallListBySlotType', body);
     return types.GetMallListBySlotTypeResponse.decode(replyBody);
@@ -40,7 +40,9 @@ async function purchaseMallGoods(goodsId: number, count: number = 1): Promise<an
         count: Number(count) || 1,
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.mallpb.MallService', 'Purchase', body);
-    return types.PurchaseResponse.decode(replyBody);
+    const reply = types.PurchaseResponse.decode(replyBody);
+    if (reply.success !== true) throw new Error('商城未确认购买成功，请刷新核对');
+    return reply;
 }
 
 async function getMallGoodsList(slotType: number = 1): Promise<any[]> {
@@ -314,7 +316,7 @@ async function buyFreeGifts(force: boolean = false): Promise<number> {
 
     try {
         const goods: any[] = await getMallGoodsList(1);
-        const free: any[] = goods.filter((g: any) => !!g && g.is_free === true && Number(g.goods_id || 0) > 0);
+        const free: any[] = goods.filter((g: any) => !!g && g.is_free === true && g.is_available === true && !g.ad_only && !g.share?.share_only && toNum(g.price?.count) === 0 && Number(g.goods_id || 0) > 0);
         if (!free.length) {
             freeGiftDoneDateKey = getSystemDateKey();
             log('商城', '今日暂无可领取免费礼包', {

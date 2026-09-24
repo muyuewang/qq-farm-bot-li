@@ -47,8 +47,9 @@ async function currencyBalances(ids: number[]): Promise<Record<string, number>> 
         const reply = await warehouse.getBag();
         for (const item of warehouse.getBagItems(reply)) {
             const id = toNum(item?.id);
-            if (wanted.has(id)) balances[String(id)] = Math.max(0, toNum(item?.count));
+            if (wanted.has(id)) balances[String(id)] = (balances[String(id)] || 0) + Math.max(0, toNum(item?.count));
         }
+        for (const id of wanted) balances[String(id)] ??= 0;
     } catch {
         // Catalog data remains useful while a balance refresh is unavailable.
     }
@@ -64,22 +65,47 @@ async function currencyBalances(ids: number[]): Promise<Record<string, number>> 
 }
 
 function limitDto(limit: any): any {
-    if (!limit) return null;
+    if (!limit || toNum(limit.limit_type) === 0) return null;
     const bought = Math.max(0, toNum(limit.bought_count));
     const max = Math.max(0, toNum(limit.limit_count));
     return {
         type: Math.max(0, toNum(limit.limit_type)),
         bought,
         max,
-        remaining: max > 0 ? Math.max(0, max - bought) : null,
+        remaining: Math.max(0, max - bought),
     };
 }
 
-function mallGoodsDto(goods: any, balances: Record<string, number>): any {
+function mallAvailability(goods: any, limit: any, slotType: number): { status: string; reason: string } {
+    if (goods?.is_owned) return { status: 'owned', reason: '已拥有该商品' };
+    if (limit?.remaining === 0) {
+        return { status: 'sold_out', reason: goods?.is_free ? '奖励已领取' : '商品已售罄，已达到限购上限' };
+    }
+    if (goods?.ad_only) return { status: 'ad_required', reason: '请在游戏内观看广告领取' };
+    if (goods?.share?.share_only && toNum(goods.share.share_status) !== 2) {
+        return { status: 'share_required', reason: '请在游戏内完成分享条件' };
+    }
+    // Normal unrestricted products omit field 8 in live replies. The official
+    // client uses restriction presence/type to distinguish unlimited purchases.
+    // SVIP still requires its own availability flag and membership check.
+    if (goods?.is_available !== true && !(slotType === 1 && !limit)) {
+        return { status: 'unavailable', reason: '商品当前不可购买' };
+    }
+    return { status: 'available', reason: '' };
+}
+
+function mallGoodsDto(goods: any, balances: Record<string, number>, slotType: number): any {
     const price = itemDto(goods?.price);
+    const originalPrice = price.count;
+    const discountPrice = Math.max(0, toNum(goods?.discount_price));
+    const promotionStart = toNum(goods?.promotion_start_time);
+    const promotionEnd = toNum(goods?.promotion_end_time);
+    const now = getServerTimeSec();
+    const promotionActive = discountPrice > 0 && promotionStart <= now && promotionEnd > now;
+    if (promotionActive) price.count = discountPrice;
     const limit = limitDto(goods?.purchase_limit);
-    const isFree = !!goods?.is_free || price.id === 0 || price.count === 0;
-    const available = goods?.is_available !== false;
+    const isFree = goods?.is_free === true && price.count === 0;
+    const availability = mallAvailability(goods, limit, slotType);
     const balance = price.id > 0 && Object.hasOwn(balances, String(price.id))
         ? balances[String(price.id)]
         : null;
@@ -89,20 +115,31 @@ function mallGoodsDto(goods: any, balances: Record<string, number>): any {
         type: Math.max(0, toNum(goods?.goods_type)),
         rewards: (Array.isArray(goods?.reward_items) ? goods.reward_items : []).map((item: any) => itemDto(item)),
         price: { ...price, balance },
+        originalPrice: promotionActive ? originalPrice : null,
         isFree,
         limit,
-        isLimited: !!goods?.is_limited,
-        discountText: String(goods?.discount_text || ''),
-        isDiscounted: !!goods?.is_discounted,
-        discountEndTime: Math.max(0, toNum(goods?.discount_end_time)) * 1000,
-        available,
-        purchasable: available && (!limit || limit.remaining === null || limit.remaining > 0),
+        isLimited: !!limit,
+        productType: toNum(goods?.product_type),
+        purchaseStatus: availability.status,
+        unavailableReason: availability.reason,
+        discountText: discountPrice > 0 && !promotionActive ? '' : String(goods?.discount_text || ''),
+        isDiscounted: discountPrice > 0 ? promotionActive : !!goods?.is_discounted,
+        discountEndTime: Math.max(0, discountPrice > 0 ? promotionEnd : toNum(goods?.discount_end_time)) * 1000,
+        available: availability.status === 'available',
+        purchasable: availability.status === 'available',
     };
 }
 
 async function getMallCatalog(slotTypeInput: unknown = 1, subSlotTypeInput: unknown = 0): Promise<any> {
     const slotType = boundedInteger(slotTypeInput, 1, 1, 100);
     const subSlotType = boundedInteger(subSlotTypeInput, 0, 0, 100);
+    let membership: any = null;
+    if (slotType === 4) {
+        const vip = require('./qqvip');
+        await vip.refreshVipInfo();
+        const status = await vip.getQQVipRewardsStatus();
+        membership = { isSvip: status.is_qq_vip === true, remainingDays: toNum(status.remaining_days) };
+    }
     const reply = await mallService.getMallListBySlotType(slotType, subSlotType);
     const goods = Array.isArray(reply?.goods_list) ? reply.goods_list : [];
     const currencyIds = goods.map((entry: any) => Math.max(0, toNum(entry?.price?.id))).filter(Boolean);
@@ -110,10 +147,16 @@ async function getMallCatalog(slotTypeInput: unknown = 1, subSlotTypeInput: unkn
     return {
         slotType,
         subSlotType,
+        membership,
         serverTime: getServerTimeSec() * 1000,
         refreshCountdown: Math.max(0, toNum(reply?.refresh_countdown)),
         currencies: Array.from(new Set(currencyIds), id => ({ ...itemDto({ id, count: balances[String(id)] || 0 }), balanceKnown: Object.hasOwn(balances, String(id)) })),
-        goods: goods.map((entry: any) => mallGoodsDto(entry, balances)),
+        goods: goods.map((entry: any) => {
+            const product = mallGoodsDto(entry, balances, slotType);
+            return membership && !membership.isSvip
+                ? { ...product, available: false, purchasable: false, purchaseStatus: 'svip_required', unavailableReason: '需要 SVIP 会员身份' }
+                : product;
+        }),
     };
 }
 
@@ -123,16 +166,25 @@ function serializePurchase<T>(operation: () => Promise<T>): Promise<T> {
     return result;
 }
 
-async function purchaseMallProduct(goodsIdInput: unknown, countInput: unknown): Promise<any> {
+async function purchaseMallProduct(goodsIdInput: unknown, countInput: unknown, slotTypeInput: unknown = 1, expectedPrice?: any): Promise<any> {
     const goodsId = positiveInteger(goodsIdInput, 'INVALID_GOODS_ID', 'goodsId');
     const count = positiveInteger(countInput, 'INVALID_PURCHASE_COUNT', 'count');
     if (count > 9999) throw businessError('INVALID_PURCHASE_COUNT', 'count exceeds 9999');
 
     return serializePurchase(async () => {
-        const before = await getMallCatalog(1, 0);
+        const slotType = Number(slotTypeInput);
+        if (slotType !== 1 && slotType !== 4) throw businessError('INVALID_MALL_SLOT', '不支持的商城分页');
+        const before = await getMallCatalog(slotType, 0);
         const goods = before.goods.find((entry: any) => entry.id === goodsId);
         if (!goods) throw businessError('GOODS_NOT_FOUND', 'Mall goods not found');
+        if (goods.purchaseStatus === 'sold_out') throw businessError('GOODS_SOLD_OUT', goods.unavailableReason);
         if (!goods.purchasable) throw businessError('GOODS_UNAVAILABLE', 'Mall goods is unavailable');
+        if (expectedPrice && (Number(expectedPrice.id) !== goods.price.id || Number(expectedPrice.count) !== goods.price.count)) {
+            throw businessError('MALL_PRICE_CHANGED', '商品价格已变化，请刷新商城后重新确认');
+        }
+        if (!goods.isFree && (goods.price.id <= 0 || goods.price.count <= 0 || goods.price.balance === null)) {
+            throw businessError('MALL_BALANCE_UNAVAILABLE', '商品价格或余额未确认，请刷新后重试');
+        }
         if (goods.limit?.remaining !== null && goods.limit?.remaining < count) {
             throw businessError('PURCHASE_LIMIT_EXCEEDED', 'Purchase count exceeds the remaining limit');
         }
@@ -141,14 +193,17 @@ async function purchaseMallProduct(goodsIdInput: unknown, countInput: unknown): 
         }
 
         const reply = await mallService.purchaseMallGoods(goodsId, count);
+        let catalog = null;
+        try { catalog = await getMallCatalog(slotType, 0); } catch {}
         return {
             purchase: {
                 goodsId: Math.max(0, toNum(reply?.goods_id)),
-                count: Math.max(0, toNum(reply?.count)),
+                count,
                 rewards: (Array.isArray(reply?.reward_items) ? reply.reward_items : []).map((item: any) => itemDto(item)),
                 limit: limitDto(reply?.purchase_limit),
             },
-            catalog: await getMallCatalog(1, 0),
+            catalog,
+            refreshRequired: !catalog,
         };
     });
 }

@@ -10,6 +10,7 @@ import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
+import AutumnActivityPage from './activity-center/AutumnActivityPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
 import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
@@ -40,7 +41,7 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
     stellarEntryTab.value = gameplay.entryTab as ActivityTab
 
   selectedActivity.value = gameplay.module.key
-  if (gameplay.module.key === 'pet')
+  if (gameplay.module.key === 'pet' || gameplay.module.key === 'wish' || gameplay.module.key === 'happy')
     return
   const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
   if (gameplay.module.key === 'qixi' && currentAccountId.value) {
@@ -106,6 +107,11 @@ onMounted(() => {
     v-if="!selectedActivity"
     @back="goBack"
     @open="openActivity"
+  />
+  <AutumnActivityPage
+    v-else-if="selectedActivity === 'wish' || selectedActivity === 'happy'"
+    :kind="selectedActivity"
+    @back="goBack"
   />
   <StellarActivityPage
     v-else-if="selectedActivity === 'stellar'"

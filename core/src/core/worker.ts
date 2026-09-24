@@ -1100,11 +1100,17 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'advanceWeatherResearch':
                 result = await require('../services/activity-center').advanceWeatherResearch(args[0]);
                 break;
+            case 'getAutumnActivity':
+                result = await require('../services/autumn-activities').getAutumnActivity(args[0]);
+                break;
+            case 'operateAutumnActivity':
+                result = await require('../services/autumn-activities').operateAutumnActivity(args[0], args[1], args[2]);
+                break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
                 break;
             case 'purchaseMallProduct':
-                result = await require('../services/commerce').purchaseMallProduct(args[0], args[1]);
+                result = await require('../services/commerce').purchaseMallProduct(args[0], args[1], args[2], args[3]);
                 break;
             case 'getMysteryShop':
                 result = await require('../services/commerce').getMysteryShop();

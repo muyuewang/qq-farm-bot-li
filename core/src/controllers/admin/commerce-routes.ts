@@ -47,12 +47,19 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
         };
     };
 
+    app.get('/api/activities/autumn/:key', withAccount((accountId: string, req: Request) => (
+        ctx.provider.getAutumnActivity(accountId, req.params.key)
+    )));
+    app.post('/api/activities/autumn/:key/:action', withAccount((accountId: string, req: Request) => (
+        ctx.provider.operateAutumnActivity(accountId, req.params.key, req.params.action, req.body)
+    )));
+
     app.get('/api/game-mall', withAccount((accountId: string, req: Request) => (
         ctx.provider.getMallCatalog(accountId, req.query.slotType, req.query.subSlotType)
     )));
 
     app.post('/api/game-mall/purchase', withAccount((accountId: string, req: Request) => (
-        ctx.provider.purchaseMallProduct(accountId, req.body?.goodsId, req.body?.count)
+        ctx.provider.purchaseMallProduct(accountId, req.body?.goodsId, req.body?.count, req.body?.slotType, req.body?.expectedPrice)
     )));
 
     app.get('/api/mystery-shop', withAccount((accountId: string) => (

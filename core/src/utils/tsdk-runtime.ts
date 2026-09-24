@@ -10,8 +10,8 @@ const { CONFIG } = require('../config/config');
 const { ensureDataDir, getResourcePath } = require('../config/runtime-paths');
 const { log, logWarn } = require('./utils');
 
-const TSDK_VERSION = 'v3.9.0.1789137379';
-const TSDK_SHA256 = '1744e339d43425f9f24834fd49b3239f824f57fe76242d5b3128ac55b3110ac5';
+const TSDK_VERSION = 'v3.9.0.1790160550';
+const TSDK_SHA256 = '2c9e377ecc9a4fd9019f12191b589d543a60d6654580eb3e237b35f1fa5b1cb7';
 const MINI_PROGRAM_APP_IDS = Object.freeze({
     qq: '1112386029',
     wx: 'wx5306c5978fdb76e4',

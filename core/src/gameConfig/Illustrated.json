@@ -1982,5 +1982,37 @@
     "param": 204009,
     "show_guarantee": true,
     "sort": 5002
+  },
+  {
+    "id": 46030001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 46030,
+    "show_guarantee": null,
+    "sort": 30031
+  },
+  {
+    "id": 40435001,
+    "type": "普通果实",
+    "illustrated_type": "普通图鉴",
+    "param": 40435,
+    "show_guarantee": null,
+    "sort": 30032
+  },
+  {
+    "id": 1046030001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1046030,
+    "show_guarantee": null,
+    "sort": 30031
+  },
+  {
+    "id": 1040435001,
+    "type": "黄金果实",
+    "illustrated_type": "超变图鉴",
+    "param": 1040435,
+    "show_guarantee": null,
+    "sort": 30032
   }
 ]

@@ -108,7 +108,8 @@ type SaveableSettingsKey
   = | 'plantingStrategy'
     | 'preferredSeedId'
     | 'bagSeedPriority'
-    | 'bagSeedMultiLandReservationEnabled'    | 'bagSeedLandTypes'
+    | 'bagSeedMultiLandReservationEnabled'
+    | 'bagSeedLandTypes'
     | 'bagSeedFallbackStrategy'
     | 'intervals'
     | 'friendQuietHours'
@@ -133,7 +134,8 @@ const SAVEABLE_SETTINGS_KEYS: SaveableSettingsKey[] = [
   'plantingStrategy',
   'preferredSeedId',
   'bagSeedPriority',
-  'bagSeedMultiLandReservationEnabled',  'bagSeedLandTypes',
+  'bagSeedMultiLandReservationEnabled',
+  'bagSeedLandTypes',
   'bagSeedFallbackStrategy',
   'intervals',
   'friendQuietHours',
@@ -158,7 +160,8 @@ function createDefaultSettings(): SettingsState {
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
     bagSeedPriority: [],
-    bagSeedMultiLandReservationEnabled: false,    bagSeedLandTypes: {},
+    bagSeedMultiLandReservationEnabled: false,
+    bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
@@ -219,7 +222,8 @@ export const useSettingStore = defineStore('setting', () => {
       plantingStrategy: data.strategy || defaults.plantingStrategy,
       preferredSeedId: data.preferredSeed || defaults.preferredSeedId,
       bagSeedPriority: cloneValue(data.bagSeedPriority ?? defaults.bagSeedPriority),
-      bagSeedMultiLandReservationEnabled: data.bagSeedMultiLandReservationEnabled ?? defaults.bagSeedMultiLandReservationEnabled,      bagSeedLandTypes: cloneValue(data.bagSeedLandTypes ?? defaults.bagSeedLandTypes),
+      bagSeedMultiLandReservationEnabled: data.bagSeedMultiLandReservationEnabled ?? defaults.bagSeedMultiLandReservationEnabled,
+      bagSeedLandTypes: cloneValue(data.bagSeedLandTypes ?? defaults.bagSeedLandTypes),
       bagSeedFallbackStrategy: data.bagSeedFallbackStrategy ?? defaults.bagSeedFallbackStrategy,
       intervals: cloneValue(data.intervals || defaults.intervals),
       friendQuietHours: {

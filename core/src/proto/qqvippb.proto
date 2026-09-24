@@ -9,27 +9,33 @@ import "corepb.proto";
 message GetQQVipRewardsStatusRequest {}
 
 message QQVipRewardStatus {
-    bool enabled = 1;
+    int32 type = 1;
     repeated corepb.Item rewards = 2;
-    int64 vip_level = 3;
+    bool is_enable = 3;
     int64 activity_id = 4;
-    int32 reward_type = 5;
-    bool can_claim = 6;
+    int64 reward_type = 5;
+    int64 reward_multiplier = 6;
     int64 begin_time = 7;
     int64 end_time = 8;
 }
 
 message GetQQVipRewardsStatusReply {
     bool is_qq_vip = 1;
-    bool is_super_vip = 2;
+    bool can_claim = 2;
+    bool claimed_today = 3;
+    bool rewards_can_claim = 4;
     repeated QQVipRewardStatus reward_statuses = 5;
+    bool has_redpoint = 6;
+    int64 remaining_days = 7;
+    int64 days_remaining_reminder = 8;
+    bool mall_free_can_claim = 9;
 }
 
 message RefreshVipInfoRequest {}
 message RefreshVipInfoReply {}
 
 message ClaimQQVipRewardsRequest {
-    repeated int32 reward_types = 1 [packed = true];
+    repeated int64 reward_types = 1 [packed = true];
 }
 
 message ClaimQQVipRewardsReply {

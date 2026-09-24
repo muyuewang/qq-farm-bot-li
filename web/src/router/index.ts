@@ -51,6 +51,11 @@ const router = createRouter({
       })),
     },
     {
+      path: '/mystery-shop',
+      name: 'mystery-shop',
+      redirect: to => ({ name: 'game-mall', query: { ...to.query, tab: 'mystery' }, hash: to.hash }),
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/Login.vue'),

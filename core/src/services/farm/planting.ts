@@ -270,9 +270,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
         landTypes: landTypeAvailable ? resolveSeedLandTypes(bagSeedLandTypes, seed && seed.seedId) : null,
         stateLevel,
     }));
-    log('种植', `背包种子原始: ${filteredForLevelAndCount.map((s: any) => `${s.name}(${s.seedId})x${s.count},lv${s.requiredLevel},size${s.plantSize}`).join('; ')}`, {
-        module: 'farm', event: '种植种子', result: 'bag_raw', priority: priorityList, stateLevel,
-    });
+    // log('种植', `背包种子原始: ${filteredForLevelAndCount.map((s: any) => `${s.name}(${s.seedId})x${s.count},lv${s.requiredLevel},size${s.plantSize}`).join('; ')}`, {
+    //     module: 'farm', event: '种植种子', result: 'bag_raw', priority: priorityList, stateLevel,
+    // });
 
     // 背包里已有的种子不再用玩家等级过滤：等级限制主要限制购买，拥有后应允许尝试种植。
     // 不可种的种子服务端会拒绝，这里记录后继续下一优先种子。
@@ -298,9 +298,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
 
     const levelLockedSeedIds = new Set<number>(levelLockedSeeds.map((s: any) => toNum(s && s.seedId)));
     if (levelLockedSeeds.length > 0) {
-        log('种植', `背包种子等级锁定但仍尝试: ${levelLockedSeeds.map((s: any) => `${s.name}(${s.seedId}) 需等级${s.requiredLevel}>当前${s.stateLevel}`).join('; ')}`, {
-            module: 'farm', event: '种植种子', result: 'bag_seed_level_lock_try', strategy: 'bag_priority', levelLocked: levelLockedSeeds,
-        });
+        // log('种植', `背包种子等级锁定但仍尝试: ${levelLockedSeeds.map((s: any) => `${s.name}(${s.seedId}) 需等级${s.requiredLevel}>当前${s.stateLevel}`).join('; ')}`, {
+        //     module: 'farm', event: '种植种子', result: 'bag_seed_level_lock_try', strategy: 'bag_priority', levelLocked: levelLockedSeeds,
+        // });
     }
     if (skippedSeeds.length > 0) {
         log('种植', `背包种子不可种植: ${skippedSeeds.map((s: any) => `${s.name}(${s.seedId}) ${s.reason}`).join('; ')}`, {

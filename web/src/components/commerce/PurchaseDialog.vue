@@ -17,6 +17,7 @@ const emit = defineEmits<{
 const count = ref(1)
 const maxCount = computed(() => Math.max(1, Math.min(9999, props.goods?.limit?.remaining ?? 9999)))
 const totalCost = computed(() => (props.goods?.price.count || 0) * count.value)
+const balanceUnknown = computed(() => !props.goods?.isFree && props.goods?.price.balance == null)
 const insufficient = computed(() => {
   const balance = props.goods?.price.balance
   return !props.goods?.isFree && balance !== null && balance !== undefined && totalCost.value > balance
@@ -72,7 +73,8 @@ function setCount(value: number) {
         <strong v-if="goods.isFree">免费</strong>
         <strong v-else><CommerceItemImage :src="goods.price.image" :alt="goods.price.name" size="sm" />{{ totalCost.toLocaleString() }}</strong>
       </div>
-      <p v-if="insufficient" class="purchase-error">
+      <p v-if="balanceUnknown" class="purchase-error">余额暂不可用，请刷新商城</p>
+      <p v-else-if="insufficient" class="purchase-error">
         {{ goods.price.name }}余额不足
       </p>
 
@@ -80,7 +82,7 @@ function setCount(value: number) {
         <button type="button" class="secondary" :disabled="pending" @click="emit('close')">
           取消
         </button>
-        <button type="button" class="primary" :disabled="pending || insufficient" @click="emit('confirm', count)">
+        <button type="button" class="primary" :disabled="pending || insufficient || balanceUnknown || !goods.purchasable" @click="emit('confirm', count)">
           <div v-if="pending" class="i-carbon-circle-dash animate-spin" />
           <div v-else class="i-carbon-shopping-cart-plus" />
           {{ pending ? '购买中' : '确认购买' }}
@@ -126,6 +128,7 @@ header p {
   font-weight: 600;
 }
 header h2 {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 20px;
   letter-spacing: 0;
@@ -140,6 +143,8 @@ header button,
   cursor: pointer;
 }
 header button {
+  flex-shrink: 0;
+  padding: 0;
   width: 36px;
   height: 36px;
   border-radius: 9px;
@@ -149,6 +154,7 @@ header button:hover,
 .stepper button:hover {
   background: var(--ui-surface-soft);
 }
+header > div { min-width: 0; }
 .purchase-product {
   display: grid;
   grid-template-columns: auto 1fr;

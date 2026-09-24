@@ -349,7 +349,7 @@ test('solar gift uses the captured claim result and a second claim is blocked', 
 test('actual mall response distinguishes tickets, gold beans and diamonds', () => {
     const type=root.lookupType('gamepb.mallpb.GetMallListBySlotTypeResponse');
     const reply=object(type,Buffer.from(require('./fixtures/pet-mall-capture.json').hex,'hex'));
-    const goods=id=>reply.goods_list.find(g=>g.goods_id===id);
+    const goods=id=>reply.goods_list.find(g=>Number(g.goods_id)===id);
     assert.deepEqual(goods(1044).price,{id:'1002',count:'25',mutant_types:[]});
     assert.deepEqual(goods(1050).price,{id:'1005',count:'150',mutant_types:[]});
     assert.deepEqual(goods(1045).price,{id:'1004',count:'25',mutant_types:[]});
