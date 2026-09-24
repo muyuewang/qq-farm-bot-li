@@ -83,6 +83,12 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         pet_diary_compensation_claim: false,
         pet_diary_charm_equip: false,
         pet_diary_battle: false,
+        autumn_wish_draw: false,
+        autumn_wish_claim: false,
+        autumn_wish_choice: 5,
+        autumn_happy_daily: false,
+        autumn_happy_share: false,
+        autumn_happy_milestones: false,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -353,6 +359,12 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
                 cfg.automation.fertilizer_land_types = normalizeFertilizerLandTypes(v, cfg.automation.fertilizer_land_types);
             } else if (k === 'fertilizer_smart_seconds') {
                 cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 300));
+            } else if (k === 'autumn_wish_choice') {
+                // 其余键统一按布尔收，方向是数字，得自己走一遍，否则 5 会被 !!v 收成 true。
+                const choice = Number.parseInt(v as string, 10);
+                cfg.automation.autumn_wish_choice = Number.isInteger(choice) && choice > 0
+                    ? choice
+                    : cfg.automation.autumn_wish_choice;
             } else {
                 (cfg.automation as any)[k] = !!v;
             }

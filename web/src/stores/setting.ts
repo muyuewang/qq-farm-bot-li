@@ -41,6 +41,12 @@ export interface AutomationConfig {
   pet_diary_compensation_claim?: boolean
   pet_diary_charm_equip?: boolean
   pet_diary_battle?: boolean
+  autumn_wish_draw?: boolean
+  autumn_wish_claim?: boolean
+  autumn_wish_choice?: number
+  autumn_happy_daily?: boolean
+  autumn_happy_share?: boolean
+  autumn_happy_milestones?: boolean
 }
 
 export interface IntervalsConfig {

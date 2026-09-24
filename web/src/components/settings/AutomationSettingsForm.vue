@@ -32,6 +32,17 @@ const emit = defineEmits<{
 }>()
 
 const settings = defineModel<AutomationSettingsFormModel>({ required: true })
+
+// 与 core/src/activity-data/autumn-20260924.json 的 choices 一致。活动换选项时
+// autumn-activities-auto 会跳过并记一行日志，不会拿着不存在的方向硬发请求。
+const wishChoiceOptions = [
+  { label: '财运', value: 1 },
+  { label: '感情', value: 2 },
+  { label: '前程', value: 3 },
+  { label: '生活', value: 4 },
+  { label: '农耕', value: 5 },
+  { label: '人际', value: 6 },
+]
 </script>
 
 <template>
@@ -308,6 +319,50 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
           </div>
           <p class="mt-3 text-xs text-orange-500 dark:text-orange-400">
             自动夺宝会消耗挑战书并掠夺好友护送中的宝藏，请确认后开启。
+          </p>
+        </section>
+
+        <section class="farm-card rounded-2xl p-4">
+          <div class="mb-4 flex items-start gap-3">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-900/25 dark:text-orange-400">
+              <span class="i-carbon-gift text-xl" />
+            </div>
+            <div>
+              <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                秋日祈愿活动
+              </h4>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                秋祈良愿抽签领奖、快乐不独享每日与档位领取
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.autumn_wish_claim" label="自动领取祈愿奖励" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.autumn_wish_draw" label="每日自动祈愿" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.autumn_happy_daily" label="自动领取每日快乐值" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.autumn_happy_share" label="自动领取首次分享" />
+            </div>
+            <div class="automation-setting-item sm:col-span-2">
+              <BaseSwitch v-model="settings.automation.autumn_happy_milestones" label="自动领取档位奖励" />
+            </div>
+          </div>
+
+          <div v-if="settings.automation.autumn_wish_draw" class="mt-3 rounded-lg bg-orange-50 p-3 space-y-2 dark:bg-orange-900/20">
+            <BaseSelect v-model="settings.automation.autumn_wish_choice" label="祈愿方向" :options="wishChoiceOptions" />
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              每个服务端日期只抽一次；先领完待领取的签文再抽下一签。活动没有给出的方向会跳过并记日志。
+            </p>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            半小时检查一次，所有动作都以活动返回的实时状态为准，已领过的不会重复发送。
           </p>
         </section>
 
