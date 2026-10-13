@@ -9,7 +9,7 @@ const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -414,8 +414,6 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
             } catch (e: any) {
                 log('系统', `登录后领取任务失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
             }
-
-            if (!loginReady || !canContinue()) return;
         });
 
         if (!loginReady || !canContinue()) return;
@@ -852,7 +850,9 @@ function handleTerminalDisconnect(payload: any): void {
     const code = Number(payload?.code) || 0;
     const reason = String(payload?.reason || '连接已断开');
     const phase = String(payload?.phase || 'unknown');
-    log('系统', `连接已断开，本进程不再复用旧 Code 重连（是否用原 Code 重启由主进程决定）(source=${source}, code=${code}, phase=${phase})`);
+    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`, {
+        source, disconnectCode: code, reason, phase, diagnostics: payload?.diagnostics || null,
+    });
     saveStats();
     quiesceBot(`连接断开: ${source}`);
     sendToMaster({
@@ -862,6 +862,7 @@ function handleTerminalDisconnect(payload: any): void {
         reason,
         phase,
         connectionId: Number(payload?.connectionId) || 0,
+        diagnostics: payload?.diagnostics || null,
         at: Number(payload?.at) || Date.now(),
     });
     setTimeout(exitWorker, 300, 0);
@@ -870,10 +871,12 @@ function handleTerminalDisconnect(payload: any): void {
 function onKickout(payload: any): void {
     if (shutdownStarted) return;
     const reason = payload && payload.reason ? payload.reason : '未知';
-    log('系统', `检测到踢下线，准备自动停止账号。原因: ${reason}`);
+    const reasonCode = Number(payload?.reasonCode) || 0;
+    const diagnostics = payload?.diagnostics || null;
+    log('系统', `检测到踢下线，准备自动停止账号。原因: ${reason} (${reasonCode})`, { reasonCode, diagnostics });
     saveStats();
     quiesceBot(`踢下线: ${reason}`);
-    sendToMaster({ type: 'account_kicked', reason });
+    sendToMaster({ type: 'account_kicked', reason, reasonCode, diagnostics });
     setTimeout(exitWorker, 300, 0);
 }
 
@@ -937,6 +940,9 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'getSeeds':
                 result = await getAvailableSeeds(args[0] === true);
+                break;
+            case 'purchaseSeed':
+                result = await purchaseSeed(args[0], args[1]);
                 break;
             case 'getBag':
                 result = await require('../services/warehouse').getBagDetail();
@@ -1294,6 +1300,9 @@ function syncStatus(force: boolean = false): void {
     fullStats.automation = getAutomation();
     fullStats.preferredSeed = getPreferredSeed();
     fullStats.levelProgress = expProgress;
+    fullStats.levelForecast = require('../services/level-forecast').getLevelForecast(
+        userState, expProgress, fullStats, fullStats.automation, farmQuiet,
+    );
     fullStats.configRevision = appliedConfigRevision;
     const hash = JSON.stringify(fullStats);
     const now = Date.now();

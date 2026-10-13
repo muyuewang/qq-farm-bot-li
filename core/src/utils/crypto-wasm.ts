@@ -61,6 +61,7 @@ function destroyWasm(): void {
 }
 
 module.exports = {
+    getDiagnostics: () => runtime ? runtime.getDiagnostics() : null,
     initWasm,
     encryptBuffer,
     decryptBuffer,

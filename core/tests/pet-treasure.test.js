@@ -77,8 +77,8 @@ test('real adult snapshot exposes escort value, challenge limit, fixed charms an
 
 test('friend information uses its own info field and does not show the owner treasure as a friend treasure', async () => {
     const { service } = harness();
-    const friend = await service.getPetDiaryFriend('1001851355');
-    assert.deepEqual(friend, { gid: '1001851355', treasures: [], charms: [104] });
+    const friend = await service.getPetDiaryFriend('900001');
+    assert.deepEqual(friend, { gid: '900001', treasures: [], charms: [104] });
 });
 
 test('real empty plunder log stays empty and detailed log mapping keeps challenge and both sides of charms', async () => {

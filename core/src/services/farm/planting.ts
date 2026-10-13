@@ -14,7 +14,12 @@ const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getCareerInfoOrNull } = require('../career');
 const { getAllLands, buyGoods, removePlant, fertilizeOne } = require('./api');
-const { selectFutureLayoutReservation } = require('./layout-reservation');
+const {
+    selectFutureLayoutReservation,
+    getRegisteredLayout,
+    registerLayout,
+    clearRegisteredLayout,
+} = require('./layout-reservation');
 const {
     ALL_FERTILIZER_LAND_TYPES,
     buildLandDetail,
@@ -338,7 +343,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
     const plantedLandIds: number[] = [];
     const usedSeedLogs: string[] = [];
     const deferredLandIds = new Set<number>();
-    let futureLayoutReserved = false;
+    // 每个种子每轮最多预留一组布局；各种子预留的整组目标布局互不重叠。
+    const reservedSeedIds = new Set<number>();
+    const claimedLayoutLandIds = new Set<number>();
 
     for (const seed of plantingOrder) {
         if (remainingLandIds.length === 0 || !fallbackAllowed) break;
@@ -365,16 +372,22 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
                 ? filterLandIdsByTypes(allUnlockedLandIds, landTypeById, seed.landTypes)
                 : allUnlockedLandIds;
             const reservation = multiLandReservationEnabled
-                && !futureLayoutReserved
+                && !reservedSeedIds.has(toNum(seed.seedId))
                 && plantSize > 1
                 && explicitPrioritySeedIds.has(toNum(seed.seedId))
-                ? selectFutureLayoutReservation(allowedLandIds, allEligibleLandIds, plantSize)
+                ? selectFutureLayoutReservation(allowedLandIds, allEligibleLandIds, plantSize, {
+                    registered: getRegisteredLayout(seed.seedId),
+                    excludeLandIds: claimedLayoutLandIds,
+                })
                 : null;
+            if (!reservation) clearRegisteredLayout(seed.seedId);
             if (reservation) {
+                registerLayout(seed.seedId, reservation.layout);
+                reservation.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
+                reservedSeedIds.add(toNum(seed.seedId));
                 reservation.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
                 const reserved = new Set(reservation.reservedLandIds);
                 remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
-                futureLayoutReserved = true;
                 log('种植', `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation.reservedLandIds.join(',')}，等待布局 ${reservation.layout.landIds.join(',')}`, {
                     module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
                     seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation.reservedLandIds.length,
@@ -392,6 +405,7 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
             continue;
         }
 
+        clearRegisteredLayout(seed.seedId);
         const result = await plantSeeds(seed.seedId, layouts.map(layout => layout.anchorLandId), {
             maxPlantCount: layouts.length,
             layouts,
@@ -538,6 +552,36 @@ async function findBestSeed(overrideStrategy?: string): Promise<any[]> {
     return available;
 }
 
+async function purchaseSeed(goodsIdInput: unknown, countInput: unknown): Promise<any> {
+    const goodsId = Math.floor(Number(goodsIdInput));
+    const count = Math.floor(Number(countInput));
+    if (!Number.isSafeInteger(goodsId) || goodsId <= 0) throw new Error('种子商品无效，请刷新后重试');
+    if (!Number.isSafeInteger(count) || count <= 0 || count > 9999) throw new Error('购买数量必须是 1 到 9999 的整数');
+
+    const { getShopInfo, buyGoods } = require('./api');
+    const shopReply = await getShopInfo(2);
+    const goods = (Array.isArray(shopReply.goods_list) ? shopReply.goods_list : []).find((entry: any) => toNum(entry.id) === goodsId);
+    if (!goods) throw new Error('种子商品已下架，请刷新后重试');
+    const state = getUserState();
+    let requiredLevel = 0;
+    for (const condition of goods.conds || []) {
+        if (toNum(condition.type) === 1) requiredLevel = toNum(condition.param);
+        if (toNum(condition.type) === 2) throw new Error('该种子需要解锁卡，暂不支持直接购买');
+    }
+    if (!goods.unlocked || state.level < requiredLevel) throw new Error(requiredLevel ? '未达到种子解锁等级' : '种子尚未解锁');
+    const limit = toNum(goods.limit_count);
+    const remaining = limit > 0 ? limit - toNum(goods.bought_num) : Number.POSITIVE_INFINITY;
+    if (remaining <= 0) throw new Error('该种子已达到限购数量');
+    if (count > remaining) throw new Error('购买数量超过剩余限购数量');
+    const price = toNum(goods.price);
+    if (price <= 0 || toNum(state.gold) < price * count) throw new Error('金币不足或商品价格无效');
+    const reply = await buyGoods(goodsId, count, price);
+    for (const item of reply.cost_items || []) {
+        if (toNum(item.id) === 1001) state.gold = Math.max(0, toNum(state.gold) - toNum(item.count));
+    }
+    return reply;
+}
+
 async function getAvailableSeeds(propagateErrors: boolean = false): Promise<any[]> {
     const SEED_SHOP_ID: number = 2;
     const { getShopInfo } = require('./api');
@@ -550,8 +594,10 @@ async function getAvailableSeeds(propagateErrors: boolean = false): Promise<any[
             for (const goods of shopReply.goods_list) {
                 // 不再过滤不可用的种子，而是返回给前端展示状态
                 let requiredLevel: number = 0;
+                let requiresUnlockCard = false;
                 for (const cond of goods.conds || []) {
                     if (toNum(cond.type) === 1) requiredLevel = toNum(cond.param);
+                    if (toNum(cond.type) === 2) requiresUnlockCard = true;
                 }
 
                 const limitCount = toNum(goods.limit_count);
@@ -563,7 +609,10 @@ async function getAvailableSeeds(propagateErrors: boolean = false): Promise<any[
                     goodsId: toNum(goods.id),
                     name: getPlantNameBySeedId(toNum(goods.item_id)),
                     price: toNum(goods.price),
+                    itemCount: Math.max(1, toNum(goods.item_count) || 1),
+                    remainingPurchaseCount: limitCount > 0 ? Math.max(0, limitCount - boughtNum) : null,
                     requiredLevel,
+                    requiresUnlockCard,
                     locked: !goods.unlocked || state.level < requiredLevel,
                     soldOut: isSoldOut,
                 });
@@ -584,7 +633,8 @@ async function getAvailableSeeds(propagateErrors: boolean = false): Promise<any[
             ...s,
             goodsId: 0,
             price: null, // 未知价格
-            requiredLevel: null, // 未知等级
+            requiredLevel: s.requiredLevel, // 使用本地配置等级
+            requiresUnlockCard: false,
             unknownMeta: true,
             locked: false,
             soldOut: false,
@@ -1137,6 +1187,7 @@ module.exports = {
     plantFromBagSeeds,
     findBestSeed,
     getAvailableSeeds,
+    purchaseSeed,
     getLandsDetail,
     autoPlantEmptyLands,
     plantFromShop,

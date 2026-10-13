@@ -76,6 +76,7 @@ COPY --from=core-builder /app/core/src/gameConfig ./src/gameConfig
 COPY --from=core-builder /app/core/src/proto ./src/proto
 RUN mkdir -p src/utils data/logs
 COPY --from=core-builder /app/core/src/utils/tsdk.wasm ./src/utils/tsdk.wasm
+COPY --from=core-builder /app/core/src/utils/tsdk-wx.wasm ./src/utils/tsdk-wx.wasm
 COPY --from=web-builder /app/web/dist ../web/dist
 
 RUN chmod -R 755 data

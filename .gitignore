@@ -53,3 +53,7 @@ coverage/
 
 # Cleanup script (self-deleting)
 cleanup.bat
+
+# Local protocol captures and generated runtime analysis
+protocol-captures/
+/docs/performance-analysis/

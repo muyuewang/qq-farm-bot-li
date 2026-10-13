@@ -36,12 +36,6 @@ const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
         activityIds: () => ['2026090100', '2026090101', '2026090102', '2026090103'],
     },
     {
-        gameplayKey: 'pet',
-        detailTarget: 'pet',
-        priority: 5,
-        activityIds: () => ['2026090100', '2026090101', '2026090102', '2026090103'],
-    },
-    {
         gameplayKey: 'stellar',
         detailTarget: 'travel',
         priority: 10,

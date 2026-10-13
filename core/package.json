@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "20260924",
+  "version": "20260928",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -51,7 +51,8 @@
       "src/gameConfig/**/*",
       "src/proto/**/*",
       "src/activity-data/**/*",
-      "src/utils/tsdk.wasm"
+      "src/utils/tsdk.wasm",
+      "src/utils/tsdk-wx.wasm"
     ]
   }
 }

@@ -42,8 +42,8 @@ interface RuntimeConfig extends SystemConfig {
 
 // clientVersion 由 CONFIG.clientVersion 动态获取，不写死在预设中
 // Verified in the official QQ client capture on 2026-09-24.
-const DEFAULT_CLIENT_VERSION = '1.14.2.11_20260922';
-const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1790215551955;
+const DEFAULT_CLIENT_VERSION = '1.14.2.15_20260922';
+const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1790568000000;
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
 function resolveClientVersion(savedVersion: unknown, savedUpdatedAt: unknown): { clientVersion: string; clientVersionUpdatedAt: number } {
