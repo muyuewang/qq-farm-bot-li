@@ -32,6 +32,22 @@ const emit = defineEmits<{
 }>()
 
 const settings = defineModel<AutomationSettingsFormModel>({ required: true })
+
+// 奶茶雇佣的三档班次和四个特长取自官方活动配置（MilkTeaHireDurationConfig / MilkTeaTalentConfig），
+// 特长 0 表示不限；档价只是配置标价，真正扣多少由服务端当轮报价决定。
+const milkTeaHireDurationOptions = [
+  { label: '4 小时（档价 40 奶茶券）', value: 1 },
+  { label: '12 小时（档价 130 奶茶券）', value: 2 },
+  { label: '24 小时（档价 270 奶茶券）', value: 3 },
+]
+
+const milkTeaHireTalentOptions = [
+  { label: '不限特长（随机雇一位）', value: 0 },
+  { label: '金牌销售 · 金币收入 +10%', value: 9001 },
+  { label: '金牌宣传 · 热卖值 +10%', value: 9002 },
+  { label: '金牌服务 · 售出有概率得宣传喇叭', value: 9003 },
+  { label: '默默搬砖 · 热卖值 +5%', value: 9004 },
+]
 </script>
 
 <template>
@@ -269,7 +285,7 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
                 奶茶热销中
               </h4>
               <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                默认全开：前六项只领服务端已经判定「可以领」的收益，后四项会花东西，选法写死在下面
+                默认全开：前六项只领服务端已经判定「可以领」的收益，后五项会花东西，雇佣怎么挑人可以在下面改
               </p>
             </div>
           </div>
@@ -309,11 +325,31 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
               <BaseSwitch v-model="settings.automation.milk_tea_seed_buy" label="自动购买兑换种子（不花钻石）" />
             </div>
           </div>
+          <div v-if="settings.automation.milk_tea_hire" class="mt-3 rounded-lg bg-amber-50 p-3 space-y-3 dark:bg-amber-900/20">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <BaseSelect
+                v-model="settings.automation.milk_tea_hire_duration_id"
+                label="雇佣班次"
+                :options="milkTeaHireDurationOptions"
+              />
+              <BaseSelect
+                v-model="settings.automation.milk_tea_hire_talent_id"
+                label="只雇这个特长"
+                :options="milkTeaHireTalentOptions"
+              />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.milk_tea_hire_allow_robots" label="把机器人也算进可雇佣候选" />
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              班次越长花奶茶券越多（档价 40／130／270，实际以服务端当轮报价为准，可能含推广奖金），要求的剩余营业时间也更长——选 24 小时档时，剩余营业时间不够一轮就只记跳过。选了特长就只雇这一档的人，当轮没有对应特长的可雇人选时同样只记跳过，不会退回去雇别人。
+            </p>
+          </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             半小时检查一次，一轮里十一项排队执行、项间隔 800ms，不并发。这十一个开关默认是开的，不要哪项就在下面关掉哪项；已经手动关掉的账号不会被重新打开。成长基金只领已达档位，解锁要你在活动页确认付费；没开业的店铺会跳过并记一行日志。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            制作按背包顺序取未锁定的有库存果实，整堆提交，每批最多 20 堆、一轮最多 6 批，做完一轮接着做；雇佣取第一个空位，在可雇佣的好友里随机一位，时长按活动页默认的最短档；升级达标即升；爆单按待售杯数决定喇叭用量（向上取整，受持有量和单次上限 9999 约束），没有待售就不花喇叭；兑换只买种子，按活动页列表顺序取第一个已解锁、没买满、成本里没有钻石、当前余额付得起的，一轮最多买一件。这几项都会花你的果实、奶茶券、店内金币、宣传喇叭和兑换货币，确认后再接着开。
+            制作按背包顺序取未锁定的有库存果实，整堆提交，每批最多 20 堆、一轮最多 6 批，做完一轮接着做；雇佣取第一个空位，在可雇佣的候选里随机一位（班次、特长、要不要机器人见上面三行）；升级达标即升；爆单按待售杯数决定喇叭用量（向上取整，受持有量和单次上限 9999 约束），没有待售就不花喇叭；兑换只买种子，按活动页列表顺序取第一个已解锁、没买满、成本里没有钻石、当前余额付得起的，一轮最多买一件。这几项都会花你的果实、奶茶券、店内金币、宣传喇叭和兑换货币，确认后再接着开。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             暂不提供自动开关：开业/改名（要店名）、兑换里的非种子商品（要挑东西）、成长基金解锁（要花钻石）、工作互动（要选互动类型）、躺平模式开关（改了会影响好友能否雇你）。这些都得由你拿主意，做成开关只会空转。

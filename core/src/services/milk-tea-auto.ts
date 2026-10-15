@@ -1,4 +1,5 @@
 import shareRewardInstances from '../activity-data/share-reward-instances.json';
+import milkTeaConfig from '../activity-data/milk-tea-20261015.json';
 
 export {};
 
@@ -7,13 +8,15 @@ export {};
 // 今日快乐值 74 / 首次分享 70 / 档位奖励 71 / 制作 62 / 雇佣 57 / 升级 61 / 爆单 60 /
 // 兑换购买 1）。六个领取只做「服务端说可以领、领了不花东西」的事。制作、雇佣、升级、爆单、
 // 兑换会花果实、奶茶券、店内金币、宣传喇叭和兑换货币，用户 2026-10-15 明确要求自动化并给定选法：
-// 制作按背包顺序取有库存且未锁定的果实；雇佣在可雇的好友里随机一个；升级达标就升；
-// 爆单按待售杯数决定喇叭用量；兑换只买种子、按官方列表顺序取第一个买得起的、一次一件。
+// 制作按背包顺序取有库存且未锁定的果实；雇佣在可雇的候选里随机一个，班次档数和特长由设置页挑、
+// 机器人候选可以关掉；升级达标就升；爆单按待售杯数决定喇叭用量；兑换只买种子、按官方列表顺序取第一个买得起的、一次一件。
 // 要人拿主意的（开业/改名要起店名、兑换里的非种子商品要挑、基金解锁要花钻石、
 // 工作互动要选类型、躺平开关会影响好友能否雇你）仍然不建开关——
 // 挂着什么都不执行的自动化开关比没有开关更坏。
 // 十一个开关默认全开（用户 2026-10-15 要求：活动进行中就让它自己跑），一轮里串行执行、
 // 项间隔 800ms，不做并发；runExclusiveAutomationTask 已经把整个活动自动化串在一条锁上。
+// 雇佣另有三个选法配置（不是开关）：milk_tea_hire_duration_id、milk_tea_hire_talent_id、
+// milk_tea_hire_allow_robots，值由设置页挑，非法值一律回到下面的默认。
 const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_claim_rewards',
     'milk_tea_claim_wages',
@@ -35,8 +38,26 @@ const MILK_TEA_TASK_SPACER_MS = 800;
 const CRAFT_CALLS_PER_TICK = 6;
 const CRAFT_STACKS_PER_CALL = 20;
 const CRAFT_SPACER_MS = 400;
-// 雇佣时长按官方活动页的默认选择（最短一档），工资和雇佣位消耗都按它报价。
-const HIRE_DURATION_ID = 1;
+// 雇佣的班次档位和特长 id 取自官方活动配置：1/2/3 对应 4/12/24 小时，
+// 特长是 MilkTeaTalentConfig 的四条（0 表示不限特长，由用户在设置页选）。
+const HIRE_DURATION_IDS = [1, 2, 3];
+const HIRE_TALENT_IDS = [0, ...milkTeaConfig.MilkTeaTalentConfig.map((v: any) => Number(v.talent_id))];
+// 默认按活动页的初始选择走：最短一档、不限特长、机器人也当候选（官方「可雇佣」列表本来就带它们）。
+const HIRE_DEFAULTS = { durationId: 1, talentId: 0, allowRobots: true };
+
+function normalizeHireOptions(flags: any): { durationId: number; talentId: number; allowRobots: boolean } {
+    const durationId = HIRE_DURATION_IDS.includes(Number(flags.hireDurationId)) ? Number(flags.hireDurationId) : HIRE_DEFAULTS.durationId;
+    const talentId = HIRE_TALENT_IDS.includes(Number(flags.hireTalentId)) ? Number(flags.hireTalentId) : HIRE_DEFAULTS.talentId;
+    return {
+        durationId,
+        talentId,
+        allowRobots: typeof flags.hireAllowRobots === 'boolean' ? flags.hireAllowRobots : HIRE_DEFAULTS.allowRobots,
+    };
+}
+
+function talentName(id: number): string {
+    return milkTeaConfig.MilkTeaTalentConfig.find((v: any) => Number(v.talent_id) === id)?.talent_name || `特长 ${id}`;
+}
 
 function isMilkTeaAutomationEnabled(automation: any = {}): boolean {
     return MILK_TEA_AUTOMATION_KEYS.some(key => automation[key] === true);
@@ -188,9 +209,15 @@ function createMilkTeaAutomation(deps: {
         }
     }
 
-    /** 雇佣员工（57）：找第一个空位，在「可雇佣」的好友里随机一个；机器人候选不算好友，跳过。 */
-    async function runHire(): Promise<void> {
-        const state = await shopState('hireList', 'hire', true, { durationId: HIRE_DURATION_ID });
+    /**
+     * 雇佣员工（57）：找第一个空位，在「可雇佣」的候选里随机一个。
+     * 候选池 = 好友 +（设置允许时）机器人；机器人是活动页「可雇佣」列表自带的一批，
+     * 服务端 milk-tea.ts 的雇佣校验本来就同时认这两组。
+     * 选了特长就只雇该特长的人，这一档没人时只记跳过，不会退回去雇别人——用户挑的是特长，不是随便一位。
+     * 班次档数决定读页面时的 durationId，工资和最低剩余营业时间由服务端按同一档报价，写请求也带同一档。
+     */
+    async function runHire(options: { durationId: number; talentId: number; allowRobots: boolean }): Promise<void> {
+        const state = await shopState('hireList', 'hire', true, { durationId: options.durationId });
         if (!state) return;
         if (!canOperate(state)) {
             skip('hire', '结算期不可雇佣');
@@ -210,23 +237,34 @@ function createMilkTeaAutomation(deps: {
             skip('hire', '剩余营业时间不足以完成一个班次');
             return;
         }
-        const eligible = (state.hire?.friends || []).filter((v: any) =>
+        const candidates = [...(state.hire?.friends || []), ...(options.allowRobots ? state.hire?.robots || [] : [])];
+        const eligible = candidates.filter((v: any) =>
             Number(v.state || 0) === 0 && Number(v.rehire_available_at || 0) <= now && /^[1-9]\d*$/.test(String(v.friend?.gid || '')));
         if (!eligible.length) {
-            skip('hire', '好友列表里没有当前可雇佣的员工');
+            skip('hire', options.allowRobots ? '可雇佣列表里没有当前能雇的人（含机器人）' : '好友列表里没有当前可雇佣的员工，机器人候选已关闭');
             return;
         }
-        const chosen = eligible[Math.floor(Math.random() * eligible.length)];
+        const matched = options.talentId
+            ? eligible.filter((v: any) => Number(v.talent_id) === options.talentId)
+            : eligible;
+        if (!matched.length) {
+            skip('hire', `可雇佣的${eligible.length}位里没有${talentName(options.talentId)}特长`);
+            return;
+        }
+        const chosen = matched[Math.floor(Math.random() * matched.length)];
         const wage = Number(state.hire?.wage_total || 0);
         if (Number(state.balances?.['1041'] || 0) < wage) {
             skip('hire', `奶茶券不足，雇 ${chosen.friend.name || chosen.friend.gid} 需要 ${wage}`);
             return;
         }
-        await perform(`雇佣奶茶员工（${chosen.friend.name || chosen.friend.gid}，位置 ${slotIndex + 1}）`,
+        const hours = Number((state.durations || []).find((v: any) => Number(v.duration_id) === options.durationId)?.duration_sec || 0) / 3600;
+        const who = `${chosen.friend.name || chosen.friend.gid}${chosen.is_robot ? '（机器人）' : ''}`;
+        const talent = Number(chosen.talent_id) ? `，${chosen.talent_name || talentName(Number(chosen.talent_id))}` : '';
+        await perform(`雇佣奶茶员工（${who}${talent}，${hours ? `${hours} 小时` : '所选'}班次，位置 ${slotIndex + 1}，花 ${wage} 奶茶券）`,
             () => operateMilkTeaActivity('hire', {
                 slotIndex,
                 targetGid: String(chosen.friend.gid),
-                durationId: HIRE_DURATION_ID,
+                durationId: options.durationId,
                 expectedCosts: [{ id: 1041, count: wage }],
             }), 'hire');
     }
@@ -362,13 +400,17 @@ function createMilkTeaAutomation(deps: {
         upgrade: boolean;
         boost: boolean;
         seedBuy: boolean;
+        hireDurationId?: number;
+        hireTalentId?: number;
+        hireAllowRobots?: boolean;
     }): Promise<void> {
+        const hireOptions = normalizeHireOptions(flags);
         const steps: Array<{ action: string, run: () => Promise<void> }> = [];
         if (flags.claimRewards) steps.push({ action: 'claim', run: runRewards });
         if (flags.claimWages) steps.push({ action: 'wages', run: runWages });
         if (flags.claimFund) steps.push({ action: 'fund_claim', run: runFund });
         if (flags.craft) steps.push({ action: 'craft', run: runCraft });
-        if (flags.hire) steps.push({ action: 'hire', run: runHire });
+        if (flags.hire) steps.push({ action: 'hire', run: () => runHire(hireOptions) });
         if (flags.upgrade) steps.push({ action: 'upgrade', run: runUpgrade });
         if (flags.boost) steps.push({ action: 'boost', run: runBoost });
         if (flags.seedBuy) steps.push({ action: 'seed_buy', run: runSeedBuy });

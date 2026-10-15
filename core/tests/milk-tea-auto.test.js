@@ -269,6 +269,34 @@ test('十一个开关都能穿过配置白名单存进去，且默认是开的',
     assert.equal(isMilkTeaAutomationEnabled({ milk_tea_claim_wages: true }), true);
 });
 
+test('雇佣的三个选法配置能存进白名单，默认是最短档＋不限特长＋带机器人，非法值被归一化挡掉', () => {
+    const keys = ['milk_tea_hire_duration_id', 'milk_tea_hire_talent_id', 'milk_tea_hire_allow_robots'];
+    for (const key of keys) assert.equal(ALLOWED_AUTOMATION_KEYS.has(key), true, key);
+    assert.deepEqual(
+        keys.map(key => DEFAULT_ACCOUNT_CONFIG.automation[key]),
+        [1, 0, true],
+        '默认按活动页的初始选择走：最短一档、不限特长、机器人也算候选',
+    );
+    const saved = normalizeAccountConfig({
+        automation: { milk_tea_hire_duration_id: 3, milk_tea_hire_talent_id: 9002, milk_tea_hire_allow_robots: false },
+    }, { automation: DEFAULT_ACCOUNT_CONFIG.automation }).automation;
+    assert.equal(saved.milk_tea_hire_duration_id, 3);
+    assert.equal(saved.milk_tea_hire_talent_id, 9002);
+    assert.equal(saved.milk_tea_hire_allow_robots, false);
+    // 老配置里没写这三项时继承默认，不会被布尔化（automation 里非布尔的 key 由 normalizeAccountConfig 特殊处理）。
+    const inherited = normalizeAccountConfig({ automation: { milk_tea_craft: false } }, { automation: DEFAULT_ACCOUNT_CONFIG.automation }).automation;
+    assert.equal(inherited.milk_tea_hire_duration_id, 1);
+    assert.equal(inherited.milk_tea_hire_talent_id, 0);
+    assert.equal(inherited.milk_tea_hire_allow_robots, true);
+    // 存坏了的值（第 9 档、不存在的特长）在落库这一步就被夹回默认，不会跟着配置发到服务端。
+    const broken = normalizeAccountConfig({
+        automation: { milk_tea_hire_duration_id: 9, milk_tea_hire_talent_id: 9999, milk_tea_hire_allow_robots: 'yes' },
+    }, { automation: DEFAULT_ACCOUNT_CONFIG.automation }).automation;
+    assert.equal(broken.milk_tea_hire_duration_id, 1);
+    assert.equal(broken.milk_tea_hire_talent_id, 0);
+    assert.equal(broken.milk_tea_hire_allow_robots, true);
+});
+
 test('每个开关只在打开时执行自己那一项', async () => {
     const pages = { shop: shopState(), work: workState(), fund: fundState() };
     const only = { ...FLAGS, claimRewards: false, claimWages: false, claimFund: false, happyDaily: false, happyShare: false };
@@ -449,7 +477,7 @@ test('雇佣取第一个空位，在可雇的好友里随机，报价按最短�
     assert.equal(seen.size > 1, true, [...seen].join(','));
 });
 
-test('雇佣的四种情况都不发写请求：没空位、只有机器人、奶茶券不够、班次时间不够', async () => {
+test('雇佣的四种情况都不发写请求：没空位、只有机器人且关了机器人、奶茶券不够、班次时间不够', async () => {
     const eligible = [{ friend: { gid: '10001', name: '甲' }, state: 0, rehire_available_at: 0 }];
     const full = hireState(eligible, { shop: { slots: [{ slot_index: 0, end_at: 1790900000 }, { slot_index: 1, end_at: 1790900000 }] } });
     const h1 = harness({ pages: { hireList: full } });
@@ -459,9 +487,9 @@ test('雇佣的四种情况都不发写请求：没空位、只有机器人、�
 
     const robots = hireState([], { hire: { robots: [{ friend: { gid: '20001' }, state: 0, rehire_available_at: 0, is_robot: true }] } });
     const h2 = harness({ pages: { hireList: robots } });
-    await h2.automation.runMilkTeaAutomation(only('hire'));
+    await h2.automation.runMilkTeaAutomation({ ...only('hire'), hireAllowRobots: false });
     assert.deepEqual(h2.operations, []);
-    assert.ok(h2.skipLogs().some(entry => entry.message.includes('好友列表里没有')));
+    assert.ok(h2.skipLogs().some(entry => entry.message.includes('机器人候选已关闭')));
 
     const broke = hireState(eligible, { balances: { 1041: 10 } });
     const h3 = harness({ pages: { hireList: broke } });
@@ -474,6 +502,60 @@ test('雇佣的四种情况都不发写请求：没空位、只有机器人、�
     await h4.automation.runMilkTeaAutomation(only('hire'));
     assert.deepEqual(h4.operations, []);
     assert.ok(h4.skipLogs().some(entry => entry.message.includes('剩余营业时间不足')));
+});
+
+test('机器人候选默认在池子里：好友没雇位可雇时雇机器人，日志里标出是机器人', async () => {
+    const onlyRobot = hireState([], { hire: { robots: [{ friend: { gid: '20001', name: '实习员工' }, state: 0, rehire_available_at: 0, is_robot: true, talent_id: 9004, talent_name: '默默搬砖' }] } });
+    const h = harness({ pages: { hireList: onlyRobot } });
+    await h.automation.runMilkTeaAutomation(only('hire'));
+    assert.deepEqual(h.calls.map(v => v.action), ['hire']);
+    assert.equal(h.calls[0].input.targetGid, '20001');
+    assert.ok(h.logs.some(entry => entry.message.includes('实习员工（机器人）') && entry.message.includes('默默搬砖')));
+
+    // 关掉头选以后这一位就不该再动。
+    const off = harness({ pages: { hireList: onlyRobot } });
+    await off.automation.runMilkTeaAutomation({ ...only('hire'), hireAllowRobots: false });
+    assert.deepEqual(off.operations, []);
+});
+
+test('雇佣的班次档数从配置进读请求，也原样报给服务端', async () => {
+    const eligible = [{ friend: { gid: '10001', name: '甲' }, state: 0, rehire_available_at: 0 }];
+    const pages = { hireList: hireState(eligible, { hire: { friends: eligible, robots: [], wage_total: 270, min_remain_biz_sec: 43201, duration_id: 3 }, durations: [{ duration_id: 3, duration_sec: 86400 }] }) };
+    const h = harness({ pages });
+    await h.automation.runMilkTeaAutomation({ ...only('hire'), hireDurationId: 3 });
+    assert.deepEqual(h.pageInputs.find(v => v.page === 'hireList').input, { durationId: 3 }, '读页面要按所选档报价');
+    assert.deepEqual(h.calls.map(v => v.input), [{ slotIndex: 0, targetGid: '10001', durationId: 3, expectedCosts: [{ id: 1041, count: 270 }] }]);
+    assert.ok(h.logs.some(entry => entry.message.includes('24 小时班次') && entry.message.includes('花 270 奶茶券')));
+
+    // 非法档数（配置被手改坏、老配置里的空值）一律回到最短一档，不会报一个服务端不认的档。
+    const bad = harness({ pages });
+    await bad.automation.runMilkTeaAutomation({ ...only('hire'), hireDurationId: 7 });
+    assert.deepEqual(bad.pageInputs.find(v => v.page === 'hireList').input, { durationId: 1 });
+});
+
+test('选了特长只雇这一档，这一档没人就只记跳过，不会退回去雇别人', async () => {
+    const friends = [
+        { friend: { gid: '10001', name: '甲' }, state: 0, rehire_available_at: 0, talent_id: 9001, talent_name: '金牌销售' },
+        { friend: { gid: '10002', name: '乙' }, state: 0, rehire_available_at: 0, talent_id: 9002, talent_name: '金牌宣传' },
+    ];
+    const pages = { hireList: hireState(friends) };
+    const seen = new Set();
+    for (let i = 0; i < 20; i++) {
+        const h = harness({ pages });
+        await h.automation.runMilkTeaAutomation({ ...only('hire'), hireTalentId: 9002 });
+        seen.add(h.calls.find(v => v.action === 'hire').input.targetGid);
+    }
+    assert.deepEqual([...seen], ['10002'], '金牌宣传档里只有乙，不该轮到别人');
+
+    const nobody = harness({ pages });
+    await nobody.automation.runMilkTeaAutomation({ ...only('hire'), hireTalentId: 9003 });
+    assert.deepEqual(nobody.operations, []);
+    assert.ok(nobody.skipLogs().some(entry => entry.message.includes('金牌服务')));
+
+    // 非法特长 id 回到「不限」，不该因为配置写错就一位都不雇。
+    const bad = harness({ pages });
+    await bad.automation.runMilkTeaAutomation({ ...only('hire'), hireTalentId: 1234 });
+    assert.equal(bad.calls.find(v => v.action === 'hire').input.targetGid.length > 0, true);
 });
 
 test('升级只在看板说达标时才发，等级按刚读到的值报给服务端', async () => {

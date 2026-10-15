@@ -876,6 +876,9 @@ const localAutomationSettings = ref({
     milk_tea_upgrade: true,
     milk_tea_boost: true,
     milk_tea_seed_buy: true,
+    milk_tea_hire_duration_id: 1,
+    milk_tea_hire_talent_id: 0,
+    milk_tea_hire_allow_robots: true,
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -940,6 +943,9 @@ function syncLocalAutomationSettings() {
         milk_tea_upgrade: true,
         milk_tea_boost: true,
         milk_tea_seed_buy: true,
+        milk_tea_hire_duration_id: 1,
+        milk_tea_hire_talent_id: 0,
+        milk_tea_hire_allow_robots: true,
       }
     }
     else {
@@ -983,6 +989,9 @@ function syncLocalAutomationSettings() {
         milk_tea_upgrade: true,
         milk_tea_boost: true,
         milk_tea_seed_buy: true,
+        milk_tea_hire_duration_id: 1,
+        milk_tea_hire_talent_id: 0,
+        milk_tea_hire_allow_robots: true,
       }
       localAutomationSettings.value.automation = {
         ...defaults,
