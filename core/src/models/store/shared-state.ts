@@ -83,6 +83,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_hire: true,
         milk_tea_upgrade: true,
         milk_tea_boost: true,
+        milk_tea_seed_buy: true,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,

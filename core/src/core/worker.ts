@@ -472,6 +472,7 @@ async function runMilkTeaTick(): Promise<void> {
             hire: automation.milk_tea_hire === true,
             upgrade: automation.milk_tea_upgrade === true,
             boost: automation.milk_tea_boost === true,
+            seedBuy: automation.milk_tea_seed_buy === true,
         });
     } catch (e: any) {
         log('活动', `奶茶自动任务失败: ${e.message}`, { module: 'activity', event: '奶茶活动自动', result: 'error' });

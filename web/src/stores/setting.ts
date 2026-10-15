@@ -41,6 +41,7 @@ export interface AutomationConfig {
   milk_tea_hire?: boolean
   milk_tea_upgrade?: boolean
   milk_tea_boost?: boolean
+  milk_tea_seed_buy?: boolean
 }
 
 export interface IntervalsConfig {
