@@ -43,6 +43,9 @@ export interface AutomationConfig {
     milk_tea_upgrade: boolean;
     milk_tea_boost: boolean;
     milk_tea_seed_buy: boolean;
+    milk_tea_hire_duration_id: number;
+    milk_tea_hire_talent_id: number;
+    milk_tea_hire_allow_robots: boolean;
 }
 export interface IntervalConfig {
     farm: number;

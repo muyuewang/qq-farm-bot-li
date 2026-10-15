@@ -436,6 +436,11 @@ async function runMilkTeaTick() {
             upgrade: automation.milk_tea_upgrade === true,
             boost: automation.milk_tea_boost === true,
             seedBuy: automation.milk_tea_seed_buy === true,
+            // 雇佣的三个选法配置。机器人候选在老配置里可能还没有这个 key，缺省按默认（开）处理，
+            // 时长和特长由 milk-tea-auto 自己夹回合法档，非法值只会退回默认，不会报个服务端不认的档。
+            hireDurationId: automation.milk_tea_hire_duration_id,
+            hireTalentId: automation.milk_tea_hire_talent_id,
+            hireAllowRobots: automation.milk_tea_hire_allow_robots !== false,
         });
     }
     catch (e) {
