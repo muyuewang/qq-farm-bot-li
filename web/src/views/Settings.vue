@@ -875,6 +875,12 @@ const localAutomationSettings = ref({
     pet_diary_compensation_claim: false,
     pet_diary_charm_equip: false,
     pet_diary_battle: false,
+    milk_tea_claim_rewards: false,
+    milk_tea_claim_wages: false,
+    milk_tea_claim_fund: false,
+    milk_tea_happy_daily: false,
+    milk_tea_happy_share: false,
+    milk_tea_happy_milestones: false,
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -938,6 +944,12 @@ function syncLocalAutomationSettings() {
         pet_diary_compensation_claim: false,
         pet_diary_charm_equip: false,
         pet_diary_battle: false,
+        milk_tea_claim_rewards: false,
+        milk_tea_claim_wages: false,
+        milk_tea_claim_fund: false,
+        milk_tea_happy_daily: false,
+        milk_tea_happy_share: false,
+        milk_tea_happy_milestones: false,
       }
     }
     else {
@@ -980,6 +992,12 @@ function syncLocalAutomationSettings() {
         pet_diary_compensation_claim: false,
         pet_diary_charm_equip: false,
         pet_diary_battle: false,
+        milk_tea_claim_rewards: false,
+        milk_tea_claim_wages: false,
+        milk_tea_claim_fund: false,
+        milk_tea_happy_daily: false,
+        milk_tea_happy_share: false,
+        milk_tea_happy_milestones: false,
       }
       localAutomationSettings.value.automation = {
         ...defaults,

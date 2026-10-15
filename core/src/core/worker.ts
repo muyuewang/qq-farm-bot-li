@@ -21,7 +21,7 @@ const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/s
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { createPetDiaryAutomation, isPetDiaryAutomationEnabled } = require('../services/pet-diary-auto');
-const { createAutumnAutomation, isAutumnAutomationEnabled, AUTUMN_CHECK_INTERVAL_MS } = require('../services/autumn-activities-auto');
+const { createMilkTeaAutomation, isMilkTeaAutomationEnabled, MILK_TEA_CHECK_INTERVAL_MS } = require('../services/milk-tea-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -383,12 +383,6 @@ function stopPetDiaryTimer(): void {
     workerScheduler.clear('pet_diary_treasure_ready');
 }
 
-function stopAutumnActivityTimer(): void {
-    workerScheduler.clear('autumn_activity_initial');
-    workerScheduler.clear('autumn_activity_interval');
-}
-
-
 /**
  * 登录完成后的启动序列。
  *
@@ -424,7 +418,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
         startPetDiaryTimer();
-        startAutumnActivityTimer();
+        startMilkTeaActivityTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }
@@ -509,42 +503,52 @@ function startPetDiaryTimer(): void {
     });
 }
 
-// 抽签的「每个服务端日期只抽一次」护栏存在实例里，所以实例必须整个 worker 共用一个：
-// 每轮新建就等于每次定时器触发都忘掉今天已经抽过，半小时一轮能把整期份额抽完。
-let autumnAutomation: any = null;
+let milkTeaAutomation: any = null;
 
-async function runAutumnActivityTick(): Promise<void> {
+async function runMilkTeaTick(): Promise<void> {
     if (!loginReady) return;
     const automation = getAutomation() || {};
-    if (!isAutumnAutomationEnabled(automation)) return;
-    if (!autumnAutomation) {
-        const { getAutumnActivity, operateAutumnActivity } = require('../services/autumn-activities');
+    if (!isMilkTeaAutomationEnabled(automation)) return;
+    if (!milkTeaAutomation) {
+        const { getMilkTeaActivity, operateMilkTeaActivity } = require('../services/milk-tea');
+        const { getShareRewardActivity, operateShareRewardActivity } = require('../services/share-reward-activity');
         const { getServerTimeSec } = require('../utils/utils');
-        autumnAutomation = createAutumnAutomation({
-            getAutumnActivity,
-            operateAutumnActivity,
+        milkTeaAutomation = createMilkTeaAutomation({
+            getMilkTeaActivity,
+            operateMilkTeaActivity,
+            getShareRewardActivity,
+            operateShareRewardActivity,
             getServerTimeSec,
             log,
         });
     }
-    await autumnAutomation.runAutumnAutomation({
-        wishDraw: automation.autumn_wish_draw === true,
-        wishClaim: automation.autumn_wish_claim === true,
-        wishChoice: Number(automation.autumn_wish_choice) || 0,
-        happyDaily: automation.autumn_happy_daily === true,
-        happyShare: automation.autumn_happy_share === true,
-        happyMilestones: automation.autumn_happy_milestones === true,
-    });
+    try {
+        await milkTeaAutomation.runMilkTeaAutomation({
+            claimRewards: automation.milk_tea_claim_rewards === true,
+            claimWages: automation.milk_tea_claim_wages === true,
+            claimFund: automation.milk_tea_claim_fund === true,
+            happyDaily: automation.milk_tea_happy_daily === true,
+            happyShare: automation.milk_tea_happy_share === true,
+            happyMilestones: automation.milk_tea_happy_milestones === true,
+        });
+    } catch (e: any) {
+        log('活动', `奶茶自动任务失败: ${e.message}`, { module: 'activity', event: '奶茶活动自动', result: 'error' });
+    }
 }
 
-function startAutumnActivityTimer(): void {
-    stopAutumnActivityTimer();
-    if (!loginReady || !isAutumnAutomationEnabled(getAutomation())) return;
-    workerScheduler.setTimeoutTask('autumn_activity_initial', 75000, () => {
-        runExclusiveAutomationTask('autumn_activity', runAutumnActivityTick).catch(() => null);
+function stopMilkTeaActivityTimer(): void {
+    workerScheduler.clear('milk_tea_initial');
+    workerScheduler.clear('milk_tea_interval');
+}
+
+function startMilkTeaActivityTimer(): void {
+    stopMilkTeaActivityTimer();
+    if (!loginReady || !isMilkTeaAutomationEnabled(getAutomation())) return;
+    workerScheduler.setTimeoutTask('milk_tea_initial', 90000, () => {
+        runExclusiveAutomationTask('milk_tea', runMilkTeaTick).catch(() => null);
     });
-    workerScheduler.setIntervalTask('autumn_activity_interval', AUTUMN_CHECK_INTERVAL_MS, () => {
-        runExclusiveAutomationTask('autumn_activity', runAutumnActivityTick).catch(() => null);
+    workerScheduler.setIntervalTask('milk_tea_interval', MILK_TEA_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('milk_tea', runMilkTeaTick).catch(() => null);
     });
 }
 
@@ -607,7 +611,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
             startMysteryShopTimer();
             startPetDiaryTimer();
-            startAutumnActivityTimer();
+            startMilkTeaActivityTimer();
         }
     }
 
