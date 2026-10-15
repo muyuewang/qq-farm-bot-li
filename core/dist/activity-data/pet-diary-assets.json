@@ -1,0 +1,245 @@
+[
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo5",
+        "file": "img_s3PhotoWall_photo5.webp",
+        "sourceFile": "img_s3PhotoWall_photo5.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/04/04762433-d7fd-45bf-bf7a-74761c70f7ce.a4e96.png",
+        "sourceSha256": "b4ea94a4f042286503f87810cb679e74b456f176499318e6b9cf46f465fb979c",
+        "sha256": "f95797c117d1fb62b9bd76a5461a72647b055447f62843cd2f8ba74a7a78ff87",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo8",
+        "file": "img_s3PhotoWall_photo8.webp",
+        "sourceFile": "img_s3PhotoWall_photo8.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/17/17e09369-60e6-4e51-8d3e-d4bf320b2fb4.9f6dc.png",
+        "sourceSha256": "b79cd260135db32ab40a81a9edb37ea22429134c12b9f91ae5ba324ab57779f7",
+        "sha256": "57553747a71d261ec4088e3920a09706c7ad91889139ec0e59f4ccfd89e9db52",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo0",
+        "file": "img_s3PhotoWall_photo0.webp",
+        "sourceFile": "img_s3PhotoWall_photo0.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/20/20a66be9-fb2e-4b93-be94-4bdf2a2cb625.da082.png",
+        "sourceSha256": "04fee1ce25b38d47da6a696a51baeb7d8534282bcce06f36854a8a8d0c95a9c9",
+        "sha256": "a7bbf99daff1899d25e1fea7288dba6dc0a474cc7e4c934bc8e7a99c7e3d1c02",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item4",
+        "file": "img_exchange_item4.webp",
+        "sourceFile": "img_exchange_item4.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/26/269bbd24-0158-4bb8-a715-49acdc1ef22c.df16d.png",
+        "sourceSha256": "ca14a3ef5222fb91233a4edf264e45fe96f16dd8ed6c52c8d732f8f98474bb09",
+        "sha256": "1cc22ff101e00f387db9e0f13b07f7c1b86971d939af256307c9477cd9110c8d",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item1",
+        "file": "img_exchange_item1.webp",
+        "sourceFile": "img_exchange_item1.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/3b/3b18855c-02f4-4f84-8fdf-577357b5e767.6c56d.png",
+        "sourceSha256": "307af30cdba459395e98516549c2525339083044d5e7a72659947bcd77811f96",
+        "sha256": "407047081abae89b14e10778f070dcc296279363b461106cfc8b218ba7f3fb27",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3SkillType/img_s3_skillType3",
+        "file": "img_s3_skillType3.webp",
+        "sourceFile": "img_s3_skillType3.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/3d/3d392a25-9e7d-4621-a757-25c021ea9396.c9abb.png",
+        "sourceSha256": "a00fa3c6b3928eaa42eb6e05da2c8ce92ee89f3a3f69776024ebd1e5409a1186",
+        "sha256": "b05b63e9a070560f29063e011d0854332404fe34acc6ff2da6cfa22e0d4ef5e3",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo2",
+        "file": "img_s3PhotoWall_photo2.webp",
+        "sourceFile": "img_s3PhotoWall_photo2.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/3d/3d829f19-e6ed-4a6f-8c1d-f943c8fb0e97.2c436.png",
+        "sourceSha256": "52bfa0dc0c9320ee1cbeed7e41c00ae286767590580011c0efb24787e01cb680",
+        "sha256": "03d9da2b6cd7ab7c33b61e946357fbd0c1e3798360478c3a9b15c12038fb372f",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3SkillType/img_s3_skillType5",
+        "file": "img_s3_skillType5.webp",
+        "sourceFile": "img_s3_skillType5.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/3e/3e494410-4ece-4eb6-b2a6-e78530489b76.7adb3.png",
+        "sourceSha256": "6cbf51f4a65dcc16bfa941269b28211f581bb806ecae99425c4315b19acb3d4c",
+        "sha256": "827d6e74a7ed2e65d50e1cb8efde1b56f217ea34f51a9f609ebff59f6484b887",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo3",
+        "file": "img_s3PhotoWall_photo3.webp",
+        "sourceFile": "img_s3PhotoWall_photo3.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/47/476ee9bc-92d0-4c30-8878-bba92a99111a.ffde5.png",
+        "sourceSha256": "9aa97303e4eddd1c6f979d6f7684d30d7db4e40e92345effe5880cf1f095aa9c",
+        "sha256": "0e912bd2e75e784bd1769ae154c79bd20cd770e705b39c365bfbf0db351402a8",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item3",
+        "file": "img_exchange_item3.webp",
+        "sourceFile": "img_exchange_item3.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/68/685b77b1-62c0-4c65-8045-1b8742c1ca49.76638.png",
+        "sourceSha256": "55bf9a1075df1b0616b449c249b1fb021c243f94fcf9056aff4f2dd14b72a8eb",
+        "sha256": "8d0cf53576372623490f554da03e97c90a7fc8f4ee07009b300819232123bfa7",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo7",
+        "file": "img_s3PhotoWall_photo7.webp",
+        "sourceFile": "img_s3PhotoWall_photo7.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/6b/6bc27e7c-8003-4b65-aebb-0a715814c656.d415c.png",
+        "sourceSha256": "41a682ee3be6900f8fe322097f9b43c06749ee5cc68f07a0690147b12c2add8f",
+        "sha256": "b79f0fe4fa751e146d0887afa05b73b20b4b2d07c4bcb3765ce2e927cc1dfa5a",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo13",
+        "file": "img_s3PhotoWall_photo13.webp",
+        "sourceFile": "img_s3PhotoWall_photo13.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/71/7120cb69-9a24-4e3c-978a-3222cd5558cb.39443.png",
+        "sourceSha256": "9b7808aa66c11c0198f41d561553608e44f40355c0a9438cf2ee9950d2af719c",
+        "sha256": "d9c97db4a32871b0a75c6ffda811e3d7d2696ed13bdd6bb43c96a386706de041",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo1",
+        "file": "img_s3PhotoWall_photo1.webp",
+        "sourceFile": "img_s3PhotoWall_photo1.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/7f/7f32e152-605f-4eaa-a43d-744c42882d0d.6562d.png",
+        "sourceSha256": "7245f087a05e55f3f2c43b48afd014f17b07ce10055b5a7851f3dab800f6ad78",
+        "sha256": "bea84242561c032ae33753544a87c736161f89e174ef4a00367d9c932e4ae173",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3SkillType/img_s3_skillType4",
+        "file": "img_s3_skillType4.webp",
+        "sourceFile": "img_s3_skillType4.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/82/824b8650-38c2-4205-a3ee-b66d769e40eb.48aa4.png",
+        "sourceSha256": "0f4c5f146af378a01c7ed916ebcbc19db5514a44418b18f16d7416fea1bee830",
+        "sha256": "1f1984a1af0987abd903e4e62123ac9a49966be8b070e1063ccf5a5a736797c5",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item7",
+        "file": "img_exchange_item7.webp",
+        "sourceFile": "img_exchange_item7.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/88/88c6f0f0-1b4f-4f9a-9df8-4a48d375187b.005b1.png",
+        "sourceSha256": "b8c27aaa013b55bb53a1ad033da3f75d9a31e47f388e9b20cf39c21995c3a426",
+        "sha256": "ef4df81ff6ebc001f77dcc581f63e639bc60ff9a056a30ad5798fb39ec858b61",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo10",
+        "file": "img_s3PhotoWall_photo10.webp",
+        "sourceFile": "img_s3PhotoWall_photo10.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/8e/8eb1f98c-8c4e-4273-b108-cc4a2176a959.41271.png",
+        "sourceSha256": "b124f1433257ac0b342d2305af814ee87f6dd34fadba62e971718c14df3a7a01",
+        "sha256": "25a969a6d321294f811d69c712f12622162e29c5354c8a94a0c20326e8c64cc0",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo14",
+        "file": "img_s3PhotoWall_photo14.webp",
+        "sourceFile": "img_s3PhotoWall_photo14.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/b1/b1d28c76-7f0f-40de-9458-197e37b6f986.3062e.png",
+        "sourceSha256": "2d3d67bd21b1a45943b352c29a2baadb93212372196055775bed61092ea17296",
+        "sha256": "316c0c649cbd6995b6f598be4d19878b0e2e051d27f5cbffe4b3d4ba15369ab5",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item5",
+        "file": "img_exchange_item5.webp",
+        "sourceFile": "img_exchange_item5.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/b2/b2b0c75f-02bc-45cd-a9fc-77c3ebcdd57f.772ca.png",
+        "sourceSha256": "8ef0f066796d4b2a67640848adcb399539202efc70f3d2350d35237308d6ca7e",
+        "sha256": "47898daec78d0a970fb7e5ca3a6b8d2d814963e984e21c4d5163479d8898a07b",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo6",
+        "file": "img_s3PhotoWall_photo6.webp",
+        "sourceFile": "img_s3PhotoWall_photo6.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/b4/b475c90f-9504-42ea-ad3e-6e451d522fea.7ffe2.png",
+        "sourceSha256": "6a30ea618d613f8a2c5bb81276e9d0b5073b3ac3c3afdfaab2826e37c80538d6",
+        "sha256": "053a35a4406606ac4c33c618f85b80d20c5716bb485a04d95184c4bce016ba05",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item6",
+        "file": "img_exchange_item6.webp",
+        "sourceFile": "img_exchange_item6.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/c4/c4c9ab7c-679d-4077-a8e8-4b5ef5cdee8b.8e4e1.png",
+        "sourceSha256": "4effb6242607b582bac9725404ceb8a189f1343775aff9f0de706e6cf90381f2",
+        "sha256": "108a41f05627f2fb15b7eaebf3839757a5a0d1c1bac876988e8a139c589b54d7",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo4",
+        "file": "img_s3PhotoWall_photo4.webp",
+        "sourceFile": "img_s3PhotoWall_photo4.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/cb/cb025be0-543f-4b75-946b-7254097a8b76.4b26b.png",
+        "sourceSha256": "07aab98a048c025ebefa6790f3ce8e864fd89e5ca99ae079968decf7325373dd",
+        "sha256": "ea5c453b0616f0e5de82e62aa061e3dec843a679c5764e17891553135a9f99a3",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3SkillType/img_s3_skillType1",
+        "file": "img_s3_skillType1.webp",
+        "sourceFile": "img_s3_skillType1.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/db/dbd206b4-f3b0-45c1-94ac-cec41980b551.24eef.png",
+        "sourceSha256": "004f0abd88d0afa41c5b9b90e735f7b7a7881858eac5be5ea8508c83ee899a65",
+        "sha256": "237f3e5584577da7a22fe15c31a4b9ea4a9119bcb57afafd2bfd67b57cab316f",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo11",
+        "file": "img_s3PhotoWall_photo11.webp",
+        "sourceFile": "img_s3PhotoWall_photo11.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/e3/e3feb162-775d-46d4-8bb7-d671f66fb2ce.86103.png",
+        "sourceSha256": "10a7aaa4541ae3d4438c0acc41f579408c8f287c37cfb764c96f60632884a7e2",
+        "sha256": "15e1d930a8b29f9b23dee14405e80dfb76ec002b588b2f824fb2e21e3d011397",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/activity/yuanqigao/img_exchange_item2",
+        "file": "img_exchange_item2.webp",
+        "sourceFile": "img_exchange_item2.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/e4/e4ee4d6c-d832-424e-b661-2d8f5a4c7b1a.1fdd2.png",
+        "sourceSha256": "83625f58e0865715abb98c35dd9eda0ac1ba9a5df0b38c4a94d69bd6cbb6e2fd",
+        "sha256": "2c1430ed88c86c6e9e520fe10c8781cb66fe76b3abdba04978e79edf6da62ed9",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo9",
+        "file": "img_s3PhotoWall_photo9.webp",
+        "sourceFile": "img_s3PhotoWall_photo9.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/f5/f58403b2-010c-473f-8f14-72e696c84354.6c246.png",
+        "sourceSha256": "1ae72aab876fb46ac6488d81ed771ecdc3c31a9672e4a07fcb9c65aab1c9f61c",
+        "sha256": "b52d7bab62935372f7895a88b9860fa75d138830c2c79f2cfc5d83d5fa624387",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3PhotoWallPhotos/img_s3PhotoWall_photo12",
+        "file": "img_s3PhotoWall_photo12.webp",
+        "sourceFile": "img_s3PhotoWall_photo12.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/f7/f74f50cc-4c28-49fb-be85-6620c1a3525c.c865b.png",
+        "sourceSha256": "77d82396e1d53dd6a37cd99d3a0d7ffed85a66ad7d1bb4ec5ec20604bd201e39",
+        "sha256": "84a4c3610718588214afb8b308c8999d50de058cfe29a4135425e3d336dc7183",
+        "encoding": "Pillow 12.1.1 WebP quality=82, method=6"
+    },
+    {
+        "path": "gui/texture/Season/S3/S3SkillType/img_s3_skillType2",
+        "file": "img_s3_skillType2.webp",
+        "sourceFile": "img_s3_skillType2.png",
+        "url": "https://cdn-resource.nqf.qq.com/release/remote/delayRes/native/ff/ff01be74-88fe-4494-96e2-d637aad91c8a.0ea5e.png",
+        "sourceSha256": "e144a163d348a6d968077725e0364ef2bd945e69dffa98f24675145d1ebe88e4",
+        "sha256": "a604b1d8398c47cafe4ac7f1409eeb7eb6895443a62f894f796ba02852c4e55e",
+        "encoding": "Pillow 12.1.1 WebP lossless, method=6"
+    }
+]
