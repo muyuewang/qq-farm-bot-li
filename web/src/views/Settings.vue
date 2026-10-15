@@ -871,6 +871,10 @@ const localAutomationSettings = ref({
     milk_tea_happy_daily: false,
     milk_tea_happy_share: false,
     milk_tea_happy_milestones: false,
+    milk_tea_craft: false,
+    milk_tea_hire: false,
+    milk_tea_upgrade: false,
+    milk_tea_boost: false,
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -930,6 +934,10 @@ function syncLocalAutomationSettings() {
         milk_tea_happy_daily: false,
         milk_tea_happy_share: false,
         milk_tea_happy_milestones: false,
+        milk_tea_craft: false,
+        milk_tea_hire: false,
+        milk_tea_upgrade: false,
+        milk_tea_boost: false,
       }
     }
     else {
@@ -968,6 +976,10 @@ function syncLocalAutomationSettings() {
         milk_tea_happy_daily: false,
         milk_tea_happy_share: false,
         milk_tea_happy_milestones: false,
+        milk_tea_craft: false,
+        milk_tea_hire: false,
+        milk_tea_upgrade: false,
+        milk_tea_boost: false,
       }
       localAutomationSettings.value.automation = {
         ...defaults,

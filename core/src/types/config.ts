@@ -49,6 +49,10 @@ export interface AutomationConfig {
   milk_tea_happy_daily: boolean;
   milk_tea_happy_share: boolean;
   milk_tea_happy_milestones: boolean;
+  milk_tea_craft: boolean;
+  milk_tea_hire: boolean;
+  milk_tea_upgrade: boolean;
+  milk_tea_boost: boolean;
 }
 
 export interface IntervalConfig {

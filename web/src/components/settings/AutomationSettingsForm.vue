@@ -269,7 +269,7 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
                 奶茶热销中
               </h4>
               <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                只做服务端已经判定「可以领」的领取，不代替你做消耗和选择
+                前六项只领服务端已经判定「可以领」的收益；后四项会花东西，选法已写死在下面
               </p>
             </div>
           </div>
@@ -293,12 +293,27 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
             <div class="automation-setting-item">
               <BaseSwitch v-model="settings.automation.milk_tea_happy_milestones" label="自动领取快乐档位奖励" />
             </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.milk_tea_craft" label="自动制作奶茶（消耗果实）" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.milk_tea_hire" label="自动雇佣员工（花奶茶券）" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.milk_tea_upgrade" label="自动店铺升级（花店内金币）" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.milk_tea_boost" label="自动一键爆单（花宣传喇叭）" />
+            </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             半小时检查一次。成长基金只领已达档位，解锁要你在活动页确认付费；没开业的店铺会跳过并记一行日志。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            暂不提供自动开关：开业/改名（要店名）、制作奶茶（要选果实）、雇佣员工（要挑人）、一键爆单与兑换（要定量、会花货币）、店铺升级（会花店内金币，且官方采样账号未达营业额、没有实服升级成功记录）。这些都要么缺一个你来做的主意，要么缺实服证据，做成开关只会空转。
+            制作按背包顺序取未锁定的有库存果实，整堆提交，每批最多 20 堆、一轮最多 6 批，做完一轮接着做；雇佣取第一个空位，在可雇佣的好友里随机一位，时长按活动页默认的最短档；升级达标即升；爆单按待售杯数决定喇叭用量（向上取整，受持有量和单次上限 9999 约束），没有待售就不花喇叭。这几项都会花你的果实、奶茶券、店内金币和宣传喇叭，确认后再接着开。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            暂不提供自动开关：开业/改名（要店名）、兑换购买（要选商品）、成长基金解锁（要花钻石）、工作互动（要选互动类型）、躺平模式开关（改了会影响好友能否雇你）。这些都得由你拿主意，做成开关只会空转。
           </p>
         </section>
 
