@@ -43,16 +43,6 @@ export interface AutomationConfig {
   fertilizer_smart_seconds: number;
   skip_own_weed_bug: boolean;
   show_manual_fertilizer: boolean;
-  pet_diary_adopt: boolean;
-  pet_diary_feed: boolean;
-  pet_diary_draw: boolean;
-  pet_diary_story_claim: boolean;
-  pet_diary_seed_claim: boolean;
-  pet_diary_solar_claim: boolean;
-  pet_diary_treasure_open: boolean;
-  pet_diary_compensation_claim: boolean;
-  pet_diary_charm_equip: boolean;
-  pet_diary_battle: boolean;
   milk_tea_claim_rewards: boolean;
   milk_tea_claim_wages: boolean;
   milk_tea_claim_fund: boolean;
