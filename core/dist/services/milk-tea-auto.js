@@ -4,15 +4,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const share_reward_instances_json_1 = __importDefault(require("../activity-data/share-reward-instances.json"));
-// 十个开关，每一个都落在上游 milk-tea.ts / share-reward-activity.ts 里已经用
+// 十一个开关，每一个都落在上游 milk-tea.ts / share-reward-activity.ts 里已经用
 // 官方 1.15.0.1 编码向量验证过的 operate_type（收银台收益 59 / 工资 64 / 成长基金 76 /
-// 今日快乐值 74 / 首次分享 70 / 档位奖励 71 / 制作 62 / 雇佣 57 / 升级 61 / 爆单 60）。
-// 六个领取只做「服务端说可以领、领了不花东西」的事。制作、雇佣、升级、爆单会花果实、
-// 奶茶券、店内金币和宣传喇叭，用户 2026-10-15 明确要求自动化并给定选法：
+// 今日快乐值 74 / 首次分享 70 / 档位奖励 71 / 制作 62 / 雇佣 57 / 升级 61 / 爆单 60 /
+// 兑换购买 1）。六个领取只做「服务端说可以领、领了不花东西」的事。制作、雇佣、升级、爆单、
+// 兑换会花果实、奶茶券、店内金币、宣传喇叭和兑换货币，用户 2026-10-15 明确要求自动化并给定选法：
 // 制作按背包顺序取有库存且未锁定的果实；雇佣在可雇的好友里随机一个；升级达标就升；
-// 爆单按待售杯数决定喇叭用量。要人起名字、选商品、选互动类型的（开业/改名/兑换/
-// 基金解锁/工作互动/躺平开关）仍然不建开关——挂着什么都不执行的自动化开关比没有开关更坏。
-// 十个开关默认全开（用户 2026-10-15 要求：活动进行中就让它自己跑），一轮里十项串行执行、
+// 爆单按待售杯数决定喇叭用量；兑换只买种子、按官方列表顺序取第一个买得起的、一次一件。
+// 要人拿主意的（开业/改名要起店名、兑换里的非种子商品要挑、基金解锁要花钻石、
+// 工作互动要选类型、躺平开关会影响好友能否雇你）仍然不建开关——
+// 挂着什么都不执行的自动化开关比没有开关更坏。
+// 十一个开关默认全开（用户 2026-10-15 要求：活动进行中就让它自己跑），一轮里串行执行、
 // 项间隔 800ms，不做并发；runExclusiveAutomationTask 已经把整个活动自动化串在一条锁上。
 const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_claim_rewards',
@@ -25,9 +27,10 @@ const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_hire',
     'milk_tea_upgrade',
     'milk_tea_boost',
+    'milk_tea_seed_buy',
 ];
 const MILK_TEA_CHECK_INTERVAL_MS = 30 * 60 * 1000;
-// 一轮里十项排着队跑，项与项之间隔这么久：连着发会把活动页的读和写挤在同一根连接上。
+// 一轮里各项排着队跑，项与项之间隔这么久：连着发会把活动页的读和写挤在同一根连接上。
 const MILK_TEA_TASK_SPACER_MS = 800;
 // 一轮最多 6 次制作请求、每次最多 20 堆果实：库存上千堆时不能把连接占满，剩下的下一轮接着做。
 const CRAFT_CALLS_PER_TICK = 6;
@@ -254,6 +257,33 @@ function createMilkTeaAutomation(deps) {
         await perform(`一键爆单 ${count} 次（待售 ${pending} 杯）`, () => operateMilkTeaActivity('boost', { count, expectedCosts: [{ id: itemId, count: 1 }] }), 'boost');
     }
     /**
+     * 兑换购买（1）。只买 category_tag==='seed' 的种子：按官方列表顺序（order 升序）取第一个
+     * 「已解锁、没买满、成本里没有钻石、当前余额付得起」的，一次 1 件，一轮最多一件。
+     * 成本原样带进 expectedCosts，服务端价格变了会被 checkCost 拒掉而不是按旧价买。
+     * 结算期不可买种子，钻石价签（diamond_cost_count）的商品一律跳过。
+     */
+    async function runSeedBuy() {
+        const state = await shopState('exchange', 'seed_buy');
+        if (!state)
+            return;
+        const candidates = (state.goods || []).filter((v) => v.category === 'seed' && v.available && !v.diamondCost
+            && (v.costs || []).length && !v.costs.some((c) => Number(c.id) === 1004)
+            && v.costs.every((c) => Number(state.balances?.[String(c.id)] || 0) >= Number(c.count)))
+            .sort((a, b) => Number(a.order) - Number(b.order));
+        if (!candidates.length) {
+            skip('seed_buy', '没有可买的种子（未解锁、已买满、需钻石或余额不足）');
+            return;
+        }
+        const goods = candidates[0];
+        const label = goods.name || goods.rewards?.[0]?.name || `商品 ${goods.id}`;
+        const cost = goods.costs.map((c) => `${c.name || c.id}x${c.count}`).join('、');
+        await perform(`购买兑换种子 ${label}（花 ${cost}）`, () => operateMilkTeaActivity('exchange', {
+            goodsId: goods.id,
+            count: 1,
+            expectedCosts: goods.costs.map((c) => ({ id: c.id, count: c.count })),
+        }), 'seed_buy');
+    }
+    /**
      * 快乐不独享是活动组里的独立实例，每期换一个 activity_id，所以按实例表从新到旧找
      * 当前开着的那一期，而不是把 2026110104 写死在代码里。
      */
@@ -300,7 +330,7 @@ function createMilkTeaAutomation(deps) {
                 skip('milestones', '没有可达标的档位');
         }
     }
-    // 十项按开关顺序一项一项跑，项间留 MILK_TEA_TASK_SPACER_MS：读页面和写请求都不叠，
+    // 各项按开关顺序一项一项跑，项间留 MILK_TEA_TASK_SPACER_MS：读页面和写请求都不叠，
     // 但任何一项读失败或写失败只记自己的日志，后面的照跑。
     async function runMilkTeaAutomation(flags) {
         const steps = [];
@@ -318,6 +348,8 @@ function createMilkTeaAutomation(deps) {
             steps.push({ action: 'upgrade', run: runUpgrade });
         if (flags.boost)
             steps.push({ action: 'boost', run: runBoost });
+        if (flags.seedBuy)
+            steps.push({ action: 'seed_buy', run: runSeedBuy });
         if (flags.happyDaily || flags.happyShare || flags.happyMilestones) {
             steps.push({
                 action: 'share_reward',

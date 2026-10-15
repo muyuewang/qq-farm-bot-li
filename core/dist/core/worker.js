@@ -435,6 +435,7 @@ async function runMilkTeaTick() {
             hire: automation.milk_tea_hire === true,
             upgrade: automation.milk_tea_upgrade === true,
             boost: automation.milk_tea_boost === true,
+            seedBuy: automation.milk_tea_seed_buy === true,
         });
     }
     catch (e) {

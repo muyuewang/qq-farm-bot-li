@@ -119,6 +119,8 @@ function normalizeGoods(entry, settling) {
     const remaining = limit > 0 ? Math.max(0, limit - bought) : null;
     return { id: String(entry.id), name: entry.name, description: entry.desc, rewards: items(entry.item), costs: items(entry.cost),
         remaining, conditions, category: entry.category_tag,
+        // order/diamondCost 给自动购买用：按官方列表顺序挑、带钻石价签的一律不碰。
+        order: toNum(entry.order), diamondCost: toNum(entry.diamond_cost_count),
         available: remaining !== 0 && conditions.every((v) => v.satisfied) && !(settling && entry.category_tag === 'seed'),
     };
 }
