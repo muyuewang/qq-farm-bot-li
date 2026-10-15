@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const milk_tea_20261015_json_1 = __importDefault(require("../activity-data/milk-tea-20261015.json"));
+const milk_tea_work_1 = require("./milk-tea-work");
 const { types } = require('../utils/proto');
 const { sendMsgAsync } = require('../utils/network');
 const { getServerTimeSec, toNum } = require('../utils/utils');
@@ -186,7 +187,7 @@ async function getMilkTeaActivity(page = 'shop', input = {}) {
             result.work = plain(types.MilkTeaOperateReply, { milk_tea_get_work_page: value }).milk_tea_get_work_page;
             delete result.work.hire_subscribe_qq_jump_url;
             delete result.work.hire_subscribe_template_id;
-            result.interactions = milk_tea_20261015_json_1.default.MilkTeaInteractionType;
+            Object.assign(result, (0, milk_tea_work_1.normalizeMilkTeaWork)(result.work));
         }
         if (page === 'rank' || page === 'logs') {
             const today = Math.floor((now + 8 * 3600) / 86400) * 86400 - 8 * 3600;
@@ -302,6 +303,10 @@ async function perform(action, input) {
         const kind = integer(input.interactionType, 1, 5);
         if (!shift || state.work.interact_done || toNum(shift.end_at) <= getServerTimeSec() || toNum(shift.interact_count) >= toNum(shift.interact_limit))
             fail('当前班次不可互动');
+        if (String(input.expectedShiftId || '') !== String(shift.shift_id))
+            fail('班次已变化，请刷新后重新选择');
+        if (!state.interactions.find((value) => value.interaction_id === kind)?.ready)
+            fail('工作事项数据不完整，请刷新后重试');
         params = { target_gid: String(shift.employer.gid), interaction_type: kind };
     }
     else if (action === 'hireSetting') {

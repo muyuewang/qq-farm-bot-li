@@ -26,7 +26,11 @@ let returnFocus: HTMLElement | null = null
 let sequence = 0
 let filters: any = {}
 const tabs: Array<[string, string]> = [['shop', '我的店铺'], ['exchange', '兑换商店'], ['work', '我的工作']]
-const panelTitles: Record<string, string> = { settings: '店铺设置', upgrade: '店铺升级', fund: '成长基金', workshop: '奶茶工坊', hireList: '好友雇佣', logs: '营业记录', rank: '排行榜' }
+const panelTitles: Record<string, string> = { settings: '店铺设置', upgrade: '店铺升级', fund: '成长基金', workshop: '奶茶工坊', hireList: '好友雇佣', logs: '营业记录', rank: '排行榜', workItems: '工作事项' }
+// 列表型弹窗在宽屏下加宽，每一项横向展开成一行
+const widePanels = ['upgrade', 'workshop', 'fund']
+const mainWallet = computed(() => walletOf(mainState.value))
+const panelWallet = computed(() => walletOf(panelState.value))
 const periodText = computed(() => {
   if (!mainState.value)
     return ''
@@ -52,6 +56,15 @@ const boostEstimate = computed(() => {
   return { cups: Number(shop.boost_cups_per_use || 0) * count.value - remaining, token, coin }
 })
 
+function walletOf(value: any) {
+  if (!value)
+    return []
+  return [
+    { id: 1041, name: '奶茶券' },
+    { id: 1042, name: '宣传喇叭' },
+    ...(value.balances?.[1004] !== undefined ? [{ id: 1004, name: '钻石' }] : []),
+  ].map(item => ({ ...item, count: Number(value.balances?.[item.id] || 0), image: `/game-config/seed_images_named/seed_images/${item.id}.png` }))
+}
 function rewardsText(values: any[]) {
   return (values || []).map(v => `${v.name} ×${v.count}`).join('、')
 }
@@ -66,7 +79,7 @@ async function request(action = '', input: any = {}) {
   const account = String(currentAccountId.value || '')
   if (!account || busy.value)
     return
-  const target = panel.value || mainPage.value
+  const target = panel.value === 'workItems' ? 'work' : panel.value || mainPage.value
   const version = ++sequence
   busy.value = true
   try {
@@ -180,11 +193,18 @@ onUnmounted(() => sequence++)
   <ActivityShell class="milk-shell" theme="day">
     <div class="tea-page" :inert="!!(panel || dialog)">
       <ActivityHeader title="奶茶热销中" :remaining="periodText" :loading="busy" show-refresh @back="$emit('back')" @refresh="request()" />
-      <nav class="tea-tabs" aria-label="奶茶活动页面">
-        <button v-for="[key, label] in tabs" :key="key" :disabled="busy" :class="{ selected: mainPage === key }" @click="navigate(key)">
-          {{ label }}
-        </button>
-      </nav>
+      <div class="tea-toolbar">
+        <nav class="tea-tabs" aria-label="奶茶活动页面">
+          <button v-for="[key, label] in tabs" :key="key" :disabled="busy" :class="{ selected: mainPage === key }" @click="navigate(key)">
+            {{ label }}
+          </button>
+        </nav>
+        <div v-if="mainWallet.length" class="tea-wallet" aria-label="活动道具余额">
+          <span v-for="item in mainWallet" :key="item.id" class="tea-wallet__chip" :title="item.name">
+            <img :src="item.image" :alt="item.name"><b>{{ item.count.toLocaleString() }}</b>
+          </span>
+        </div>
+      </div>
       <main class="tea-scroll">
         <MilkTeaContent v-if="mainState" :key="mainPage" :state="mainState" :page="mainPage" :busy="busy" @navigate="navigate" @operation="request" @confirmation="select" @reload="reload" />
         <div v-else class="empty">
@@ -196,9 +216,15 @@ onUnmounted(() => sequence++)
     </div>
     <Teleport to="body">
       <div v-if="panel" class="tea-mask" @click.self="closePanel">
-        <section ref="detailElement" class="tea-detail" role="dialog" aria-modal="true" :aria-label="panelTitles[panel]" :inert="!!dialog" tabindex="-1" @keydown="trapFocus" @keydown.esc="closePanel">
+        <section ref="detailElement" class="tea-detail" :class="{ 'tea-detail--wide': widePanels.includes(panel) }" role="dialog" aria-modal="true" :aria-label="panelTitles[panel]" :inert="!!dialog" tabindex="-1" @keydown="trapFocus" @keydown.esc="closePanel">
           <header>
-            <h2>{{ panelTitles[panel] }}</h2><button class="close" aria-label="关闭" :disabled="busy" @click="closePanel">
+            <h2>{{ panelTitles[panel] }}</h2>
+            <div v-if="panelWallet.length" class="tea-wallet tea-wallet--dialog" aria-label="活动道具余额">
+              <span v-for="item in panelWallet" :key="item.id" class="tea-wallet__chip" :title="item.name">
+                <img :src="item.image" :alt="item.name"><b>{{ item.count.toLocaleString() }}</b>
+              </span>
+            </div>
+            <button class="close" aria-label="关闭" :disabled="busy" @click="closePanel">
               <span class="i-carbon-close" />
             </button>
           </header>
@@ -219,6 +245,9 @@ onUnmounted(() => sequence++)
             </button>
           </header>
           <div class="confirmation-body">
+            <p v-if="dialog.description">
+              {{ dialog.description }}
+            </p>
             <div v-if="dialog.rewards?.length" class="reward-list">
               <span v-for="reward in dialog.rewards" :key="reward.id"><CommerceItemImage :src="reward.image" :alt="reward.name" size="sm" />{{ reward.name }} ×{{ reward.count * count }}</span>
             </div>
@@ -275,18 +304,24 @@ onUnmounted(() => sequence++)
   min-height: 0;
   color: var(--ink);
   background: linear-gradient(180deg, #f7ecdc 0%, #efdfc8 100%);
+  container-type: inline-size;
 }
 .tea-page :deep(.activity-header) {
   position: relative;
   inset: auto;
   flex-shrink: 0;
 }
-.tea-tabs {
+.tea-toolbar {
   display: flex;
   flex-shrink: 0;
-  gap: 6px;
+  flex-direction: column;
+  gap: 10px;
   width: min(684px, calc(100% - 36px));
   margin: 14px auto 4px;
+}
+.tea-tabs {
+  display: flex;
+  gap: 6px;
   padding: 5px;
   border: 3px solid var(--wood);
   border-radius: 16px;
@@ -313,6 +348,42 @@ onUnmounted(() => sequence++)
 .tea-tabs button:disabled:not(.selected) {
   opacity: 0.55;
   cursor: wait;
+}
+.tea-wallet {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.tea-wallet__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 14px 2px 3px;
+  border: 2px solid rgba(94, 58, 31, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.tea-wallet__chip img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+/* PC 宽屏：页签和余额并排，与下方内容同宽 */
+@container (min-width: 960px) {
+  .tea-toolbar {
+    width: min(1192px, calc(100% - 48px));
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .tea-tabs {
+    width: 460px;
+    flex: none;
+  }
 }
 .tea-scroll {
   flex: 1;
@@ -407,8 +478,18 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  container-type: inline-size;
+}
+.tea-detail--wide {
+  width: min(920px, 100%);
 }
 .detail-scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.detail-scroll > .empty {
   min-height: 0;
   overflow: auto;
 }
@@ -419,6 +500,46 @@ input:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 18px 64px 6px;
+}
+.tea-detail > header {
+  flex-direction: column;
+  gap: 8px;
+}
+.tea-wallet--dialog {
+  justify-content: center;
+  gap: 6px;
+}
+.tea-wallet--dialog .tea-wallet__chip {
+  padding-right: 11px;
+  font-size: 13px;
+}
+.tea-wallet--dialog img {
+  width: 22px;
+  height: 22px;
+}
+@media (max-height: 560px) {
+  .activity-shell.milk-shell {
+    min-height: 400px;
+    flex-shrink: 0;
+  }
+}
+/* 宽弹窗：余额放到标题左侧同一行，列表多出一行可视高度 */
+@container (min-width: 700px) {
+  .tea-detail > header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    padding: 18px 24px 6px;
+  }
+  .tea-detail > header > h2 {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .tea-wallet--dialog {
+    grid-row: 1;
+    grid-column: 1;
+    justify-content: flex-start;
+  }
 }
 h2 {
   min-width: 0;
@@ -554,9 +675,10 @@ h2 {
   text-align: center;
 }
 @media (max-width: 600px) {
-  .tea-tabs {
+  .tea-toolbar {
     width: calc(100% - 20px);
     margin-top: 10px;
+    gap: 8px;
   }
   .tea-tabs button {
     font-size: 14px;

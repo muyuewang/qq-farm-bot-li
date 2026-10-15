@@ -31,6 +31,16 @@ export interface FertilizeLandResult {
   updatedLand?: Land | null
 }
 
+export interface FertilizeAllResult {
+  fertilizerType: FertilizerType
+  requestedCount: number
+  successCount: number
+  skippedCount: number
+  fertilizerConsumedSec: number | null
+  fertilizerRemainingSec: number | null
+  updatedLands: Land[]
+}
+
 function userFacingFertilizeError(raw: unknown, fallback = '施肥失败') {
   return getApiErrorMessage(raw, fallback)
 }
@@ -57,6 +67,7 @@ export const useFarmStore = defineStore('farm', () => {
   const fertilizePending = ref(false)
   const fertilizeError = ref('')
   let landRequestSequence = 0
+  let fertilizeRequestSequence = 0
   let interactionItemsRequestSequence = 0
   let landOverlay: { lands: any[], effects: FriendInteractionEffectDto[], updatedAt: number } | null = null
 
@@ -177,6 +188,7 @@ export const useFarmStore = defineStore('farm', () => {
 
   function resetLandState() {
     landRequestSequence++
+    fertilizeRequestSequence++
     lands.value = []
     summary.value = {}
     socialEvents.value = []
@@ -310,6 +322,7 @@ export const useFarmStore = defineStore('farm', () => {
     if (!accountId || !landId || fertilizePending.value)
       return false
     fertilizePending.value = true
+    const sequence = ++fertilizeRequestSequence
     fertilizeError.value = ''
     try {
       const res = await api.post('/api/farm/fertilize', {
@@ -319,6 +332,8 @@ export const useFarmStore = defineStore('farm', () => {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
+      if (sequence !== fertilizeRequestSequence)
+        return false
       if (!res.data?.ok) {
         fertilizeError.value = userFacingFertilizeError(res.data)
         return false
@@ -331,11 +346,47 @@ export const useFarmStore = defineStore('farm', () => {
       return result
     }
     catch (cause: any) {
+      if (sequence !== fertilizeRequestSequence)
+        return false
       fertilizeError.value = userFacingFertilizeError(cause)
       return false
     }
     finally {
-      fertilizePending.value = false
+      if (sequence === fertilizeRequestSequence)
+        fertilizePending.value = false
+    }
+  }
+
+  async function fertilizeAll(accountId: string, fertilizerType: FertilizerType) {
+    if (!accountId || fertilizePending.value)
+      return false
+    const sequence = ++fertilizeRequestSequence
+    fertilizePending.value = true
+    fertilizeError.value = ''
+    try {
+      const res = await api.post('/api/farm/fertilize-all', { fertilizerType }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== fertilizeRequestSequence)
+        return false
+      if (!res.data?.ok) {
+        fertilizeError.value = userFacingFertilizeError(res.data)
+        return false
+      }
+      const result = res.data.data as FertilizeAllResult
+      recordLandUpdates(result.updatedLands || [])
+      return result
+    }
+    catch (cause: any) {
+      if (sequence !== fertilizeRequestSequence)
+        return false
+      fertilizeError.value = userFacingFertilizeError(cause)
+      return false
+    }
+    finally {
+      if (sequence === fertilizeRequestSequence)
+        fertilizePending.value = false
     }
   }
 
@@ -381,5 +432,6 @@ export const useFarmStore = defineStore('farm', () => {
     getInteractionUsedLandIds,
     resetInteractionState,
     fertilizeLand,
+    fertilizeAll,
   }
 })

@@ -27,6 +27,7 @@ module.exports = {
     runFarmOperation: scheduler.runFarmOperation,
     runFertilizerByConfig: planting.runFertilizerByConfig,
     fertilizeOwnLand: planting.fertilizeOwnLand,
+    fertilizeAllOwnLands: require('./fertilize-all').fertilizeAllOwnLands,
     buildLandMap: landAnalysis.buildLandMap,
     buildSlaveToMasterMap: landAnalysis.buildSlaveToMasterMap,
     getDisplayLandContext: landAnalysis.getDisplayLandContext,

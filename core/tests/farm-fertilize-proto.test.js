@@ -20,14 +20,32 @@ async function loadFertilizeReply() {
     return root.lookupType('gamepb.plantpb.FertilizeReply');
 }
 
+// 2026-10-15 实际一键施肥回包，仅保留肥料余额和逐地块消耗字段。
+const BULK_COSTS = [
+    [1011, 13, 31688, 76312, '1a0708f3071098d404220a08131a0608f30710da13220a08161a0608f30710da13220a08181a0608f30710a512220a08041a0608f30710fd0e220a08091a0608f30710da13220a08111a0608f30710da13220a08151a0608f30710da13220a08171a0608f30710a512220a08051a0608f30710bf13220a08081a0608f30710c013220a080a1a0608f30710c013220a080b1a0608f30710c013220a080c1a0608f30710c013'],
+    [1012, 15, 94764, 673465, '1a0708f40710b98d29220a08051a0608f40710fc35220a08091a0608f40710fc35220a080a1a0608f40710fc35220a08161a0608f40710fc35220a08041a0608f40710fc35220a08081a0608f40710fc35220a08181a0608f40710fc35220a08011a0608f40710a413220a080b1a0608f40710fc35220a080c1a0608f40710fc35220a08131a0608f40710fc35220a08151a0608f40710fc35220a08171a0608f40710fc35220a08061a0608f40710bc13220a08111a0608f40710fc35'],
+];
+
+test('bulk fertilizer decodes every land cost instead of retaining only the final entry', async () => {
+    const type = await loadFertilizeReply();
+    for (const [id, count, total, remaining, hex] of BULK_COSTS) {
+        const reply = type.decode(Buffer.from(hex, 'hex'));
+        assert.equal(reply.land_op_drops.length, count);
+        assert.equal(new Set(reply.land_op_drops.map(d => Number(d.land_id))).size, count);
+        assert.equal(reply.land_op_drops.flatMap(d => d.costs).filter(c => Number(c.id) === id).reduce((sum, c) => sum + Number(c.count), 0), total);
+        assert.equal(Number(reply.fertilizer.count), remaining);
+    }
+});
+
 test('FertilizeReply decodes an organic-fertilizer success captured from the game', async () => {
     const FertilizeReply = await loadFertilizeReply();
     const reply = FertilizeReply.decode(ORGANIC_SUCCESS_BODY);
 
     assert.equal(Number(reply.fertilizer.id), 1012);
     assert.equal(Number(reply.fertilizer.count), 221266);
-    assert.equal(Number(reply.fertilizer_use.consumed.id), 1012);
-    assert.equal(Number(reply.fertilizer_use.consumed.count), 5544);
+    assert.equal(Number(reply.land_op_drops[0].land_id), 1);
+    assert.equal(Number(reply.land_op_drops[0].costs[0].id), 1012);
+    assert.equal(Number(reply.land_op_drops[0].costs[0].count), 5544);
 });
 
 test('FertilizeReply decodes a normal-fertilizer success captured from the game', async () => {
@@ -36,6 +54,7 @@ test('FertilizeReply decodes a normal-fertilizer success captured from the game'
 
     assert.equal(Number(reply.fertilizer.id), 1011);
     assert.equal(Number(reply.fertilizer.count), 498268);
-    assert.equal(Number(reply.fertilizer_use.consumed.id), 1011);
-    assert.equal(Number(reply.fertilizer_use.consumed.count), 5732);
+    assert.equal(Number(reply.land_op_drops[0].land_id), 1);
+    assert.equal(Number(reply.land_op_drops[0].costs[0].id), 1011);
+    assert.equal(Number(reply.land_op_drops[0].costs[0].count), 5732);
 });

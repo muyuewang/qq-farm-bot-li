@@ -923,6 +923,9 @@ async function handleApiCall(msg) {
                 case 'fertilizeOwnLand':
                     result = await fertilizeOwnLand(args[0], args[1]);
                     break;
+                case 'fertilizeAllOwnLands':
+                    result = await require('../services/farm').fertilizeAllOwnLands(args[0]);
+                    break;
                 case 'buyFertilizer': {
                     const fertilizerType = args[0] || 'organic';
                     const fertilizerCount = Number(args[1]) || 0;

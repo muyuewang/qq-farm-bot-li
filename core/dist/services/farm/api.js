@@ -80,8 +80,12 @@ const ORGANIC_FERTILIZER_ID = 1012;
 const MAX_ORGANIC_FERTILIZE_OPERATIONS = 240;
 const MAX_ORGANIC_FERTILIZE_ROUNDS = 20;
 async function fertilizeOne(landId, fertilizerId = NORMAL_FERTILIZER_ID) {
+    return fertilizeBatch([landId], fertilizerId);
+}
+// 官方一键施肥：一条请求提交多个地块，每个地块只施一次。
+async function fertilizeBatch(landIds, fertilizerId) {
     const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
-        land_ids: [toLong(landId)],
+        land_ids: landIds.map((landId) => toLong(landId)),
         fertilizer_id: toLong(fertilizerId),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
@@ -103,7 +107,7 @@ function isSkippableFertilizeLandError(error) {
     return code === 1001024 || code === 1001025;
 }
 /**
- * 施肥 - 必须逐块进行，服务器不支持批量
+ * 自动施肥保留逐块执行方式；手动一键施肥使用 fertilizeBatch。
  * 游戏中拖动施肥间隔很短，这里用 50ms
  */
 async function fertilize(landIds, fertilizerId = NORMAL_FERTILIZER_ID, propagateErrors = false) {
@@ -240,6 +244,7 @@ module.exports = {
     farming,
     encodeOwnFarmingRequest,
     fertilizeOne,
+    fertilizeBatch,
     fertilize,
     isSkippableFertilizeLandError,
     fertilizeOrganicLoop,

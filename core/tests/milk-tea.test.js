@@ -16,8 +16,9 @@ function harness() {
     const fund = { unlocked: false, unlock_cost: [{ id: 1004, count: 360 }], tiers: [{ tier_id: 1, state: 2, reward: [{ id: 1002, count: 288 }] }] };
     const bag = [{ id: 1042, count: 1 }, { id: 1041, count: 200 }, { id: 1001, count: 100000 }, { id: 40525, uid: 900, count: 20 }];
     const shop = { level: 1, sales_item_id: 1042, boost_cups_per_use: 40, drink_cups: { 2: 10 }, slots: [], pending_rewards: [{ id: 1041, count: 12 }] };
+    const work = { hire_subscribe_qq_jump_url: 'private-signature', hire_subscribe_template_id: 'private-template' };
     const fields = { 55: 'milk_tea_get_shop', 56: 'milk_tea_get_hire_list', 58: 'milk_tea_get_workshop', 60: 'milk_tea_boost', 62: 'milk_tea_craft', 57: 'milk_tea_hire', 1: 'shop_buy', 75: 'growth_fund_unlock', 76: 'growth_fund_claim', 63: 'milk_tea_get_work_page' };
-    Object.assign(fields, { 54: 'milk_tea_rename_shop', 61: 'milk_tea_upgrade', 68: 'milk_tea_set_hire_disable' });
+    Object.assign(fields, { 54: 'milk_tea_rename_shop', 61: 'milk_tea_upgrade', 68: 'milk_tea_set_hire_disable', 65: 'milk_tea_interact' });
     const mock = (name, exports) => { const id = require.resolve(`../dist/${name}`); require.cache[id] = { id, filename: id, loaded: true, exports }; };
     mock('utils/proto', { types });
     mock('utils/utils', { toNum: v => Number(v) || 0, getServerTimeSec: () => now });
@@ -35,7 +36,7 @@ function harness() {
         if (cmd === 55) result = { shop };
         else if (cmd === 58) result = { recipes: [{ recipe_id: 2, recipe_name: '甜莓奶茶', unlocked: true, is_advanced: true, stock_cups: 10 }] };
         else if (cmd === 56) result = { duration_id: 1, wage_total: 40, min_remain_biz_sec: 600, robots: [{ friend: { gid: 101, name: '实习员工' }, is_robot: true }] };
-        else if (cmd === 63) result = { hire_subscribe_qq_jump_url: 'private-signature', hire_subscribe_template_id: 'private-template' };
+        else if (cmd === 63) result = work;
         else {
             calls.push(req); writes++;
             if (cmd === 60) { bag[0].count--; result = { cups: 40, token_gain: 183, coin_gain: 111375 }; }
@@ -48,7 +49,7 @@ function harness() {
         return { body: encode(types.MilkTeaOperateReply, { activity_id: req.activity_id, operate_type: cmd, [fields[cmd]]: result }) };
     } });
     const id = require.resolve('../dist/services/milk-tea'); delete require.cache[id];
-    return { service: require(id), calls, bag, shop, fund, goods, summary: milk.milk_tea.summary, setTime: v => now = v, failRefresh: () => failRefresh = true };
+    return { service: require(id), calls, bag, shop, fund, goods, work, summary: milk.milk_tea.summary, setTime: v => now = v, failRefresh: () => failRefresh = true };
 }
 
 test('boost spends the checked horn once and returns actual awards, retaining success after refresh failure', async () => {
@@ -134,4 +135,21 @@ test('upgrade uses fresh eligibility and rejects stale levels before sending a r
     await h.service.operateMilkTeaActivity('upgrade', { expectedLevel: 1 });
     assert.equal(h.calls.length, 1);
     assert.equal(h.calls[0].operate_type, '61');
+});
+
+test('work interactions validate the displayed shift and preview before submitting, and block expired or spent shifts', async () => {
+    const h = harness();
+    h.work.my_shift = { employer: { gid: '101' }, shift_id: '7', begin_at: 1792031000, end_at: 1792045400, interact_limit: 1, interact_count: 0, interact_previews: [{ interaction_type: 1, promote_cups: 40 }] };
+    await assert.rejects(h.service.operateMilkTeaActivity('interact', { interactionType: 1, expectedShiftId: '6' }), /班次已变化/);
+    h.work.my_shift.interact_previews = [];
+    await assert.rejects(h.service.operateMilkTeaActivity('interact', { interactionType: 1, expectedShiftId: '7' }), /数据不完整/);
+    assert.equal(h.calls.length, 0);
+    await h.service.operateMilkTeaActivity('interact', { interactionType: 3, expectedShiftId: '7' });
+    assert.deepEqual(h.calls[0].milk_tea_interact, { target_gid: '101', interaction_type: 3 });
+    h.work.interact_done = true;
+    await assert.rejects(h.service.operateMilkTeaActivity('interact', { interactionType: 4, expectedShiftId: '7' }), /不可互动/);
+    h.work.interact_done = false;
+    h.setTime(1792045400);
+    await assert.rejects(h.service.operateMilkTeaActivity('interact', { interactionType: 4, expectedShiftId: '7' }), /不可互动/);
+    assert.equal(h.calls.length, 1);
 });

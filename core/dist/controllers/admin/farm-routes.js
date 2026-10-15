@@ -531,6 +531,21 @@ function mountFarmRoutes(app, ctx) {
             handleApiError(res, e);
         }
     });
+    app.post('/api/farm/fertilize-all', async (req, res) => {
+        const id = getAccId(ctx, req);
+        if (!id)
+            return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!['normal', 'organic'].includes(req.body?.fertilizerType)) {
+            return res.status(400).json({ ok: false, error: '化肥类型必须是 normal 或 organic' });
+        }
+        try {
+            const data = await ctx.provider.fertilizeAllOwnLands(id, req.body.fertilizerType);
+            res.json({ ok: true, data });
+        }
+        catch (e) {
+            handleApiError(res, e);
+        }
+    });
     // API: 农场一键操作
     app.post('/api/farm/operate', async (req, res) => {
         const id = getAccId(ctx, req);

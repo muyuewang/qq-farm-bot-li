@@ -320,18 +320,19 @@ message FertilizeRequest {
     int64 fertilizer_id = 2;
 }
 
-// 单次施肥实际消耗。field 1 的语义尚未完全确认；field 3 已通过
-// FertilizeReply 与紧随其后的 ItemNotify 交叉验证为本次消耗的肥料秒数。
-message FertilizerUse {
-    int64 field_1 = 1;
-    corepb.Item consumed = 3;
+// 一次操作中每块土地的奖励与消耗；批量施肥会返回多条。
+message LandOpDrop {
+    int64 land_id = 1;
+    repeated corepb.Item rewards = 2;
+    repeated corepb.Item costs = 3;
+    repeated int64 triggered_skill_ids = 4;
 }
 
 message FertilizeReply {
     repeated LandInfo land = 1;
     repeated OperationLimit operation_limits = 2;
     corepb.Item fertilizer = 3;       // 肥料 ID 与剩余肥料时间
-    FertilizerUse fertilizer_use = 4; // 本次实际消耗
+    repeated LandOpDrop land_op_drops = 4;
 }
 
 // --- 放虫 ---

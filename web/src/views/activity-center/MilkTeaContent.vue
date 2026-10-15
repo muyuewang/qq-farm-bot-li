@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
+import MilkTeaWork from './MilkTeaWork.vue'
 
 const { state, page, busy } = defineProps<{ state: any, page: string, busy: boolean }>()
 const emit = defineEmits<{ navigate: [page: string], operation: [action: string, input: any], confirmation: [value: any], reload: [input: any] }>()
@@ -16,11 +17,8 @@ const levelConfig = computed(() => state?.levels.find((v: any) => v.level === Nu
 const canWork = computed(() => state?.active && !state?.settling)
 // 店铺、兑换、工作三个页签是主页面，其余页面都在弹窗里显示，弹窗自带标题
 const inDialog = computed(() => !['shop', 'exchange', 'work'].includes(page))
-const wallet = computed(() => [
-  { id: 1041, name: '奶茶券' },
-  { id: 1042, name: '宣传喇叭' },
-  ...(state?.balances?.[1004] !== undefined ? [{ id: 1004, name: '钻石' }] : []),
-].map(item => ({ ...item, count: Number(state?.balances?.[item.id] || 0), image: itemImage(item.id) })))
+const inListDialog = computed(() => Number(state?.summary.shop_open_at) > 0 && ['upgrade', 'workshop', 'hireList', 'fund', 'logs', 'rank', 'workItems'].includes(page))
+const nextLevel = computed(() => state?.levels.find((v: any) => v.level === Number(state.summary.level) + 1))
 const revenuePercent = computed(() => {
   const next = Number(state?.shop?.next_level_revenue || 0)
   return next ? Math.min(100, Number(state.summary.total_revenue) / next * 100) : 100
@@ -41,6 +39,9 @@ function date(value: any) {
 }
 function rewardsText(values: any[]) {
   return (values || []).map(v => `${v.name} ×${v.count}`).join('、')
+}
+function fruitsOf(recipe: any) {
+  return (state?.fruits || []).filter((v: any) => v.id === recipe.fruitId)
 }
 function recipeStock(recipe: any) {
   if (!recipe.unlocked)
@@ -70,16 +71,18 @@ watch(() => state, () => {
   hireDisabled.value = !!state?.summary.hire_disabled
   selectedFruitUids.value = []
 }, { immediate: true })
+// 升级 / 基金弹窗首次打开时，把下一级或可领取的档位滚到可视区域；之后的刷新保持用户自己的滚动位置
+const listElement = ref<HTMLElement | null>(null)
+onMounted(() => {
+  const list = listElement.value
+  const target = list?.querySelector<HTMLElement>('.sheet--next')
+  if (list && target && target.offsetTop + target.offsetHeight > list.clientHeight)
+    list.scrollTop = target.offsetTop - 8
+})
 </script>
 
 <template>
-  <div class="tea-content" :class="{ 'tea-content--dialog': inDialog }">
-    <div class="wallet">
-      <span v-for="item in wallet" :key="item.id" class="wallet__chip" :title="item.name">
-        <img :src="item.image" :alt="item.name"><b>{{ item.count.toLocaleString() }}</b>
-      </span>
-    </div>
-
+  <div class="tea-content" :class="{ 'tea-content--dialog': inDialog, 'tea-content--list': inListDialog }">
     <section v-if="!Number(state.summary.shop_open_at)" class="paper">
       <h2 class="divider">
         开始营业
@@ -97,101 +100,106 @@ watch(() => state, () => {
       </div>
     </section>
 
-    <template v-else-if="page === 'shop' && state.shop">
-      <section class="signboard">
-        <div class="signboard__level">
-          <b>{{ state.summary.level }}</b><small>店铺等级</small>
+    <div v-else-if="page === 'shop' && state.shop" class="shop-layout">
+      <div class="shop-main">
+        <section class="signboard">
+          <div class="signboard__level">
+            <b>{{ state.summary.level }}</b><small>店铺等级</small>
+          </div>
+          <div class="signboard__main">
+            <h2>{{ state.summary.shop_name }}</h2>
+            <span>营业额：<img :src="itemImage(1041)" alt="">{{ Number(state.summary.total_revenue).toLocaleString() }}</span>
+          </div>
+          <button class="signboard__upgrade" :disabled="busy" @click="switchPage('upgrade')">
+            <span class="i-carbon-store" />店铺升级
+            <i v-if="state.summary.can_upgrade" class="signboard__badge">可升级</i>
+          </button>
+        </section>
+        <div class="revenue">
+          <div class="revenue__track" role="progressbar" :aria-valuenow="Number(state.summary.total_revenue)" aria-valuemin="0" :aria-valuemax="Number(state.shop.next_level_revenue) || Number(state.summary.total_revenue)" aria-label="升级所需营业额">
+            <span :style="{ width: `${revenuePercent}%` }" />
+          </div>
+          <small>{{ state.shop.next_level_revenue ? `升级还需营业额 ${Number(state.summary.total_revenue).toLocaleString()} / ${Number(state.shop.next_level_revenue).toLocaleString()}` : '店铺已满级' }}</small>
         </div>
-        <div class="signboard__main">
-          <h2>{{ state.summary.shop_name }}</h2>
-          <span>营业额：<img :src="itemImage(1041)" alt="">{{ Number(state.summary.total_revenue).toLocaleString() }}</span>
-        </div>
-        <button class="signboard__upgrade" :disabled="busy" @click="switchPage('upgrade')">
-          <span class="i-carbon-store" />店铺升级
-        </button>
-      </section>
-      <div class="revenue">
-        <div class="revenue__track" role="progressbar" :aria-valuenow="Number(state.summary.total_revenue)" aria-valuemin="0" :aria-valuemax="Number(state.shop.next_level_revenue) || Number(state.summary.total_revenue)" aria-label="升级所需营业额">
-          <span :style="{ width: `${revenuePercent}%` }" />
-        </div>
-        <small>{{ state.shop.next_level_revenue ? `升级还需营业额 ${Number(state.summary.total_revenue).toLocaleString()} / ${Number(state.shop.next_level_revenue).toLocaleString()}` : '店铺已满级' }}</small>
+
+        <section class="shelf">
+          <div class="shelf__row">
+            <article v-for="recipe in state.recipes" :key="recipe.recipe_id" class="cup" :class="{ 'cup--locked': !recipe.unlocked }" :title="recipe.description">
+              <img :src="recipe.image" alt="" width="56" height="56">
+              <strong>{{ recipe.recipe_name }}</strong>
+              <small>奶茶券 {{ recipe.token_price || 0 }}<template v-if="Number(recipe.coin_price)"> · 金币 {{ Number(recipe.coin_price).toLocaleString() }}</template></small>
+              <span class="cup__stock">
+                <template v-if="recipe.unlocked">{{ recipeStock(recipe) }}</template>
+                <span v-else class="i-carbon-locked" aria-label="未解锁" />
+              </span>
+            </article>
+          </div>
+          <p class="shelf__ribbon">
+            正在热卖：每小时{{ state.shop.effective_cups_per_hour }}杯
+          </p>
+        </section>
+
+        <nav class="quick" aria-label="店铺功能">
+          <button :disabled="busy" @click="switchPage('settings')">
+            <span class="quick__icon"><span class="i-carbon-settings" /></span>店铺设置
+          </button>
+          <button :disabled="busy" @click="switchPage('hireList')">
+            <span class="quick__icon"><span class="i-carbon-user-follow" /></span>好友雇佣
+          </button>
+          <button :disabled="busy" @click="switchPage('fund')">
+            <span class="quick__icon"><span class="i-carbon-piggy-bank" /></span>成长基金
+          </button>
+          <button :disabled="busy" @click="switchPage('logs')">
+            <span class="quick__icon"><span class="i-carbon-catalog" /></span>营业记录
+          </button>
+          <button :disabled="busy" @click="switchPage('rank')">
+            <span class="quick__icon"><span class="i-carbon-chart-bar" /></span>排行榜
+          </button>
+        </nav>
       </div>
 
-      <section class="shelf">
-        <div class="shelf__row">
-          <article v-for="recipe in state.recipes" :key="recipe.recipe_id" class="cup" :class="{ 'cup--locked': !recipe.unlocked }" :title="recipe.description">
-            <img :src="recipe.image" alt="" width="56" height="56">
-            <strong>{{ recipe.recipe_name }}</strong>
-            <small>奶茶券 {{ recipe.token_price || 0 }}<template v-if="Number(recipe.coin_price)"> · 金币 {{ Number(recipe.coin_price).toLocaleString() }}</template></small>
-            <span class="cup__stock">
-              <template v-if="recipe.unlocked">{{ recipeStock(recipe) }}</template>
-              <span v-else class="i-carbon-locked" aria-label="未解锁" />
-            </span>
-          </article>
-        </div>
-        <p class="shelf__ribbon">
-          正在热卖：每小时{{ state.shop.effective_cups_per_hour }}杯
-        </p>
-      </section>
-
-      <nav class="quick" aria-label="店铺功能">
-        <button :disabled="busy" @click="switchPage('settings')">
-          <span class="quick__icon"><span class="i-carbon-settings" /></span>店铺设置
-        </button>
-        <button :disabled="busy" @click="switchPage('hireList')">
-          <span class="quick__icon"><span class="i-carbon-user-follow" /></span>好友雇佣
-        </button>
-        <button :disabled="busy" @click="switchPage('fund')">
-          <span class="quick__icon"><span class="i-carbon-piggy-bank" /></span>成长基金
-        </button>
-        <button :disabled="busy" @click="switchPage('logs')">
-          <span class="quick__icon"><span class="i-carbon-catalog" /></span>营业记录
-        </button>
-        <button :disabled="busy" @click="switchPage('rank')">
-          <span class="quick__icon"><span class="i-carbon-chart-bar" /></span>排行榜
-        </button>
-      </nav>
-
-      <section class="receipt">
-        <h2 class="receipt__title">
-          累计收益
-        </h2>
-        <div class="receipt__body">
-          <p class="dark-bar">
-            {{ cashierText }}
-          </p>
-          <div v-for="entry in pendingCups" :key="entry.id" class="receipt__line">
-            <span>{{ entry.name }}</span><span>{{ entry.cups }}杯</span>
-          </div>
-          <p v-if="!pendingCups.length" class="hint">
-            收银台暂时没有新收益
-          </p>
-          <h3 class="divider">
-            合计收益
-          </h3>
-          <div class="item-row">
-            <div v-for="reward in state.shop.pending_rewards" :key="reward.id" class="item">
-              <span class="item__name">{{ reward.name }}</span>
-              <span class="item-box"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
+      <aside class="shop-side">
+        <section class="receipt">
+          <h2 class="receipt__title">
+            累计收益
+          </h2>
+          <div class="receipt__body">
+            <p class="dark-bar">
+              {{ cashierText }}
+            </p>
+            <div v-for="entry in pendingCups" :key="entry.id" class="receipt__line">
+              <span>{{ entry.name }}</span><span>{{ entry.cups }}杯</span>
+            </div>
+            <p v-if="!pendingCups.length" class="hint">
+              收银台暂时没有新收益
+            </p>
+            <h3 class="divider">
+              合计收益
+            </h3>
+            <div class="item-row">
+              <div v-for="reward in state.shop.pending_rewards" :key="reward.id" class="item">
+                <span class="item__name">{{ reward.name }}</span>
+                <span class="item-box"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
+              </div>
+            </div>
+            <div class="actions actions--center">
+              <button class="green" :disabled="busy || !canWork || !(state.balances[state.shop.sales_item_id] > 0)" @click="select('boost', '一键爆单', {}, [{ id: Number(state.shop.sales_item_id), name: '宣传喇叭', count: 1 }], [], Math.min(9999, state.balances[state.shop.sales_item_id]))">
+                <img :src="itemImage(state.shop.sales_item_id)" alt="">一键爆单
+              </button>
+              <button class="primary" :disabled="busy || !state.shop.pending_rewards.some((v: any) => v.count > 0)" @click="request('claim')">
+                领取收益
+              </button>
             </div>
           </div>
-          <div class="actions actions--center">
-            <button class="green" :disabled="busy || !canWork || !(state.balances[state.shop.sales_item_id] > 0)" @click="select('boost', '一键爆单', {}, [{ id: Number(state.shop.sales_item_id), name: '宣传喇叭', count: 1 }], [], Math.min(9999, state.balances[state.shop.sales_item_id]))">
-              <img :src="itemImage(state.shop.sales_item_id)" alt="">一键爆单
-            </button>
-            <button class="primary" :disabled="busy || !state.shop.pending_rewards.some((v: any) => v.count > 0)" @click="request('claim')">
-              领取收益
-            </button>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <div class="make">
-        <button class="make__btn" :disabled="busy" @click="switchPage('workshop')">
-          <span class="i-carbon-cafe" />制作奶茶
-        </button>
-      </div>
-    </template>
+        <div class="make">
+          <button class="make__btn" :disabled="busy" @click="switchPage('workshop')">
+            <span class="i-carbon-cafe" />制作奶茶
+          </button>
+        </div>
+      </aside>
+    </div>
 
     <section v-else-if="page === 'settings'" class="paper">
       <h2>店铺设置</h2>
@@ -218,75 +226,89 @@ watch(() => state, () => {
       </div>
     </section>
 
-    <section v-else-if="page === 'upgrade' && state.shop" class="paper">
+    <section v-else-if="page === 'upgrade' && state.shop" class="paper paper--list">
       <div class="section-head">
-        <h2>店铺升级</h2><b class="tag">当前 {{ state.summary.level }} 级</b>
-      </div>
-      <div class="row row--plain">
-        <strong>营业额：</strong><b class="big-num">{{ Number(state.summary.total_revenue).toLocaleString() }}<small> / {{ state.shop.next_level_revenue ? Number(state.shop.next_level_revenue).toLocaleString() : '—' }}</small></b>
-      </div>
-      <div class="revenue__track">
-        <span :style="{ width: `${revenuePercent}%` }" />
-      </div>
-      <article v-for="level in state.levels" :key="level.level" class="sheet" :class="{ 'sheet--next': level.level === Number(state.summary.level) + 1, 'sheet--done': level.level <= Number(state.summary.level) }">
-        <div class="section-head">
-          <h3>{{ level.level }}级</h3><span class="muted">营业额 {{ level.revenue_required.toLocaleString() }}</span>
-        </div>
-        <div class="metrics">
-          <span>热卖值 <b>{{ level.base_popularity }}杯/小时</b></span><span>高级奶茶售价 <b>+{{ level.advanced_price_percent / 100 }}%</b></span><span>员工 <b>{{ level.employee_slot_count }}</b></span>
-        </div>
-        <div class="tags">
-          <span v-for="recipe in level.recipes" :key="recipe">{{ recipe }}</span>
-        </div>
-        <div v-if="level.rewards.length" class="item-row item-row--start">
-          <div v-for="reward in level.rewards" :key="reward.id" class="item">
-            <span class="item__name">{{ reward.name }}</span>
-            <span class="item-box item-box--sm"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
+        <h2>店铺升级</h2>
+        <div class="upgrade-progress">
+          <div class="upgrade-progress__text">
+            <strong>营业额</strong><b class="big-num">{{ Number(state.summary.total_revenue).toLocaleString() }}<small> / {{ state.shop.next_level_revenue ? Number(state.shop.next_level_revenue).toLocaleString() : '—' }}</small></b>
+          </div>
+          <div class="revenue__track">
+            <span :style="{ width: `${revenuePercent}%` }" />
           </div>
         </div>
-        <div v-if="level.level === Number(state.summary.level) + 1" class="actions actions--center">
-          <button class="primary big" :disabled="busy || !state.active || !state.summary.can_upgrade" @click="select('upgrade', '店铺升级', { expectedLevel: Number(state.summary.level) }, [], level.rewards)">
-            立即升级
-          </button>
-        </div>
-      </article>
-    </section>
-
-    <section v-else-if="page === 'workshop'" class="paper">
-      <div class="section-head">
-        <h2>奶茶工坊</h2><button class="primary" :disabled="busy || !canWork || !selectedFruitUids.length" @click="craft">
-          确认制作
+        <b class="tag">当前 {{ state.summary.level }} 级</b>
+      </div>
+      <div ref="listElement" class="panel-list" role="region" aria-label="店铺等级" tabindex="0">
+        <article v-for="level in state.levels" :key="level.level" class="sheet row-sheet row-sheet--level" :class="{ 'sheet--next': level.level === Number(state.summary.level) + 1, 'sheet--done': level.level <= Number(state.summary.level) }">
+          <div class="row-sheet__head">
+            <h3>{{ level.level }}级</h3><span class="muted">营业额 {{ level.revenue_required.toLocaleString() }}</span>
+          </div>
+          <div class="row-sheet__body">
+            <div class="metrics">
+              <span>热卖值 <b>{{ level.base_popularity }}杯/小时</b></span><span>高级奶茶售价 <b>+{{ level.advanced_price_percent / 100 }}%</b></span><span>员工 <b>{{ level.employee_slot_count }}</b></span>
+            </div>
+            <div class="tags">
+              <span v-for="recipe in level.recipes" :key="recipe">{{ recipe }}</span>
+            </div>
+          </div>
+          <div v-if="level.rewards.length" class="item-row row-sheet__rewards">
+            <div v-for="reward in level.rewards" :key="reward.id" class="item" :title="`${reward.name} ×${reward.count}`">
+              <span class="item-box item-box--sm"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
+              <span class="item__name">{{ reward.name }}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+      <div v-if="nextLevel" class="actions actions--center panel-footer">
+        <button class="primary big" :disabled="busy || !state.active || !state.summary.can_upgrade" @click="select('upgrade', '店铺升级', { expectedLevel: Number(state.summary.level) }, [], nextLevel.rewards)">
+          立即升级
         </button>
       </div>
-      <p class="hint hint--left">
-        勾选果实后点击确认制作，会消耗所选的整组果实。
-      </p>
-      <article v-for="recipe in state.recipes" :key="recipe.recipe_id" class="sheet" :class="{ 'sheet--done': !recipe.unlocked }">
-        <div class="recipe-line">
-          <img :src="recipe.image" alt="" width="52" height="52"><div><strong>{{ recipe.recipe_name }}</strong><small>{{ recipe.description }}</small></div><span class="tag">{{ recipe.unlocked ? `库存 ${recipe.stock_cups === '-1' ? '不限量' : recipe.stock_cups || 0}` : '未解锁' }}</span>
-        </div>
-        <label v-for="fruit in state.fruits.filter((v: any) => v.id === recipe.fruitId)" :key="fruit.uid" class="fruit"><input v-model="selectedFruitUids" type="checkbox" :value="fruit.uid" :disabled="busy || fruit.locked || !canWork"><CommerceItemImage :src="fruit.image" :alt="fruit.name" size="sm" /><span>{{ fruit.name }} ×{{ fruit.count }}</span><span v-if="fruit.locked" class="tag">已锁定</span><span v-if="fruit.mutations.length" class="muted">变异 {{ fruit.mutations.join('、') }}</span></label>
-      </article>
     </section>
 
-    <section v-else-if="page === 'hireList' && state.hire" class="paper">
+    <section v-else-if="page === 'workshop'" class="paper paper--list">
+      <div class="section-head">
+        <h2>奶茶工坊</h2>
+        <p class="hint hint--left hint--inline">
+          勾选果实后点击确认制作，会消耗所选的整组果实。
+        </p>
+        <button class="primary" :disabled="busy || !canWork || !selectedFruitUids.length" @click="craft">
+          {{ selectedFruitUids.length ? `确认制作（${selectedFruitUids.length}）` : '确认制作' }}
+        </button>
+      </div>
+      <div class="panel-list" role="region" aria-label="奶茶配方" tabindex="0">
+        <article v-for="recipe in state.recipes" :key="recipe.recipe_id" class="sheet row-sheet row-sheet--recipe" :class="{ 'sheet--done': !recipe.unlocked }">
+          <div class="recipe-line">
+            <img :src="recipe.image" alt="" width="52" height="52"><div><strong>{{ recipe.recipe_name }}</strong><small>{{ recipe.description }}</small></div><span class="tag">{{ recipe.unlocked ? `库存 ${recipe.stock_cups === '-1' ? '不限量' : recipe.stock_cups || 0}` : '未解锁' }}</span>
+          </div>
+          <div v-if="fruitsOf(recipe).length" class="row-sheet__fruits">
+            <label v-for="fruit in fruitsOf(recipe)" :key="fruit.uid" class="fruit"><input v-model="selectedFruitUids" type="checkbox" :value="fruit.uid" :disabled="busy || fruit.locked || !canWork"><CommerceItemImage :src="fruit.image" :alt="fruit.name" size="sm" /><span>{{ fruit.name }} ×{{ fruit.count }}</span><span v-if="fruit.locked" class="tag">已锁定</span><span v-if="fruit.mutations.length" class="muted">变异 {{ fruit.mutations.join('、') }}</span></label>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section v-else-if="page === 'hireList' && state.hire" class="paper paper--list">
       <h2>好友雇佣</h2>
       <div class="actions">
         <label class="field">雇佣时长 <select v-model="durationId" :disabled="busy" @change="request()"><option v-for="duration in state.durations" :key="duration.duration_id" :value="duration.duration_id">{{ duration.duration_sec / 3600 }}小时</option></select></label><label class="field">员工位置 <select v-model="slotIndex" :disabled="busy"><option v-for="index in levelConfig?.employee_slot_count || 1" :key="index" :value="index - 1">{{ index }}</option></select></label><span class="wallet__chip"><img :src="itemImage(1041)" alt="奶茶券"><b>{{ state.hire.wage_total }}</b></span>
       </div>
-      <h3 class="divider">
-        在岗员工
-      </h3>
-      <div v-for="slot in state.shop.slots" :key="slot.slot_index" class="row">
-        <strong>{{ slot.employee?.name }}</strong><span class="tag">{{ slot.talent_name }}</span><time class="muted">{{ date(slot.end_at) }}</time>
-      </div>
-      <h3 class="divider">
-        可雇佣
-      </h3>
-      <div v-for="candidate in candidates" :key="candidate.friend.gid" class="row">
-        <div><strong>{{ candidate.friend.name }}</strong><small>{{ candidate.talent_name }}</small></div><span v-if="Number(candidate.state)" class="muted">{{ date(candidate.state_until_at) }}</span><button class="primary" :disabled="busy || !canWork || Number(candidate.state || 0) !== 0 || Number(candidate.rehire_available_at || 0) > state.serverTime || state.shop.slots?.some((v: any) => Number(v.slot_index || 0) === slotIndex && Number(v.end_at) > state.serverTime)" @click="hire(candidate)">
-          雇佣
-        </button>
+      <div class="panel-list" role="region" aria-label="员工列表" tabindex="0">
+        <h3 class="divider">
+          在岗员工
+        </h3>
+        <div v-for="slot in state.shop.slots" :key="slot.slot_index" class="row">
+          <strong>{{ slot.employee?.name }}</strong><span class="tag">{{ slot.talent_name }}</span><time class="muted">{{ date(slot.end_at) }}</time>
+        </div>
+        <h3 class="divider">
+          可雇佣
+        </h3>
+        <div v-for="candidate in candidates" :key="candidate.friend.gid" class="row">
+          <div><strong>{{ candidate.friend.name }}</strong><small>{{ candidate.talent_name }}</small></div><span v-if="Number(candidate.state)" class="muted">{{ date(candidate.state_until_at) }}</span><button class="primary" :disabled="busy || !canWork || Number(candidate.state || 0) !== 0 || Number(candidate.rehire_available_at || 0) > state.serverTime || state.shop.slots?.some((v: any) => Number(v.slot_index || 0) === slotIndex && Number(v.end_at) > state.serverTime)" @click="hire(candidate)">
+            雇佣
+          </button>
+        </div>
       </div>
     </section>
 
@@ -295,9 +317,9 @@ watch(() => state, () => {
         兑换商店
       </h2>
       <div class="goods">
-        <article v-for="goods in state.goods" :key="goods.id" class="goods-card" :class="{ 'goods-card--off': !goods.available }">
+        <article v-for="goods in state.goods" :key="goods.id" class="goods-card" :class="{ 'goods-card--off': !goods.available, 'goods-card--set': goods.rewards.length > 1 }">
           <strong>{{ goods.name || goods.rewards[0]?.name }}</strong>
-          <div class="item-row">
+          <div class="item-row" :class="{ 'item-row--set': goods.rewards.length > 1 }">
             <span v-for="reward in goods.rewards" :key="reward.id" class="item-box" :title="reward.name"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
           </div>
           <small v-if="goods.remaining !== null">剩余 {{ goods.remaining }}</small>
@@ -314,7 +336,7 @@ watch(() => state, () => {
       </div>
     </section>
 
-    <section v-else-if="page === 'fund'" class="paper">
+    <section v-else-if="page === 'fund'" class="paper paper--list">
       <div class="section-head">
         <h2>成长基金</h2><button v-if="!state.fund.unlocked" class="primary" :disabled="busy || !state.active" @click="select('unlock', '解锁成长基金', {}, state.fund.costs)">
           {{ rewardsText(state.fund.costs) }} 解锁
@@ -322,84 +344,51 @@ watch(() => state, () => {
           领取
         </button>
       </div>
-      <article v-for="tier in state.fund.tiers" :key="tier.id" class="sheet" :class="{ 'sheet--next': state.fund.unlocked && tier.state === 2, 'sheet--done': tier.state === 3 }">
-        <div class="section-head">
-          <strong v-for="condition in tier.conditions" :key="condition.type">店铺等级 {{ condition.target }}</strong><span class="tag">{{ tier.state === 3 ? '已领取' : !state.fund.unlocked ? '未解锁' : tier.state === 2 ? '可领取' : '未达成' }}</span>
-        </div>
-        <div class="item-row item-row--start">
-          <div v-for="reward in tier.rewards" :key="reward.id" class="item">
-            <span class="item-box item-box--sm"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
-            <span class="item__name">{{ reward.name }}</span>
+      <div ref="listElement" class="panel-list" role="region" aria-label="成长基金奖励" tabindex="0">
+        <article v-for="tier in state.fund.tiers" :key="tier.id" class="sheet row-sheet row-sheet--fund" :class="{ 'sheet--next': state.fund.unlocked && tier.state === 2, 'sheet--done': tier.state === 3 }">
+          <div class="row-sheet__head">
+            <strong v-for="condition in tier.conditions" :key="condition.type">店铺等级 {{ condition.target }}</strong><span class="tag">{{ tier.state === 3 ? '已领取' : !state.fund.unlocked ? '未解锁' : tier.state === 2 ? '可领取' : '未达成' }}</span>
           </div>
-        </div>
-      </article>
-    </section>
-
-    <section v-else-if="page === 'work' && state.work" class="paper">
-      <div class="section-head">
-        <h2>我的工作</h2><span class="tag">今日特长：{{ state.work.talent_name }}</span>
-      </div>
-      <template v-if="state.work.my_shift">
-        <div class="sheet sheet--next">
-          <div class="section-head">
-            <strong>{{ state.work.my_shift.shop_name }}</strong><span class="muted">工资 {{ state.work.my_shift.wage_total }}</span>
+          <div class="item-row row-sheet__rewards">
+            <div v-for="reward in tier.rewards" :key="reward.id" class="item" :title="`${reward.name} ×${reward.count}`">
+              <span class="item-box item-box--sm"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
+              <span class="item__name">{{ reward.name }}</span>
+            </div>
           </div>
-          <small>{{ date(state.work.my_shift.begin_at) }} — {{ date(state.work.my_shift.end_at) }}</small>
-          <div class="actions">
-            <button v-for="interaction in state.interactions" :key="interaction.interaction_id" :disabled="busy || !canWork || state.work.interact_done || Number(state.work.my_shift.end_at) <= state.serverTime || Number(state.work.my_shift.interact_count || 0) >= Number(state.work.my_shift.interact_limit)" @click="select('interact', interaction.name, { interactionType: interaction.interaction_id })">
-              {{ interaction.name }}
-            </button>
-          </div>
-        </div>
-      </template>
-      <p v-else class="hint">
-        暂时没有工作，好友雇佣你后会显示在这里
-      </p>
-      <div class="actions actions--center">
-        <button :disabled="busy" @click="switchPage('settings')">
-          <span class="i-carbon-settings" />店铺设置
-        </button>
-      </div>
-      <h3 class="divider">
-        工作记录
-      </h3>
-      <div v-for="slip in state.work.slips" :key="slip.shift_id" class="row">
-        <div><strong>{{ slip.shop_name }}</strong><small>{{ date(slip.begin_at) }}</small></div><span>工资 {{ slip.wages?.final_wage || 0 }}</span><span class="tag">{{ Number(slip.wage_status) === 2 ? '已领取' : '待领取' }}</span>
-      </div>
-      <p v-if="!state.work.slips?.length" class="hint">
-        还没有工作记录
-      </p>
-      <div class="actions actions--center">
-        <button class="primary" :disabled="busy || !state.work.slips?.some((v: any) => Number(v.wage_status) === 1)" @click="request('wages')">
-          领取工资
-        </button>
+        </article>
       </div>
     </section>
 
-    <section v-else-if="page === 'logs' && state.logs" class="paper">
+    <MilkTeaWork v-else-if="['work', 'workItems'].includes(page) && state.work" :state="state" :busy="busy" :selection-only="page === 'workItems'" @navigate="switchPage" @operation="request" @confirmation="emit('confirmation', $event)" />
+
+    <section v-else-if="page === 'logs' && state.logs" class="paper paper--list">
       <div class="section-head">
         <h2>营业记录</h2><input v-model="logDate" type="date" :disabled="busy" aria-label="选择日期" @change="request()">
       </div>
-      <div class="metrics metrics--boxes">
-        <span>奶茶券 <b>{{ state.logs.token || 0 }}</b></span><span>金币 <b>{{ state.logs.coin || 0 }}</b></span><span>奶茶 <b>{{ state.logs.cups || 0 }}杯</b></span>
+      <div class="panel-list" role="region" aria-label="雇佣记录" tabindex="0">
+        <div class="metrics metrics--boxes">
+          <span>奶茶券 <b>{{ state.logs.token || 0 }}</b></span><span>金币 <b>{{ state.logs.coin || 0 }}</b></span><span>奶茶 <b>{{ state.logs.cups || 0 }}杯</b></span>
+        </div>
+        <h3 class="divider">
+          雇佣记录
+        </h3>
+        <div v-for="hireRecord in state.logs.hires" :key="hireRecord.shift_id" class="row">
+          <div><strong>{{ hireRecord.friend?.name }}</strong><small>{{ date(hireRecord.hire_at) }}</small></div><span class="tag">{{ hireRecord.talent_name }}</span><span>工资 {{ hireRecord.wages?.final_wage || 0 }}</span>
+        </div>
+        <p v-if="!state.logs.hires?.length" class="hint">
+          当天没有雇佣记录
+        </p>
       </div>
-      <h3 class="divider">
-        雇佣记录
-      </h3>
-      <div v-for="hireRecord in state.logs.hires" :key="hireRecord.shift_id" class="row">
-        <div><strong>{{ hireRecord.friend?.name }}</strong><small>{{ date(hireRecord.hire_at) }}</small></div><span class="tag">{{ hireRecord.talent_name }}</span><span>工资 {{ hireRecord.wages?.final_wage || 0 }}</span>
-      </div>
-      <p v-if="!state.logs.hires?.length" class="hint">
-        当天没有雇佣记录
-      </p>
     </section>
 
-    <section v-else-if="page === 'rank' && state.rank" class="paper">
+    <section v-else-if="page === 'rank' && state.rank" class="paper paper--list">
       <h2>排行榜</h2>
-      <div v-for="entry in state.rank.ranks" :key="entry.owner?.gid" class="row rank-row">
-        <b class="rank-no" :class="{ 'rank-no--top': Number(entry.rank) <= 3 }">{{ entry.rank }}</b><div><strong>{{ entry.shop_name }}</strong><small>{{ entry.owner?.name }}</small></div><span>营业额 <b>{{ Number(entry.total_revenue).toLocaleString() }}</b></span>
+      <div class="panel-list" role="region" aria-label="排行榜" tabindex="0">
+        <div v-for="entry in state.rank.ranks" :key="entry.owner?.gid" class="row rank-row">
+          <b class="rank-no" :class="{ 'rank-no--top': Number(entry.rank) <= 3 }">{{ entry.rank }}</b><div><strong>{{ entry.shop_name }}</strong><small>{{ entry.owner?.name }}</small></div><span>营业额 <b>{{ Number(entry.total_revenue).toLocaleString() }}</b></span>
+        </div>
       </div>
-      <div class="actions actions--center">
+      <div class="actions actions--center panel-footer">
         <button :disabled="busy || rankPage <= 1" @click="rankPage--; request()">
           上一页
         </button><span class="tag">第 {{ rankPage }} 页</span><button :disabled="busy || !state.rank.has_more" @click="rankPage++; request()">
@@ -435,8 +424,40 @@ watch(() => state, () => {
   color: var(--ink);
 }
 .tea-content--dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   max-width: none;
+  min-height: 0;
+  overflow: auto;
   padding: 16px 22px 24px;
+}
+.tea-content--list {
+  overflow: hidden;
+}
+.paper--list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.paper--list > :not(.panel-list) {
+  flex-shrink: 0;
+}
+.panel-list {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(94, 58, 31, 0.3) transparent;
+  padding: 4px 4px 6px;
+}
+.panel-list:focus-visible {
+  outline: 2px solid #f0a33a;
+  outline-offset: -2px;
+}
+.panel-footer {
+  padding-top: 4px;
 }
 h2,
 h3,
@@ -471,6 +492,11 @@ small {
 .hint--left {
   padding-top: 0;
   text-align: left;
+}
+.hint--inline {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
 }
 
 /* 按钮与输入 */
@@ -596,12 +622,6 @@ input[type='checkbox'] {
 }
 
 /* 余额 */
-.wallet {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
 .wallet__chip {
   display: inline-flex;
   align-items: center;
@@ -752,6 +772,19 @@ input[type='checkbox'] {
   background: var(--paper-hi);
   font-size: 12px;
 }
+.upgrade-progress {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 6px;
+}
+.upgrade-progress__text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
 .big-num {
   font-size: 22px;
   font-variant-numeric: tabular-nums;
@@ -815,24 +848,21 @@ input[type='checkbox'] {
   justify-content: center;
   gap: 12px 16px;
 }
-.item-row--start {
-  justify-content: flex-start;
-  margin-top: 12px;
-}
 .item {
-  width: 84px;
+  min-width: 84px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
 }
+/* 名称统一单行，格子宽度随名称自适应，避免“有机化肥(1小时)”这类名称折行后高低不齐 */
 .item__name {
-  max-width: 100%;
   font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
   text-align: center;
+  white-space: nowrap;
 }
 .item-box {
   position: relative;
@@ -874,6 +904,16 @@ input[type='checkbox'] {
 }
 .item-box--sm b {
   font-size: 12px;
+}
+
+/* 店铺 / 工作页布局：窄屏单列，宽屏见文件末尾的容器查询 */
+.shop-layout,
+.shop-main,
+.shop-side {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 18px;
 }
 
 /* 招牌 */
@@ -952,8 +992,25 @@ input[type='checkbox'] {
     0 3px 0 #2c1f15;
   font-size: 12px;
 }
+.signboard__upgrade {
+  position: relative;
+}
 .signboard__upgrade span {
   font-size: 22px;
+}
+.signboard__badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e04b3c;
+  box-shadow: 0 0 0 2px #fff6e6;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
 }
 .revenue {
   margin-top: -6px;
@@ -1208,6 +1265,21 @@ input[type='checkbox'] {
 .goods-card small {
   margin-top: -4px;
 }
+/* 套装类商品：多件奖励用小格并排，避免把整行撑高 */
+.item-row--set {
+  max-width: 100%;
+  gap: 6px;
+}
+.item-row--set .item-box {
+  width: 46px;
+  height: 46px;
+  border-width: 2px;
+  border-radius: 10px;
+}
+.item-row--set .item-box b {
+  right: 3px;
+  font-size: 11px;
+}
 .goods-card--off .item-box {
   filter: grayscale(0.6);
 }
@@ -1282,6 +1354,103 @@ input[type='checkbox'] {
   background: rgba(58, 38, 24, 0.78);
   font-size: 13px;
   font-weight: 700;
+}
+
+/* 弹窗列表：一项一行。窄屏上下堆叠，宽弹窗横向展开成固定列，各行对齐 */
+.row-sheet__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.row-sheet__head h3 {
+  font-size: 16px;
+}
+.row-sheet__body {
+  margin-top: 6px;
+}
+.row-sheet__rewards {
+  justify-content: flex-start;
+  margin-top: 12px;
+  gap: 10px 8px;
+}
+/* 固定格宽，各行的道具格上下对齐；超长名称省略，悬停可看全名 */
+.row-sheet__rewards .item {
+  width: 92px;
+  min-width: 0;
+}
+.row-sheet__rewards .item__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-sheet__fruits {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.row-sheet__fruits .fruit {
+  margin-top: 0;
+}
+@container (min-width: 700px) {
+  .row-sheet--level,
+  .row-sheet--fund,
+  .row-sheet--recipe {
+    display: grid;
+    align-items: center;
+    gap: 16px;
+  }
+  .row-sheet--level {
+    grid-template-columns: 104px minmax(0, 1fr) 300px;
+  }
+  .row-sheet--fund {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+  .row-sheet--recipe {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .row-sheet--level .row-sheet__head,
+  .row-sheet--fund .row-sheet__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .row-sheet__body,
+  .row-sheet__rewards,
+  .row-sheet__fruits {
+    margin-top: 0;
+  }
+  .row-sheet--level .row-sheet__rewards {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+}
+
+/* PC 宽屏：内容放宽，店铺页左右分栏，收益和制作操作始终在视线内 */
+@container (min-width: 960px) {
+  .tea-content:not(.tea-content--dialog) {
+    max-width: 1240px;
+    padding: 18px 24px 40px;
+    gap: 20px;
+  }
+  .shop-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+    gap: 22px;
+  }
+  .shop-side .make__btn {
+    width: 100%;
+  }
+  .goods {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+  @media (min-height: 760px) {
+    .shop-side {
+      position: sticky;
+      top: 14px;
+    }
+  }
 }
 
 @media (max-width: 600px) {
@@ -1369,6 +1538,9 @@ input[type='checkbox'] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
+  .goods-card--set {
+    grid-column: 1 / -1;
+  }
   .price {
     padding-inline: 4px;
     font-size: 12px;
@@ -1396,6 +1568,18 @@ input[type='checkbox'] {
 @media (max-width: 350px) {
   .toggle__label {
     font-size: 13px;
+  }
+}
+@media (max-height: 560px) {
+  .tea-content--dialog {
+    gap: 8px;
+    padding-block: 8px 12px;
+  }
+  .paper--list > .section-head {
+    margin-bottom: 6px;
+  }
+  .panel-footer {
+    margin-top: 8px;
   }
 }
 </style>
