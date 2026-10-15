@@ -269,7 +269,7 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
                 奶茶热销中
               </h4>
               <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                前六项只领服务端已经判定「可以领」的收益；后四项会花东西，选法已写死在下面
+                默认全开：前六项只领服务端已经判定「可以领」的收益，后四项会花东西，选法写死在下面
               </p>
             </div>
           </div>
@@ -307,7 +307,7 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
             </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            半小时检查一次。成长基金只领已达档位，解锁要你在活动页确认付费；没开业的店铺会跳过并记一行日志。
+            半小时检查一次，一轮里十项排队执行、项间隔 800ms，不并发。这十个开关默认是开的，不要哪项就在下面关掉哪项；已经手动关掉的账号不会被重新打开。成长基金只领已达档位，解锁要你在活动页确认付费；没开业的店铺会跳过并记一行日志。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             制作按背包顺序取未锁定的有库存果实，整堆提交，每批最多 20 堆、一轮最多 6 批，做完一轮接着做；雇佣取第一个空位，在可雇佣的好友里随机一位，时长按活动页默认的最短档；升级达标即升；爆单按待售杯数决定喇叭用量（向上取整，受持有量和单次上限 9999 约束），没有待售就不花喇叭。这几项都会花你的果实、奶茶券、店内金币和宣传喇叭，确认后再接着开。

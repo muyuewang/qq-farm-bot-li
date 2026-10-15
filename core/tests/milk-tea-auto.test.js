@@ -5,6 +5,7 @@ const {
     isMilkTeaAutomationEnabled,
     MILK_TEA_AUTOMATION_KEYS,
     MILK_TEA_CHECK_INTERVAL_MS,
+    MILK_TEA_TASK_SPACER_MS,
 } = require('../dist/services/milk-tea-auto');
 const {
     ALLOWED_AUTOMATION_KEYS,
@@ -64,15 +65,28 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
     const shareReads = [];
     const shareOperations = [];
     let now = serverTime;
+    // 同时在进行中的请求数：用来证明十项是排队跑的，不是并发压在同一根连接上。
+    let inflight = 0;
+    let maxInflight = 0;
+    const track = async (run) => {
+        inflight++;
+        maxInflight = Math.max(maxInflight, inflight);
+        try {
+            return await run();
+        }
+        finally {
+            inflight--;
+        }
+    };
     const automation = createMilkTeaAutomation({
-        getMilkTeaActivity: async (page, input) => {
+        getMilkTeaActivity: async (page, input) => track(async () => {
             reads.push(page);
             pageInputs.push({ page, input: input || {} });
             const state = pages?.[page] ?? { active: true, summary: {}, shop: {}, work: {}, fund: {} };
             if (state instanceof Error) throw state;
             return typeof state === 'function' ? state(page) : state;
-        },
-        operateMilkTeaActivity: async (action, input) => {
+        }),
+        operateMilkTeaActivity: async (action, input) => track(async () => {
             operations.push(action);
             calls.push({ action, input: input || {} });
             if (operate) {
@@ -81,14 +95,14 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
                 return outcome;
             }
             return { rewards: [{ name: '奶茶券', count: 3 }] };
-        },
-        getShareRewardActivity: async (activityId) => {
+        }),
+        getShareRewardActivity: async (activityId) => track(async () => {
             shareReads.push(activityId);
             const state = share?.[activityId];
             if (state instanceof Error) throw state;
             return state ?? null;
-        },
-        operateShareRewardActivity: async (activityId, action) => {
+        }),
+        operateShareRewardActivity: async (activityId, action) => track(async () => {
             shareOperations.push({ activityId, action });
             if (operateShare) {
                 const outcome = operateShare(action);
@@ -96,7 +110,7 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
                 return outcome;
             }
             return { rewards: [{ name: '快乐值', count: 10 }] };
-        },
+        }),
         getServerTimeSec: () => now,
         log: (module, message, meta) => logs.push({ module, message, meta }),
     });
@@ -109,6 +123,7 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
         calls,
         shareReads,
         shareOperations,
+        maxInflight: () => maxInflight,
         skipLogs: () => logs.filter(entry => entry.meta?.result === 'skip'),
         errorLogs: () => logs.filter(entry => entry.meta?.result === 'error'),
         advanceDay: (days = 1) => { now += days * DAY_MS; },
@@ -147,6 +162,9 @@ const IDLE = {
 const only = (key) => ({ ...IDLE, [key]: true });
 
 const WORK_FLAGS = { ...IDLE, craft: true, hire: true, upgrade: true, boost: true };
+
+// 十个开关全开。
+const ALL_FLAGS = { ...FLAGS, craft: true, hire: true, upgrade: true, boost: true };
 
 function craftState(fruits, overrides = {}) {
     return { active: true, settling: false, summary: { shop_open_at: 1790000000 }, fruits, ...overrides };
@@ -198,10 +216,10 @@ test('六个领取加四个用户给定选法的动作有开关位', () => {
     assert.equal(MILK_TEA_CHECK_INTERVAL_MS, 30 * 60 * 1000);
 });
 
-test('六个开关都能穿过配置白名单存进去', () => {
+test('十个开关都能穿过配置白名单存进去，且默认是开的', () => {
     for (const key of MILK_TEA_AUTOMATION_KEYS) {
         assert.equal(ALLOWED_AUTOMATION_KEYS.has(key), true, key);
-        assert.equal(DEFAULT_ACCOUNT_CONFIG.automation[key], false, key);
+        assert.equal(DEFAULT_ACCOUNT_CONFIG.automation[key], true, key);
     }
     const saved = normalizeAccountConfig({
         automation: { milk_tea_claim_rewards: true, milk_tea_happy_share: 'on', milk_tea_claim_wages: 1 },
@@ -209,8 +227,14 @@ test('六个开关都能穿过配置白名单存进去', () => {
     assert.equal(saved.milk_tea_claim_rewards, true);
     assert.equal(saved.milk_tea_happy_share, true);
     assert.equal(saved.milk_tea_claim_wages, true);
-    // 界面上没出现过的动作不该跟着别人一起打开。
-    assert.equal(saved.milk_tea_claim_fund, false);
+    // 活动进行中默认全开：配置里没写出来的奶茶 key 继承默认（开），要关必须显式写 false。
+    assert.equal(saved.milk_tea_claim_fund, true);
+    const off = normalizeAccountConfig({
+        automation: { milk_tea_boost: false, milk_tea_hire: 0 },
+    }, { automation: DEFAULT_ACCOUNT_CONFIG.automation }).automation;
+    assert.equal(off.milk_tea_boost, false);
+    assert.equal(off.milk_tea_hire, false);
+    assert.equal(off.milk_tea_craft, true);
     assert.equal(isMilkTeaAutomationEnabled({}), false);
     assert.equal(isMilkTeaAutomationEnabled({ milk_tea_claim_wages: true }), true);
 });
@@ -470,4 +494,29 @@ test('四个新动作里任何一笔失败都不会带走同一轮里的其它�
     assert.deepEqual(h.operations, ['craft', 'hire', 'upgrade', 'boost']);
     assert.equal(h.errorLogs().length, 1);
     assert.equal(h.errorLogs()[0].meta.action, 'craft');
+});
+
+test('十个任务串行执行、任务之间休眠，不并发压连接', async () => {
+    const eligible = [{ friend: { gid: '10001', name: '甲' }, state: 0, rehire_available_at: 0 }];
+    const pages = {
+        shop: shopState({
+            shop: { pending_rewards: [{ id: 1001, count: 120, name: '金币' }], sales_item_id: 1042, boost_cups_per_use: 30, pending_cups_by_recipe: { 1: 95 }, is_settling: false },
+            balances: { 1042: 500 },
+        }),
+        work: workState(),
+        fund: fundState(),
+        workshop: craftState([{ id: 2001, uid: 'u1', count: 2, name: '草莓' }]),
+        hireList: hireState(eligible),
+        upgrade: { active: true, settling: false, summary: { shop_open_at: 1790000000, level: 3, can_upgrade: true } },
+    };
+    const h = harness({ pages, share: { 2026110104: shareState() } });
+    const started = Date.now();
+    await h.automation.runMilkTeaAutomation(ALL_FLAGS);
+    assert.equal(h.maxInflight(), 1, '同时只能有一个请求在飞');
+    // 八个步骤（三个快乐值领取算一步），步骤之间各隔一次 MILK_TEA_TASK_SPACER_MS。
+    assert.ok(Date.now() - started >= 7 * MILK_TEA_TASK_SPACER_MS, `十项之间只隔了 ${Date.now() - started}ms`);
+    // 读一页做一项，按开关列出的顺序走，不会两组请求交错着发。
+    assert.deepEqual(h.reads, ['shop', 'work', 'fund', 'workshop', 'hireList', 'upgrade', 'shop']);
+    assert.deepEqual(h.operations, ['claim', 'wages', 'fundClaim', 'craft', 'hire', 'upgrade', 'boost']);
+    assert.deepEqual(h.shareOperations.map(v => v.action), ['daily', 'share', 'milestones']);
 });

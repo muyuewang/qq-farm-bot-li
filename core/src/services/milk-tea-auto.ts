@@ -10,6 +10,8 @@ export {};
 // 制作按背包顺序取有库存且未锁定的果实；雇佣在可雇的好友里随机一个；升级达标就升；
 // 爆单按待售杯数决定喇叭用量。要人起名字、选商品、选互动类型的（开业/改名/兑换/
 // 基金解锁/工作互动/躺平开关）仍然不建开关——挂着什么都不执行的自动化开关比没有开关更坏。
+// 十个开关默认全开（用户 2026-10-15 要求：活动进行中就让它自己跑），一轮里十项串行执行、
+// 项间隔 800ms，不做并发；runExclusiveAutomationTask 已经把整个活动自动化串在一条锁上。
 const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_claim_rewards',
     'milk_tea_claim_wages',
@@ -24,6 +26,8 @@ const MILK_TEA_AUTOMATION_KEYS = [
 ] as const;
 
 const MILK_TEA_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+// 一轮里十项排着队跑，项与项之间隔这么久：连着发会把活动页的读和写挤在同一根连接上。
+const MILK_TEA_TASK_SPACER_MS = 800;
 // 一轮最多 6 次制作请求、每次最多 20 堆果实：库存上千堆时不能把连接占满，剩下的下一轮接着做。
 const CRAFT_CALLS_PER_TICK = 6;
 const CRAFT_STACKS_PER_CALL = 20;
@@ -33,6 +37,10 @@ const HIRE_DURATION_ID = 1;
 
 function isMilkTeaAutomationEnabled(automation: any = {}): boolean {
     return MILK_TEA_AUTOMATION_KEYS.some(key => automation[key] === true);
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function createMilkTeaAutomation(deps: {
@@ -168,7 +176,7 @@ function createMilkTeaAutomation(deps: {
             const total = batch.stacks.reduce((sum: number, v: any) => sum + Number(v.count), 0);
             await perform(`制作奶茶（${batch.name} ×${total}）`,
                 () => operateMilkTeaActivity('craft', { fruits: batch.stacks.map((v: any) => ({ uid: v.uid, count: v.count })) }), 'craft');
-            await new Promise(resolve => setTimeout(resolve, CRAFT_SPACER_MS));
+            await sleep(CRAFT_SPACER_MS);
         }
         if (batches.length > CRAFT_CALLS_PER_TICK) {
             log('活动', `奶茶制作本轮到上限 ${CRAFT_CALLS_PER_TICK} 次，剩余果实下一轮继续`, {
@@ -309,8 +317,8 @@ function createMilkTeaAutomation(deps: {
         }
     }
 
-    // 店铺侧领取、制作、雇佣、升级、爆单和分享奖励彼此独立，任何一侧读失败都不该拖住另一边。
-    // 写请求由 milk-tea.ts 的模块级队列串行执行，这里并发只是并发排队，不会同时发两笔。
+    // 十项按开关顺序一项一项跑，项间留 MILK_TEA_TASK_SPACER_MS：读页面和写请求都不叠，
+    // 但任何一项读失败或写失败只记自己的日志，后面的照跑。
     async function runMilkTeaAutomation(flags: {
         claimRewards: boolean;
         claimWages: boolean;
@@ -323,26 +331,33 @@ function createMilkTeaAutomation(deps: {
         upgrade: boolean;
         boost: boolean;
     }): Promise<void> {
-        const tasks: Array<Promise<void>> = [];
-        const guarded = (action: string, run: () => Promise<void>) =>
-            run().catch((e: any) => {
-                log('活动', `奶茶自动任务读取状态失败: ${e.message}`, { module: 'activity', event: '奶茶活动自动', result: 'error', action });
-            });
-        if (flags.claimRewards) tasks.push(guarded('claim', runRewards));
-        if (flags.claimWages) tasks.push(guarded('wages', runWages));
-        if (flags.claimFund) tasks.push(guarded('fund_claim', runFund));
-        if (flags.craft) tasks.push(guarded('craft', runCraft));
-        if (flags.hire) tasks.push(guarded('hire', runHire));
-        if (flags.upgrade) tasks.push(guarded('upgrade', runUpgrade));
-        if (flags.boost) tasks.push(guarded('boost', runBoost));
+        const steps: Array<{ action: string, run: () => Promise<void> }> = [];
+        if (flags.claimRewards) steps.push({ action: 'claim', run: runRewards });
+        if (flags.claimWages) steps.push({ action: 'wages', run: runWages });
+        if (flags.claimFund) steps.push({ action: 'fund_claim', run: runFund });
+        if (flags.craft) steps.push({ action: 'craft', run: runCraft });
+        if (flags.hire) steps.push({ action: 'hire', run: runHire });
+        if (flags.upgrade) steps.push({ action: 'upgrade', run: runUpgrade });
+        if (flags.boost) steps.push({ action: 'boost', run: runBoost });
         if (flags.happyDaily || flags.happyShare || flags.happyMilestones) {
-            tasks.push(guarded('share_reward', () => runShareReward({
-                daily: flags.happyDaily,
-                share: flags.happyShare,
-                milestones: flags.happyMilestones,
-            })));
+            steps.push({
+                action: 'share_reward',
+                run: () => runShareReward({
+                    daily: flags.happyDaily,
+                    share: flags.happyShare,
+                    milestones: flags.happyMilestones,
+                }),
+            });
         }
-        await Promise.all(tasks);
+        for (let index = 0; index < steps.length; index++) {
+            if (index) await sleep(MILK_TEA_TASK_SPACER_MS);
+            try {
+                await steps[index].run();
+            }
+            catch (e: any) {
+                log('活动', `奶茶自动任务读取状态失败: ${e.message}`, { module: 'activity', event: '奶茶活动自动', result: 'error', action: steps[index].action });
+            }
+        }
     }
 
     return { runMilkTeaAutomation };
@@ -353,4 +368,5 @@ module.exports = {
     isMilkTeaAutomationEnabled,
     MILK_TEA_AUTOMATION_KEYS,
     MILK_TEA_CHECK_INTERVAL_MS,
+    MILK_TEA_TASK_SPACER_MS,
 };
