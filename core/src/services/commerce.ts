@@ -173,7 +173,7 @@ async function purchaseMallProduct(goodsIdInput: unknown, countInput: unknown, s
 
     return serializePurchase(async () => {
         const slotType = Number(slotTypeInput);
-        if (slotType !== 1 && slotType !== 4) throw businessError('INVALID_MALL_SLOT', '不支持的商城分页');
+        if (slotType !== 1 && slotType !== 4 && slotType !== 5) throw businessError('INVALID_MALL_SLOT', '不支持的商城分页');
         const before = await getMallCatalog(slotType, 0);
         const goods = before.goods.find((entry: any) => entry.id === goodsId);
         if (!goods) throw businessError('GOODS_NOT_FOUND', 'Mall goods not found');

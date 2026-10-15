@@ -3,8 +3,9 @@ syntax = "proto3";
 package gamepb.activitypb;
 
 import "corepb.proto";
-import "pet-diary.proto";
 import "autumn-activities.proto";
+import "milk-tea.proto";
+import "pet-diary.proto";
 
 message ActivityContent {
     int64 activity_id = 1;
@@ -19,6 +20,7 @@ message ActivityContent {
     int64 field_21 = 21;
     int64 field_22 = 22;
     int64 field_23 = 23;
+    int64 settle_start_time = 24;
 }
 
 message ActivityItem {
@@ -121,6 +123,8 @@ message WeatherResearchData {
 }
 
 message ActivityData {
+    ActivityBodyMilkTea milk_tea = 121;
+    ActivityBodyGrowthFund growth_fund = 122;
     ActivityBodyWishSign wish_sign = 119;
     ActivityBodyShareReward share_reward = 120;
     ActivityContent activity = 1;
@@ -447,6 +451,26 @@ message QixiBridgeRewardResult {
 }
 
 message ActivityOperateReply {
+    MilkTeaCreateShopRsp milk_tea_create_shop = 158;
+    MilkTeaRenameShopRsp milk_tea_rename_shop = 159;
+    MilkTeaGetShopRsp milk_tea_get_shop = 160;
+    MilkTeaGetHireListRsp milk_tea_get_hire_list = 161;
+    MilkTeaHireRsp milk_tea_hire = 162;
+    MilkTeaGetWorkshopRsp milk_tea_get_workshop = 163;
+    MilkTeaClaimCashierRsp milk_tea_claim_cashier = 164;
+    MilkTeaBoostRsp milk_tea_boost = 165;
+    MilkTeaUpgradeRsp milk_tea_upgrade = 166;
+    MilkTeaCraftRsp milk_tea_craft = 167;
+    MilkTeaGetWorkPageRsp milk_tea_get_work_page = 168;
+    MilkTeaClaimWagesRsp milk_tea_claim_wages = 169;
+    MilkTeaInteractRsp milk_tea_interact = 170;
+    MilkTeaGetRankRsp milk_tea_get_rank = 171;
+    MilkTeaGetSalesLogRsp milk_tea_get_sales_log = 172;
+    MilkTeaSetHireDisableRsp milk_tea_set_hire_disable = 173;
+    MilkTeaGuideStepRsp milk_tea_guide_step = 174;
+    UnlockGrowthFundRsp growth_fund_unlock = 175;
+    ClaimGrowthFundRsp growth_fund_claim = 176;
+    MilkTeaSetSubscribeRsp milk_tea_set_subscribe = 179;
     WishSignDrawRsp wish_sign_draw = 151;
     WishSignClaimRsp wish_sign_claim = 152;
     ShareRewardShareRsp share_reward_share = 153;

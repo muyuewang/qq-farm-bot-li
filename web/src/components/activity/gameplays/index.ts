@@ -10,6 +10,7 @@ import { weatherGameplay } from './weather'
 const gameplayModules: Record<ActivityGameplayKey, ActivityGameplayModule> = {
   pet: petGameplay,
   wish: { key: 'wish', defaultTab: 'wish', tabs: ['wish'] },
+  milk: { key: 'milk', defaultTab: 'milk', tabs: ['milk'] },
   happy: { key: 'happy', defaultTab: 'happy', tabs: ['happy'] },
   stellar: stellarGameplay,
   qixi: qixiGameplay,

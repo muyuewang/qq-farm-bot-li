@@ -194,5 +194,47 @@
     "source_param": 2026070302,
     "attr_id": "闪电变异概率提升",
     "attr_value": 60
+  },
+  {
+    "id": 1005,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1005,
+    "attr_value": 5000
+  },
+  {
+    "id": 1007,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1007,
+    "attr_value": 10000
+  },
+  {
+    "id": 1008,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1008,
+    "attr_value": 5000
+  },
+  {
+    "id": 1009,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1009,
+    "attr_value": 10000
+  },
+  {
+    "id": 1010,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1010,
+    "attr_value": 10000
+  },
+  {
+    "id": 1011,
+    "source_type": "活动加成",
+    "source_param": 2026092201,
+    "attr_id": 1011,
+    "attr_value": 10000
   }
 ]

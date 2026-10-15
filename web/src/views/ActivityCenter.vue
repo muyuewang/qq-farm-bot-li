@@ -6,12 +6,14 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { resolveActivityGameplay } from '@/components/activity/gameplays'
+import ShareRewardActivity from '@/components/activity/ShareRewardActivity.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
 import AutumnActivityPage from './activity-center/AutumnActivityPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
+import MilkTeaPage from './activity-center/MilkTeaPage.vue'
 import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
@@ -26,6 +28,7 @@ const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
 const { season, shop, solarTerms, constellation, notice, actionError } = storeToRefs(activityStore)
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
+const selectedInstanceId = ref('')
 const stellarEntryTab = ref<ActivityTab>('travel')
 const stellarDetailsAvailable = computed(() => !!(season.value || shop.value || constellation.value || solarTerms.value))
 
@@ -41,7 +44,8 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
     stellarEntryTab.value = gameplay.entryTab as ActivityTab
 
   selectedActivity.value = gameplay.module.key
-  if (gameplay.module.key === 'pet' || gameplay.module.key === 'wish' || gameplay.module.key === 'happy')
+  selectedInstanceId.value = activity.instanceId || activity.activityIds.find(id => ['2026092501', '2026110104'].includes(id)) || ''
+  if (['pet', 'wish', 'happy', 'milk'].includes(gameplay.module.key))
     return
   const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
   if (gameplay.module.key === 'qixi' && currentAccountId.value) {
@@ -108,9 +112,11 @@ onMounted(() => {
     @back="goBack"
     @open="openActivity"
   />
+  <MilkTeaPage v-else-if="selectedActivity === 'milk'" @back="goBack" />
+  <ShareRewardActivity v-else-if="selectedActivity === 'happy'" :activity-id="selectedInstanceId" @back="goBack" />
   <AutumnActivityPage
-    v-else-if="selectedActivity === 'wish' || selectedActivity === 'happy'"
-    :kind="selectedActivity"
+    v-else-if="selectedActivity === 'wish'"
+    kind="wish"
     @back="goBack"
   />
   <StellarActivityPage

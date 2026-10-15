@@ -97,6 +97,60 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 `queuedMethods` 里的前缀标记：`!H:` 心跳、`!A:` ACE、无前缀前台、`#` 自己农场、`&` 好友农场、`~` 后台补数据。
 
+## 流量取证（只读，不参与调度）
+
+班次管的是「同时在途几个」，服务端在意的是「每秒收到几个」——快速短请求下这两件事完全脱钩（in-flight 稳定在 2~3，单秒仍能发出 20+ 个）。为了能把两者分开量，`utils/traffic-meter.ts` 按秒记环形桶：
+
+- 出站：`socket.send()` 成功后记一笔，带班次和方法名（`network.ts` 的 `sendMsg`）；
+- 入站：`handleMessage()` 里按 `message_type` 分成「回包」和「主动推送」（3 是推送）。掉线时「只剩推送、回包为 0」和「彻底没有入站」是两种不同的死法，必须区分；
+- 峰值和均值分别统计，突发不会被均值抹平。
+
+产出三处，都是纯日志：
+
+- `Gateway 流量: ...` 每分钟一条（无流量不打），带 `gid`；
+- `心跳未响应 (...)` 和 `请求超时: X (...)` 尾部追加 `近60s rps=... peak=.../s out=... in(回包=,推送=) 班次[...] 方法[...]`；
+- 掉线原因串里带「掉线前 60s 流量」。
+
+新连接建立时（`connect()`）清零，不继承上一条连接的速率。
+
+## 停顿取证（只读，不参与调度）
+
+2026-09-22 那次 `ws_close(1006)` 之前，每分钟一条的流量采样里出现了唯一一个 83.15s 的间隔（其余 453 个都是精确 60.00s）——有个 `setInterval` 回调晚了 23 秒才跑，紧接着连接就被对端拆了。`setInterval` 不会自己补回落后的节拍（libuv 按绝对时间重排），所以这 23s 是真实的停顿。
+
+"定时器晚了 23 秒"至少有四种成因，光看日志时间戳分不开，`utils/stall-probe.ts` 每个 tick 同时取五组量来定性：
+
+| 观测 | 来源 | 说明 |
+| --- | --- | --- |
+| 墙钟间隔 | `Date.now()` | 会被 NTP 校时和主机挂起影响 |
+| 单调钟间隔 | `process.hrtime.bigint()` | 挂起/校时期间不走，两者一起涨就排除校时 |
+| 活跃 / 空闲时长 | `performance.eventLoopUtilization()` | **单位是毫秒**；同步代码占住时活跃时间会跟着涨 |
+| 事件循环延迟峰值 | `monitorEventLoopDelay()` | Windows 上对长阻塞不敏感（实测为 0），Linux 容器里才可信 |
+| cgroup CPU 限流 | `/sys/fs/cgroup/cpu.stat` | 取增量，容器配额被打满时 `throttled_usec` 上涨 |
+
+判定顺序（`classify()`）：钟差 > 2s → 时钟跳变或主机挂起；定时器没迟到但延迟峰值超阈值 → 同步阻塞；活跃时间占停顿 60% 以上 → 同步代码占住；有新增限流 → 容器 CPU 配额；活跃 < 20% 且延迟也没涨 → 进程未被调度（热迁移 / 快照 / 宿主抢占 / cgroup 冻结）。
+
+产出三处，全是 `logWarn`，阈值只决定「要不要多打一行」：
+
+- `Gateway 停顿: wall=... mono=... 活跃=... 空闲=... loop延迟峰值=... [限流+..ms/..次] 内存[...] 判定=...`，放在 `traffic_stats` 回调的第一句，掉线或本分钟无流量时照样采样；
+- `连接被外侧拆除 (code=..., phase=...)，停顿: ...，近60s ...`——被动关闭时直接打一条，因为 `payload.reason` 只进下线推送文案，不会写进 `combined.log`；
+- 掉线原因串（`heartbeat_timeout` / `ws_close`）里带 `停顿: 采样N次, 停顿M次, ...; 最长 wall=... 判定=...`。
+
+`connect()` 里和流量计数器一起 `reset()`：停顿统计是**按连接**算的，否则重连时那条几十秒的空档会被当成新连接的一次停顿。
+
+## 掉线后先用原 Code 重启一次
+
+进程内的网络层始终不复用旧 Code（`network.ts` 的 `connect()` 拒绝在还有活连接时再进来）。要做重试是因为掉线后原来的行为是**直接停等人工**：09-04→09-21 的日志里 31 次进程级掉线（17 次 `heartbeat_timeout` + 14 次握手 `400`）全都停在「等待 Helper 刷新 Code 或重新扫码」，要人盯着去刷新，这才是"经常掉线"体感里最长的部分。
+
+所以重试放在主进程：`runtime/worker-manager.ts` 收到 `account_disconnected` 后，先拿断开那一刻的 Code（`worker.accountRef`，不是账本里可能被改过的最新对象）把账号进程重启一次，隔 `3s` 拉起，走完整的登录 + 启动序列。这一次**不发下线提醒**——提醒的语义是「需要人工」，试不动了才发。
+
+不会变成登录风暴的三道闸：
+
+- 只在 `phase=online` 时重试：握手阶段就被拒（`400` / `login_timeout`）说明 Code 本身无效，重发只会再吃一个 400；
+- 被其他终端踢下线走 `account_kicked`，不参与重试（等于和真人抢登录）；
+- 每个账号按 Code 记账（`codeRetryStates`）：同一个 Code 在 `10min` 窗口内只试一次，换过 Code 或过了窗口才重新获得一次机会。
+
+面板上手动停止 / 删除账号会清掉待执行的重试任务（`stopWorker()` 里 `managerScheduler.clear('code_retry_...')`），不会 3 秒后把用户刚停掉的账号拉起来。
+
 ## 登录后的启动序列
 
 `core/src/core/worker.ts` 的 `runStartupSequence()`。以前是四个错峰定时器（农场 2s / 好友 8s / 每日领取 45s / 神秘商店 60s），每日礼包要等一分钟才领，而那时农场和好友循环已经在跑，几件事叠在一起反而把连接打满。
@@ -121,7 +175,10 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 - `core/src/utils/network.ts` — 排队、发送、`getGatewayLoad()`、`waitForGatewayIdle()`
 - `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定、定时任务的健康度退避、让路错误分类
 - `core/src/utils/request-pressure.ts` — 压力日志节流
+- `core/src/utils/traffic-meter.ts` — 按秒的出入站流量取证（含回包/推送区分）
+- `core/src/utils/stall-probe.ts` — 定时器停顿归因（墙钟/单调钟/ELU/循环延迟/cgroup）
 - `core/src/services/automation-lock.ts` — 自动任务全局互斥
 - `core/tests/request-priority.test.js` — 分层与容量的契约测试
 - `core/tests/low-priority-gate.test.js` — 让路闸门与定时任务退避的契约测试
-- `core/tests/low-priority-gate.test.js` — 空闲判定与让路错误分类
+- `core/tests/traffic-meter.test.js` — 流量计账与窗口格式
+- `core/tests/stall-probe.test.js` — 停顿判定

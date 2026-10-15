@@ -12,7 +12,7 @@ import { getMallPurchaseAction } from '@/utils/mall-purchase'
 
 type FilterKey = 'all' | 'free' | 'discount' | 'fertilizer' | 'pet' | 'activity'
 
-const { slotType } = defineProps<{ slotType: 1 | 4 }>()
+const { slotType } = defineProps<{ slotType: 1 | 4 | 5 }>()
 
 const accountStore = useAccountStore()
 const commerceStore = useCommerceStore()

@@ -28,6 +28,8 @@ const {
     selectDispatchIndex,
 } = require('./request-priority');
 const { getAmbientRequestClass } = require('./request-context');
+const { TRAFFIC_STATS_LOG_INTERVAL_MS, createTrafficMeter } = require('./traffic-meter');
+const { createStallProbe } = require('./stall-probe');
 const { startAceRuntime, stopAceRuntime, getAceDiagnostics } = require('../services/ace');
 
 // ============ 事件发射器 (用于推送通知) ============
@@ -139,6 +141,10 @@ const gatewayTokens = new GatewayTokenProvider();
 let lastHeartbeatResponse = Date.now();
 let lastInboundAt = Date.now();
 let heartbeatMissCount = 0;
+// 出站请求 / 入站帧的按秒记账，只用于日志取证，不参与任何调度判定。
+const trafficMeter = createTrafficMeter();
+// 定时器停顿探针：判定「墙钟/单调钟/事件循环/CPU 限流」谁出了问题，同样只用于取证。
+const stallProbe = createStallProbe({ intervalMs: TRAFFIC_STATS_LOG_INTERVAL_MS });
 
 function settleQueuedRequest(request: QueuedRequest, error?: Error, value?: { body: Buffer; meta: any }): void {
     if (request.settled) return;
@@ -409,6 +415,8 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
     }
     try {
         context.socket.send(encoded);
+        // 出站计数：这是「每秒发多少」的唯一可靠观测点，班次来自在途登记。
+        trafficMeter.recordOutbound(pending ? pending.requestClass : getAmbientRequestClass(), methodName);
     } catch (err: any) {
         if (pending) {
             pendingCallbacks.delete(seq);
@@ -479,7 +487,7 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             const index = requestQueue.indexOf(request);
             if (index >= 0) requestQueue.splice(index, 1);
             const stage = request.seq === null ? 'queued' : 'pending';
-            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`));
+            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, 近60s ${trafficMeter.formatWindow(60000)})`));
             drainRequestQueue();
         });
         if (requestClass === 'background') {
@@ -522,6 +530,10 @@ function handleMessage(data: Buffer): void {
         }
 
         const msgType = meta.message_type;
+
+        // 入站计数：分清「服务端在回包」和「服务端只在推东西」，用于判断链路是慢还是死。
+        if (msgType === 3) trafficMeter.recordInbound('push');
+        else if (msgType === 2) trafficMeter.recordInbound('response');
 
         // Notify
         if (msgType === 3) {
@@ -851,8 +863,17 @@ function handleNotify(msg: any): void {
 // 官方 QQ 抓包（会话版本 1.14.0.4_20260911）的字段存在性：device_info 只写 client_version 和
 // sys_software，report_data 显式写出全部空字符串字段，extra 显式为空。protobufjs 按调用方是否
 // 赋值决定是否写默认值，所以这里必须保持字段集合与官方一致，不能只留非默认值。
+// QQ 1.15 separates player authentication from the farm scene login.
+// Keep explicit older QQ profiles and the verified WeChat profile on Login.
+function usesPlayerSceneLogin(): boolean {
+    if (isWechatPlatform()) return false;
+    const version = /^(\d+)\.(\d+)/.exec(getClientVersion());
+    return !!version && (Number(version[1]) > 1 || (Number(version[1]) === 1 && Number(version[2]) >= 15));
+}
+
 function buildLoginBody(): Buffer {
-    return Buffer.from(types.LoginRequest.encode(types.LoginRequest.create({
+    const requestType = usesPlayerSceneLogin() ? types.PlayerLoginRequest : types.LoginRequest;
+    return Buffer.from(requestType.encode(requestType.create({
         sharer_id: toLong(0),
         sharer_open_id: '',
         device_info: getLoginDeviceInfo(),
@@ -875,8 +896,7 @@ function buildLoginBody(): Buffer {
 
 async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void): Promise<void> {
     const body = buildLoginBody();
-
-    await sendMsg(context, 'gamepb.userpb.UserService', 'Login', body, {
+    await sendMsg(context, 'gamepb.userpb.UserService', usesPlayerSceneLogin() ? 'PlayerLogin' : 'Login', body, {
         expectedErrorCodes: new Set(),
         // 登录不走排队器（此时还没 online），按保命流量记账。
         requestClass: 'critical',
@@ -893,7 +913,7 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
 
         let reply: any;
         try {
-            reply = types.LoginReply.decode(bodyBytes!);
+            reply = (usesPlayerSceneLogin() ? types.PlayerLoginReply : types.LoginReply).decode(bodyBytes!);
         } catch (e: any) {
             log('登录', `解码失败: ${e.message}`);
             return;
@@ -957,6 +977,15 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
             // 登录引导阶段串行完成普通请求，避免和后续活动、背包初始化同时挤入 Gateway。
             await fetchUserSettings();
             if (!isCurrentConnection(context)) return;
+            if (usesPlayerSceneLogin()) {
+                const sceneBody = types.PlayerSceneLoginRequest.encode({ global_scene_id: 1 }).finish();
+                const sceneResponse = await sendMsgAsync('gamepb.globalscenepb.GlobalSceneService', 'PlayerSceneLogin', sceneBody);
+                if (!isCurrentConnection(context)) return;
+                const scene = types.PlayerSceneLoginReply.decode(sceneResponse.body);
+                if (scene.global_scene_id !== 1 || !scene.farm_scene_ext_data?.length) {
+                    throw new Error('农场场景登录回包不完整');
+                }
+            }
             if (onLoginSuccess) await onLoginSuccess();
         } catch (e: any) {
             logWarn('登录', `登录初始化失败: ${e.message}`);
@@ -983,11 +1012,30 @@ function buildHeartbeatBody(gid: number): Buffer {
 
 function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.clear('heartbeat_interval');
+    networkScheduler.clear('traffic_stats');
     const heartbeat = { attempts: 0, replies: 0, failures: 0 };
     context.heartbeat = heartbeat;
     lastHeartbeatResponse = Date.now();
     lastInboundAt = Date.now();
     heartbeatMissCount = 0;
+
+    // 一分钟一条流量快照：只在真的有过请求时打，空闲连接不产生日志。
+    // 带 gid 是因为多个账号进程的日志写进同一个 combined.log，否则没法按账号统计。
+    networkScheduler.setIntervalTask('traffic_stats', TRAFFIC_STATS_LOG_INTERVAL_MS, () => {
+        // 停顿探测放在最前面：连接掉到非 online、或者这一分钟没流量而提前返回时，
+        // 恰恰是最需要知道进程有没有被卡住的时刻。
+        const stall = stallProbe.tick();
+        if (stall) {
+            logWarn('系统', `Gateway 停顿: ${stallProbe.format(stall)}, 在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, {
+                gid: userState.gid,
+            });
+        }
+        if (!isCurrentConnection(context) || context.phase !== 'online') return;
+        const stats = trafficMeter.snapshot(TRAFFIC_STATS_LOG_INTERVAL_MS);
+        if (stats.outbound + stats.responseIn + stats.pushIn === 0) return;
+        log('系统', `Gateway 流量: ${trafficMeter.formatWindow(TRAFFIC_STATS_LOG_INTERVAL_MS)}, `
+            + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, { gid: userState.gid });
+    }, { preventOverlap: true });
 
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
         if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid) return;
@@ -1020,14 +1068,17 @@ function startHeartbeat(context: ConnectionContext): void {
                 '心跳',
                 `心跳未响应 (miss=${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}, `
                 + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
-                + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
+                + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, `
+                + `近60s ${trafficMeter.formatWindow(60000)})`,
+                { gid: userState.gid },
             );
             if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)) return;
 
             log('心跳', '连续心跳超时且连接无入站数据，账号将停止运行...');
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
-                reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
+                reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败，`
+                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}，停顿: ${stallProbe.summary()}`,
             });
             try { (context.socket as any).terminate(); } catch {}
         }
@@ -1114,6 +1165,9 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
     lastInboundAt = Date.now();
     lastHeartbeatResponse = Date.now();
     heartbeatMissCount = 0;
+    trafficMeter.reset();
+    // 重连的空档不算停顿：丢掉旧基线，让新连接的第一个 tick 重新起算。
+    stallProbe.reset();
     const url = new URL(CONFIG.serverUrl);
     url.search = new URLSearchParams({
         platform: CONFIG.platform,
@@ -1166,7 +1220,19 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
     (socket as any).on('close', (closeCode: any, closeReason: any) => {
         const reason = Buffer.isBuffer(closeReason) ? closeReason.toString('utf8') : String(closeReason || '');
         console.warn(`[WS] 连接关闭 (code=${closeCode})`);
-        finalizeConnection(context, { source: 'ws_close', code: Number(closeCode) || 0, reason });
+        // 被动断开时把停顿归因和最后 60s 流量直接打成一条 warn：payload.reason 只会进下线推送文案，
+        // 不会写进 combined.log，取证必须落在日志里。主动关闭不打，避免制造噪音。
+        if (!context.intentionalClose && !context.finalized) {
+            logWarn('系统', `连接被外侧拆除 (code=${Number(closeCode) || 0}, phase=${context.phase})，`
+                + `停顿: ${stallProbe.summary()}，近60s ${trafficMeter.formatWindow(60000)}, `
+                + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, { gid: userState.gid });
+        }
+        // 连接被外侧拆掉时（1006 这类没有 close 帧的），把停顿归因一起带上，省得再去比对时间戳。
+        finalizeConnection(context, {
+            source: 'ws_close',
+            code: Number(closeCode) || 0,
+            reason: reason ? `${reason}｜停顿: ${stallProbe.summary()}` : `停顿: ${stallProbe.summary()}`,
+        });
     });
 
     (socket as any).on('error', (err: any) => {

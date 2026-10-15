@@ -11610,6 +11610,780 @@
     "fruit_alter": 0
   },
   {
+    "id": 1020525,
+    "mutant_effect_plant": "5:1120525:1",
+    "name": "森野甜莓",
+    "fruit": {
+      "id": 40525,
+      "count": 10
+    },
+    "seed_id": 20525,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020526,
+    "mutant_effect_plant": "5:1120526:1",
+    "name": "森野白桃",
+    "fruit": {
+      "id": 40526,
+      "count": 10
+    },
+    "seed_id": 20526,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020527,
+    "mutant_effect_plant": "5:1120527:1",
+    "name": "森野甜橙",
+    "fruit": {
+      "id": 40527,
+      "count": 10
+    },
+    "seed_id": 20527,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020528,
+    "mutant_effect_plant": "5:1120528:1",
+    "name": "森野红柚",
+    "fruit": {
+      "id": 40528,
+      "count": 10
+    },
+    "seed_id": 20528,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020021,
+    "mutant_effect_plant": "5:1120021:1",
+    "name": "森野可可豆",
+    "fruit": {
+      "id": 40021,
+      "count": 10
+    },
+    "seed_id": 20021,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1021435,
+    "mutant_effect_plant": "5:1121435:1",
+    "name": "森野柿子",
+    "fruit": {
+      "id": 41435,
+      "count": 10
+    },
+    "seed_id": 21435,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020529,
+    "mutant_effect_plant": "5:1120529:1",
+    "name": "森野芭乐",
+    "fruit": {
+      "id": 40529,
+      "count": 10
+    },
+    "seed_id": 20529,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1029005,
+    "mutant_effect_plant": "5:1129005:1;17:1028005:1",
+    "name": "森野黄金芽",
+    "fruit": {
+      "id": 49005,
+      "count": 10
+    },
+    "seed_id": 29005,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 7680,
+    "special_fruit": null,
+    "size": 2,
+    "offsetPosition": {
+      "x": 95,
+      "y": 20
+    },
+    "mutantEffectScale": {
+      "x": 1.75,
+      "y": 1.5
+    },
+    "harvestOffsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "harvestRandom": true,
+    "harvestAllSpineRes": "spine/v2/shouge/Crop_sg_final",
+    "harvestAllOffsetPosition": "5:30;50:-30;150:-75;200:-25;150:-30",
+    "harvestAniName": "anim_harvest_tiangong",
+    "all_state_spine": "spine/v2/xiyouzhongzi/senyehuangjinya/1029005",
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 30
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 4531.2,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1028005,
+    "mutant_effect_plant": "5_17:1128005:1",
+    "name": "金露云酪",
+    "fruit": {
+      "id": 204011,
+      "count": 1
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 7680,
+    "special_fruit": null,
+    "size": 2,
+    "offsetPosition": {
+      "x": 95,
+      "y": 20
+    },
+    "mutantEffectScale": {
+      "x": 1.75,
+      "y": 1.5
+    },
+    "harvestOffsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "harvestRandom": true,
+    "harvestAllSpineRes": "spine/v2/shouge/Crop_sg_final",
+    "harvestAllOffsetPosition": "0:0",
+    "harvestAniName": "anim_harvest_tiangong",
+    "all_state_spine": "spine/v2/xiyouzhongzi/senyehuangjinya/1028005",
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 60
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 4531.2,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120525,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野甜莓",
+    "fruit": {
+      "id": 1040525,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120526,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野白桃",
+    "fruit": {
+      "id": 1040526,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120527,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野甜橙",
+    "fruit": {
+      "id": 1040527,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120528,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野红柚",
+    "fruit": {
+      "id": 1040528,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120021,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野可可豆",
+    "fruit": {
+      "id": 1040021,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1440,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_xiyou",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 850,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1121435,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野柿子",
+    "fruit": {
+      "id": 1041435,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1120529,
+    "mutant_effect_plant": null,
+    "name": "黄金·森野芭乐",
+    "fruit": {
+      "id": 1040529,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1129005,
+    "mutant_effect_plant": "5_17:1128005:1",
+    "name": "黄金·森野黄金芽",
+    "fruit": {
+      "id": 1049005,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 7680,
+    "special_fruit": null,
+    "size": 2,
+    "offsetPosition": {
+      "x": 95,
+      "y": 20
+    },
+    "mutantEffectScale": {
+      "x": 1.75,
+      "y": 1.5
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": "spine/v2/shouge/Crop_sg_final",
+    "harvestAllOffsetPosition": "5:30;50:-30;150:-75;200:-25;150:-30",
+    "harvestAniName": "anim_harvest_tiangong",
+    "all_state_spine": "spine/v2/xiyouzhongzi/senyehuangjinya/1129005",
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 30
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 4531.2,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1128005,
+    "mutant_effect_plant": null,
+    "name": "黄金·金露云酪",
+    "fruit": {
+      "id": 204012,
+      "count": 1
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 7680,
+    "special_fruit": null,
+    "size": 2,
+    "offsetPosition": {
+      "x": 95,
+      "y": 20
+    },
+    "mutantEffectScale": {
+      "x": 1.75,
+      "y": 1.5
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": "spine/v2/shouge/Crop_sg_final",
+    "harvestAllOffsetPosition": "0:0",
+    "harvestAniName": "anim_harvest_tiangong",
+    "all_state_spine": "spine/v2/xiyouzhongzi/senyehuangjinya/1128005",
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 60
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 4531.2,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
     "id": 1020435,
     "mutant_effect_plant": "5:1120435:1",
     "name": "山丹丹",
@@ -11750,6 +12524,178 @@
     "land_level_need": 1,
     "seasons": 1,
     "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;花蕾:8640;盛开:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1020165,
+    "mutant_effect_plant": "5:1120165:1",
+    "name": "茱萸",
+    "fruit": {
+      "id": 40165,
+      "count": 48
+    },
+    "seed_id": 20165,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 2,
+    "fruit_alter": 36
+  },
+  {
+    "id": 1022254,
+    "mutant_effect_plant": "5:1122254:1",
+    "name": "天山红枫",
+    "fruit": {
+      "id": 42254,
+      "count": 48
+    },
+    "seed_id": 22254,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 2,
+    "fruit_alter": 36
+  },
+  {
+    "id": 1120165,
+    "mutant_effect_plant": null,
+    "name": "黄金·茱萸",
+    "fruit": {
+      "id": 1040165,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
+    "exp": 1680,
+    "special_fruit": null,
+    "size": null,
+    "offsetPosition": {
+      "x": 0,
+      "y": 0
+    },
+    "mutantEffectScale": {
+      "x": 1,
+      "y": 1
+    },
+    "harvestOffsetPosition": {
+      "x": -35,
+      "y": 5
+    },
+    "harvestRandom": null,
+    "harvestAllSpineRes": null,
+    "harvestAllOffsetPosition": null,
+    "harvestAniName": "anim_harvest_zhenpin",
+    "all_state_spine": null,
+    "mature_effect": "effect/prefab/effect_plant_maturation",
+    "mature_effect_offset": {
+      "x": 0,
+      "y": 0
+    },
+    "rare_plant_light_pos": null,
+    "exp_root": 1.6,
+    "exp_alter": 991,
+    "fruit_root": 0,
+    "fruit_alter": 0
+  },
+  {
+    "id": 1122254,
+    "mutant_effect_plant": null,
+    "name": "黄金·天山红枫",
+    "fruit": {
+      "id": 1042254,
+      "count": 10
+    },
+    "seed_id": null,
+    "land_level_need": 1,
+    "seasons": 1,
+    "grow_phases": "种子:8640;发芽:8640;小叶子:8640;大叶子:8640;初熟:8640;成熟:0;",
     "exp": 1680,
     "special_fruit": null,
     "size": null,

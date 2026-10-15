@@ -7,6 +7,7 @@ const { types } = require('../utils/proto');
 const { getServerTimeSec, toNum } = require('../utils/utils');
 const { getItemById, getItemImageById } = require('../config/gameConfig');
 const config = autumnConfig;
+const shareReward = require('./share-reward-activity');
 
 const EVENTS = {
     wish: { groupId: 2026092400, id: 2026092401, field: 'wish_sign', title: '秋祈良愿' },
@@ -77,31 +78,17 @@ function normalize(key: string, entry: any): any {
             canClaim: active && !!pending,
         };
     }
-    const summary = entry.share_reward.summary;
-    if (!summary?.daily) fail('AUTUMN_STATE_UNAVAILABLE', '快乐值进度未返回，请稍后刷新');
-    return {
-        ...base, score: toNum(summary.current_score), scoreItemId: toNum(summary.score_item_id),
-        dailyReward: toNum(summary.daily_reward), firstShareReward: toNum(summary.first_share_reward),
-        claimedCount: toNum(summary.daily.claimed_count), claimLimit: toNum(summary.daily.claim_limit),
-        poolClaimedCount: toNum(summary.my_pool?.claimed_count), poolClaimLimit: toNum(summary.my_pool?.claim_limit),
-        canClaimDaily: active && !summary.daily.daily_reward_claimed,
-        canShare: active && !summary.daily.first_share_awarded, firstShareAwarded: !!summary.daily.first_share_awarded,
-        canClaimMilestones: active && (summary.milestones || []).some((v: any) => toNum(v.state) === 2),
-        milestones: (summary.milestones || []).map((v: any) => ({ id: String(v.tier_id), threshold: toNum(v.threshold), state: toNum(v.state), rewards: (v.rewards || []).map(reward) })),
-    };
+    return fail('INVALID_AUTUMN_ACTIVITY', '未知活动');
 }
 
 async function getAutumnActivity(key: string): Promise<any> {
+    if (key === 'happy') return shareReward.getShareRewardActivity(EVENTS.happy.id);
     return normalize(key, await query(key));
 }
 
 const OPERATIONS: Record<string, { key: string; cmd: number; field: string }> = {
     draw: { key: 'wish', cmd: 51, field: 'wish_sign_draw' },
     claim: { key: 'wish', cmd: 52, field: 'wish_sign_claim' },
-    daily: { key: 'happy', cmd: 73, field: 'share_reward_claim_daily' },
-    milestones: { key: 'happy', cmd: 70, field: 'share_reward_claim_milestones' },
-    share: { key: 'happy', cmd: 69, field: 'share_reward_share' },
-    logs: { key: 'happy', cmd: 71, field: 'share_reward_get_logs' },
 };
 
 function parameters(action: string, state: any, input: any): any {
@@ -116,10 +103,6 @@ function parameters(action: string, state: any, input: any): any {
         if (!state.canClaim) fail('WISH_CLAIM_UNAVAILABLE', '当前没有待领取的祈愿奖励');
         return { choose_id: state.pending.chooseId };
     }
-    if (action === 'daily' && !state.canClaimDaily) fail('HAPPY_DAILY_CLAIMED', '今日快乐值已领取');
-    if (action === 'share' && !state.canShare) fail('HAPPY_SHARE_CLAIMED', '今日分享奖励已领取');
-    if (action === 'milestones' && !state.canClaimMilestones) fail('HAPPY_MILESTONE_UNAVAILABLE', '当前没有可领取的档位奖励');
-    if (action === 'logs') return { page: -1, page_size: 100, tab: input?.tab === 0 ? 0 : 1 };
     return {};
 }
 
@@ -135,16 +118,7 @@ async function performOperation(key: string, action: string, input: any): Promis
     if (toNum(reply.activity_id) !== event.id || toNum(reply.operate_type) !== operation.cmd || !reply[operation.field]) {
         fail('AUTUMN_RESPONSE_INVALID', '操作回包不完整，请刷新确认结果，勿重复提交');
     }
-    let result = types.ActivityOperateReply.toObject(reply, { longs: String, bytes: String })[operation.field];
-    // The web page only needs award/log data, never the reusable Ark share context.
-    if (action === 'share') result = { granted_score: result.granted_score || '0' };
-    if (action === 'logs') result = {
-        total: result.total || 0,
-        logs: (result.logs || []).map((entry: any) => ({
-            seq: entry.seq, kind: entry.kind, score: entry.score, created_at: entry.created_at,
-            actor: entry.actor ? { name: entry.actor.name } : undefined,
-        })),
-    };
+    const result = types.ActivityOperateReply.toObject(reply, { longs: String, bytes: String })[operation.field];
     const rewards = (reply[operation.field].awards || reply[operation.field].rewards || []).map(reward);
     // A completed mutation must not be reported as failed if the follow-up read fails.
     try { return { activity: await getAutumnActivity(key), result, rewards }; }
@@ -152,6 +126,7 @@ async function performOperation(key: string, action: string, input: any): Promis
 }
 
 function operateAutumnActivity(key: string, action: string, input: any = {}): Promise<any> {
+    if (key === 'happy') return shareReward.operateShareRewardActivity(EVENTS.happy.id, action, input);
     const result = mutationTail.then(() => performOperation(key, action, input));
     mutationTail = result.catch(() => {});
     return result;

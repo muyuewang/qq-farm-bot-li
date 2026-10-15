@@ -42,7 +42,7 @@ test('decoded WeChat login uses configured device fields and does not invent a l
         CONFIG.deviceInfo.memory = 'invalid';
         assert.equal(Object.hasOwn(decode().device_info, 'memory'), false);
         CONFIG.platform = 'qq';
-        const qq = decode();
+        const qq = types.PlayerLoginRequest.toObject(types.PlayerLoginRequest.decode(buildLoginBody()), { longs: String });
         assert.equal(qq.device_info.client_version, DEFAULT_CLIENT_VERSION);
         assert.equal(qq.report_data.minigame_channel, 'other-qq');
         assert.equal(Object.hasOwn(qq.device_info, 'device_id'), false);

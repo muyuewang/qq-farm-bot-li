@@ -156,3 +156,21 @@ test('zero restriction type is unlimited while a real zero limit is sold out',as
  const svip=harness({transformGoods:goods=>goods.map(g=>Object.assign(g,{purchase_limit:null,is_available:false}))});
  assert.ok((await svip.service.getMallCatalog(4)).goods.every(g=>!g.purchasable));
 });
+
+test('limited mall uses its own slot, current price and finite availability without SVIP gating', async () => {
+ const options={slotType:5,member:false,bag:[{id:1002,count:100}],transformGoods:()=>[{
+  goods_id:1061,name:'奶茶点券礼包',goods_type:5,is_available:true,price:{id:1002,count:25},
+  reward_items:[{id:29005,count:1}],purchase_limit:{limit_type:3,limit_count:3,bought_count:2},
+ }]};
+ const h=harness(options);
+ const product=(await h.service.getMallCatalog(5)).goods[0];
+ assert.equal(product.purchasable,true); assert.equal(product.limit.remaining,1);
+ await assert.rejects(h.service.purchaseMallProduct(1061,2,5,{id:1002,count:25}));
+ await assert.rejects(h.service.purchaseMallProduct(1061,1,5,{id:1002,count:24}));
+ await h.service.purchaseMallProduct(1061,1,5,{id:1002,count:25});
+ assert.deepEqual(h.bought,[{id:1061,count:1}]);
+ const unavailable=harness({...options,transformGoods:()=>options.transformGoods().map(v=>({...v,is_available:false}))});
+ assert.equal((await unavailable.service.getMallCatalog(5)).goods[0].purchasable,false);
+ await assert.rejects(unavailable.service.purchaseMallProduct(1061,1,5,{id:1002,count:25}));
+ assert.equal(unavailable.bought.length,0);
+});

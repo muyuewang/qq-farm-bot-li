@@ -1,6 +1,7 @@
 /** 活动中心公共 DTO、快照编排与分活动服务聚合。 */
 
 import type Long from 'long';
+import shareRewardInstances from '../activity-data/share-reward-instances.json';
 
 const LongModule = require('long');
 const { sendMsgAsync, GatewayError } = require('../utils/network');
@@ -382,11 +383,14 @@ function buildActivityDirectory(windows: any[], season: any, shop: any, solarTer
     for (const window of windows) {
         const id = String(window?.id || '').trim();
         if (!id) continue;
-        const name = String(window?.name || '').trim() || `活动 ${id}`;
+        const shareInstance = shareRewardInstances.find(entry => entry.activityId === id);
+        const name = shareInstance?.title || String(window?.name || '').trim() || `活动 ${id}`;
         const startTime = Number(window?.beginTime) || 0;
         const endTime = Number(window?.endTime) || 0;
         const group = groups.find((entry: any) => (
-            entry.name === name
+            (!shareInstance || entry.id === id)
+            && (!shareRewardInstances.some(instance => entry.activityIds.includes(instance.activityId)) || entry.id === id)
+            && entry.name === name
             && (entry.endTime <= 0 || startTime <= 0 || entry.endTime >= startTime)
             && (endTime <= 0 || entry.startTime <= 0 || endTime >= entry.startTime)
         ));
@@ -407,6 +411,7 @@ function buildActivityDirectory(windows: any[], season: any, shop: any, solarTer
     }
     return groups.map(group => ({
         ...group,
+        instanceId: shareRewardInstances.find(entry => group.activityIds.includes(entry.activityId))?.activityId || null,
         name: group.activityIds.some((id: string) => ['2026090100', '2026090101', '2026090102', '2026090103'].includes(id)) ? '萌宠成长日记' : group.name,
         ...resolveActivityGameplays(group.activityIds, gameplayBindings),
     }));

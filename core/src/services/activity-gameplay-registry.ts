@@ -1,6 +1,6 @@
 export {};
 
-type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi' | 'qingmei' | 'charity' | 'weather' | 'pet' | 'wish' | 'happy';
+type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi' | 'qingmei' | 'charity' | 'weather' | 'pet' | 'wish' | 'happy' | 'milk';
 
 interface ActivityGameplayContext {
     season?: any;
@@ -28,7 +28,8 @@ interface ActivityGameplayBinding {
 
 const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
     { gameplayKey: 'wish', detailTarget: 'wish', priority: 1, activityIds: () => ['2026092400', '2026092401'] },
-    { gameplayKey: 'happy', detailTarget: 'happy', priority: 2, activityIds: () => ['2026092500', '2026092501'] },
+    { gameplayKey: 'happy', detailTarget: 'happy', priority: 2, activityIds: () => ['2026092500', '2026092501', '2026110104'] },
+    { gameplayKey: 'milk', detailTarget: 'milk', priority: 1, activityIds: () => ['2026110100', '2026110101', '2026110102', '2026110103'] },
     {
         gameplayKey: 'pet',
         detailTarget: 'pet',

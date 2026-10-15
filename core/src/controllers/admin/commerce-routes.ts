@@ -47,6 +47,16 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
         };
     };
 
+    app.get('/api/activities/milk-tea', withAccount((accountId: string, req: Request) => ctx.provider.getMilkTeaActivity(accountId, req.query.page || 'shop', req.query)));
+    app.post('/api/activities/milk-tea/:action', withAccount((accountId: string, req: Request) => ctx.provider.operateMilkTeaActivity(accountId, req.params.action, req.body)));
+
+    app.get('/api/activities/share-reward/:activityId', withAccount((accountId: string, req: Request) => (
+        ctx.provider.getShareRewardActivity(accountId, req.params.activityId)
+    )));
+    app.post('/api/activities/share-reward/:activityId/:action', withAccount((accountId: string, req: Request) => (
+        ctx.provider.operateShareRewardActivity(accountId, req.params.activityId, req.params.action, req.body)
+    )));
+
     app.get('/api/activities/autumn/:key', withAccount((accountId: string, req: Request) => (
         ctx.provider.getAutumnActivity(accountId, req.params.key)
     )));

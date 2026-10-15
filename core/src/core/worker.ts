@@ -850,7 +850,7 @@ function handleTerminalDisconnect(payload: any): void {
     const code = Number(payload?.code) || 0;
     const reason = String(payload?.reason || '连接已断开');
     const phase = String(payload?.phase || 'unknown');
-    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`, {
+    log('系统', `连接已断开，本进程不再复用旧 Code 重连（是否用原 Code 重启由主进程决定）(source=${source}, code=${code}, phase=${phase})`, {
         source, disconnectCode: code, reason, phase, diagnostics: payload?.diagnostics || null,
     });
     saveStats();
@@ -1155,6 +1155,18 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'getAutumnActivity':
                 result = await require('../services/autumn-activities').getAutumnActivity(args[0]);
+                break;
+            case 'getMilkTeaActivity':
+                result = await require('../services/milk-tea').getMilkTeaActivity(args[0], args[1]);
+                break;
+            case 'operateMilkTeaActivity':
+                result = await require('../services/milk-tea').operateMilkTeaActivity(args[0], args[1]);
+                break;
+            case 'getShareRewardActivity':
+                result = await require('../services/share-reward-activity').getShareRewardActivity(args[0]);
+                break;
+            case 'operateShareRewardActivity':
+                result = await require('../services/share-reward-activity').operateShareRewardActivity(args[0], args[1], args[2]);
                 break;
             case 'operateAutumnActivity':
                 result = await require('../services/autumn-activities').operateAutumnActivity(args[0], args[1], args[2]);

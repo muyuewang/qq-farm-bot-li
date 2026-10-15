@@ -53,6 +53,7 @@ function harness({happy=false,offlineAfterWrite=false}={}) {
         else if(field==='share_reward_share'){state.share_reward.summary.daily.first_share_awarded=true;state.share_reward.summary.current_score=5;result={granted_score:5};}
         return {body:encode(types.ActivityOperateReply,{activity_id:head.activity_id,operate_type:req.operate_type,[field]:result})};
     }});
+    delete require.cache[require.resolve('../dist/services/share-reward-activity')];
     const id=require.resolve('../dist/services/autumn-activities');delete require.cache[id];
     return {service:require(id),state,calls};
 }
@@ -107,7 +108,7 @@ test('happy share obtains the daily award once without any messaging RPC',async(
     assert.equal(result.activity.canShare,false);
     await assert.rejects(h.service.operateAutumnActivity('happy','share'),/已领取/);
     assert.equal(h.calls.length,1);
-    assert.equal(h.calls[0].operate_type,'69');
+    assert.equal(h.calls[0].operate_type,'70');
 });
 
 test('second account career draw changes the actual choice and text while retaining day-one rewards',()=>{
@@ -147,7 +148,7 @@ test('captured happy state and both log tabs retain actual earned rewards withou
  assert.equal(h.calls.length,0);
  for(const [tab,file]of [[1,'000130-send.bin'],[0,'000136-send.bin']]){
   await h.service.operateAutumnActivity('happy','logs',{tab});
-  assert.deepEqual(h.calls.at(-1),frame(file));
+  assert.deepEqual(h.calls.at(-1),{ ...frame(file), operate_type: '72' });
  }
  const logs=frame('000131-recv.bin').share_reward_get_logs;
  assert.equal(logs.total,2);
