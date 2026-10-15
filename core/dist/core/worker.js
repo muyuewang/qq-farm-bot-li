@@ -431,6 +431,10 @@ async function runMilkTeaTick() {
             happyDaily: automation.milk_tea_happy_daily === true,
             happyShare: automation.milk_tea_happy_share === true,
             happyMilestones: automation.milk_tea_happy_milestones === true,
+            craft: automation.milk_tea_craft === true,
+            hire: automation.milk_tea_hire === true,
+            upgrade: automation.milk_tea_upgrade === true,
+            boost: automation.milk_tea_boost === true,
         });
     }
     catch (e) {
