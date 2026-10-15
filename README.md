@@ -142,6 +142,9 @@ bash ./start.sh
 # 拉取代码后如需忽略缓存并完整重建
 bash ./start.sh --rebuild
 
+# 内存不足以运行 vite/tsc 的机器：直接用仓库里的构建产物启动
+bash ./start.sh --prebuilt
+
 # 查看日志
 tail -f app_dev.log
 
@@ -150,6 +153,10 @@ bash ./stop.sh
 ```
 
 `start.sh` 会在依赖缺失或依赖清单变化时执行 `pnpm install --frozen-lockfile`，并按文件更新时间分别判断 Web、Core 是否需要重建。源码和依赖均未变化时会直接复用现有产物；`--rebuild` 可强制完整重建。脚本随后以生产模式后台运行 `node core/client.js`，日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
+
+需要注意 `git` 检出文件时按路径顺序写入，`web/dist`、`core/client.js` 排在 `web/src`、`core/src` 之前，时间戳因此总是早于源码，新克隆或新拉取的仓库在默认模式下会触发一次完整重建。无法承担这次重建的机器改用 `--prebuilt`（等价于 `QQ_FARM_PREBUILT=1`）：该模式不调用任何编译器，只校验 `web/dist/index.html`、`core/client.js`、`core/dist/runtime/runtime-engine.js` 是否存在，缺失时直接退出并提示去能构建的机器上补齐产物；产物落后于源码时打印较新的输入文件数量作为提醒，仍然照常启动。`--prebuilt` 与 `--rebuild` 互斥。
+
+本仓库为了支持这种机器，把 `.gitignore` 中的 `core/dist/`、`web/dist/`、`core/client.js` 用 `git add -f` 强制纳入了版本管理。源码改动后需要在能构建的机器上重建并一并提交这三处，否则 `--prebuilt` 启动的仍是旧版本。镜像构建路径不受影响：`.dockerignore` 仍会排除这些产物，容器内照常自行编译。
 
 前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 

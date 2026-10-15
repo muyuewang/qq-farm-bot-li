@@ -9,6 +9,8 @@ WEB_OUTPUT="$SCRIPT_DIR/web/dist/index.html"
 CORE_OUTPUT="$SCRIPT_DIR/core/client.js"
 CORE_RUNTIME_OUTPUT="$SCRIPT_DIR/core/dist/runtime/runtime-engine.js"
 FORCE_BUILD=0
+# Hosts that cannot afford vite/tsc run the checked-in build output instead.
+PREBUILT="${QQ_FARM_PREBUILT:-0}"
 
 cd "$SCRIPT_DIR"
 
@@ -18,8 +20,10 @@ die() {
 }
 
 usage() {
-    echo "Usage: bash start.sh [--rebuild]"
-    echo "  --rebuild  Force a full Web and Core rebuild before starting."
+    echo "Usage: bash start.sh [--rebuild | --prebuilt]"
+    echo "  --rebuild   Force a full Web and Core rebuild before starting."
+    echo "  --prebuilt  Never build; run the checked-in Web and Core output."
+    echo "              Also enabled by QQ_FARM_PREBUILT=1. Fails if that output is missing."
 }
 
 run_pnpm() {
@@ -70,6 +74,9 @@ while [[ $# -gt 0 ]]; do
         --rebuild|--force-build)
             FORCE_BUILD=1
             ;;
+        --prebuilt)
+            PREBUILT=1
+            ;;
         -h|--help)
             usage
             exit 0
@@ -81,6 +88,12 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+[[ "$PREBUILT" =~ ^[01]$ ]] || die "QQ_FARM_PREBUILT must be 0 or 1."
+if [[ "$PREBUILT" -eq 1 && "$FORCE_BUILD" -eq 1 ]]; then
+    usage >&2
+    die "--prebuilt and --rebuild contradict each other."
+fi
 
 if [[ -f "$PID_FILE" ]]; then
     existing_pid="$(tr -d '[:space:]' < "$PID_FILE")"
@@ -147,6 +160,20 @@ if [[ "$FORCE_BUILD" -eq 1 \
     || ! -f "$CORE_RUNTIME_OUTPUT" ]] \
     || has_newer_input "$CORE_OUTPUT" "${core_inputs[@]}"; then
     build_core=1
+fi
+
+if [[ "$PREBUILT" -eq 1 ]]; then
+    for required in "$WEB_OUTPUT" "$CORE_OUTPUT" "$CORE_RUNTIME_OUTPUT"; do
+        [[ -f "$required" ]] || die "--prebuilt: $required is missing. Build it elsewhere (bash start.sh --rebuild), ship the output, then pull."
+    done
+    newer_web="$(find "${web_inputs[@]}" -type f -newer "$WEB_OUTPUT" 2>/dev/null | wc -l)"
+    newer_core="$(find "${core_inputs[@]}" -type f -newer "$CORE_OUTPUT" 2>/dev/null | wc -l)"
+    if [[ "$newer_web" -gt 0 || "$newer_core" -gt 0 ]]; then
+        echo "--prebuilt: checked-in output trails the sources (newer inputs: web=$newer_web, core=$newer_core). Rebuild elsewhere to catch up."
+    fi
+    echo "Using checked-in build output; no compiler will run."
+    build_web=0
+    build_core=0
 fi
 
 if [[ "$build_web" -eq 1 ]]; then
