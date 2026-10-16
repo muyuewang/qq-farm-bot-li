@@ -358,6 +358,37 @@ const milkTeaHireTalentOptions = [
 
         <section class="farm-card rounded-2xl p-4">
           <div class="mb-4 flex items-start gap-3">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-400">
+              <span class="i-carbon-calendar text-xl" />
+            </div>
+            <div>
+              <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                节令日历
+              </h4>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                只领不花：两项都在服务端判定「可以领」时才发请求，默认开
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.solar_calendar_claim_events" label="自动领取节令直达奖励" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.solar_calendar_claim_seasons" label="自动领取季度奖励" />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            半小时检查一次，两项排队执行、项间隔 800ms，一轮最多领 5 个节令、3 个季度，剩下的下一轮接着领；不在开放窗口、或者这一项已经领过，只按天记一行跳过日志，不发写请求。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            答题不自动化：官方活动配置里只有题目和选项文本，没有正确答案索引，而答错要锁到第二天。要在「节令日历」页面自己选答案。季度奖励的达标进度同样由服务端判定，达标了才领。
+          </p>
+        </section>
+
+        <section class="farm-card rounded-2xl p-4">
+          <div class="mb-4 flex items-start gap-3">
             <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
               <span class="i-carbon-store text-xl" />
             </div>

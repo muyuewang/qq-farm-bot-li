@@ -21,6 +21,7 @@ const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/s
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { createMilkTeaAutomation, isMilkTeaAutomationEnabled, MILK_TEA_CHECK_INTERVAL_MS } = require('../services/milk-tea-auto');
+const { createSolarCalendarAutomation, isSolarCalendarAutomationEnabled, SOLAR_CALENDAR_CHECK_INTERVAL_MS } = require('../services/solar-calendar-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -410,6 +411,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
         startMilkTeaActivityTimer();
+        startSolarCalendarTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }
@@ -500,6 +502,48 @@ function startMilkTeaActivityTimer(): void {
     });
 }
 
+let solarCalendarAutomation: any = null;
+
+async function runSolarCalendarTick(): Promise<void> {
+    if (!loginReady) return;
+    const automation = getAutomation() || {};
+    if (!isSolarCalendarAutomationEnabled(automation)) return;
+    if (!solarCalendarAutomation) {
+        const { getSolarCalendar, operateSolarCalendar } = require('../services/solar-calendar');
+        const { getServerTimeSec } = require('../utils/utils');
+        solarCalendarAutomation = createSolarCalendarAutomation({
+            getSolarCalendar,
+            operateSolarCalendar,
+            getServerTimeSec,
+            log,
+        });
+    }
+    try {
+        await solarCalendarAutomation.runSolarCalendarAutomation({
+            claimEvents: automation.solar_calendar_claim_events === true,
+            claimSeasons: automation.solar_calendar_claim_seasons === true,
+        });
+    } catch (e: any) {
+        log('活动', `节令日历自动任务失败: ${e.message}`, { module: 'activity', event: '节令日历自动', result: 'error' });
+    }
+}
+
+function stopSolarCalendarTimer(): void {
+    workerScheduler.clear('solar_calendar_initial');
+    workerScheduler.clear('solar_calendar_interval');
+}
+
+function startSolarCalendarTimer(): void {
+    stopSolarCalendarTimer();
+    if (!loginReady || !isSolarCalendarAutomationEnabled(getAutomation())) return;
+    workerScheduler.setTimeoutTask('solar_calendar_initial', 90000, () => {
+        runExclusiveAutomationTask('solar_calendar', runSolarCalendarTick).catch(() => null);
+    });
+    workerScheduler.setIntervalTask('solar_calendar_interval', SOLAR_CALENDAR_CHECK_INTERVAL_MS, () => {
+        runExclusiveAutomationTask('solar_calendar', runSolarCalendarTick).catch(() => null);
+    });
+}
+
 function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     const rev = Number((snapshot || {}).__revision || 0);
     if (rev > 0 && rev < appliedConfigRevision) {
@@ -559,6 +603,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
             startMysteryShopTimer();
             startMilkTeaActivityTimer();
+            startSolarCalendarTimer();
         }
     }
 

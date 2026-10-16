@@ -38,3 +38,22 @@ LoginReply 仍存在已有协议未覆盖的字段，其重新编码不等于原
 当前实服重阳和霜降尚未开放，样本图鉴奖励已领至当前等级；新领取和答题接口依据官方编码器及模拟响应验证，未宣称实服领取成功。原始抓包、真实账号信息、测试输出均只存于本地忽略目录。
 
 本轮检查：main 核心 370 项、前端 28 项测试通过；master 核心 252 项、前端 10 项测试通过。两边类型检查、前端生产构建通过；浏览器检查 320/390px 窄屏、667×375 横屏及桌面布局，模拟提交核对了 11 组非锁定果实 UID、图鉴类型和零起始答案索引。main 额外验证了节令到点刷新、重复点击和账号切换后的旧答题响应失效。
+
+## 自动化（本地新增）
+
+上游只给手动操作，本地在 `core/src/services/solar-calendar-auto.ts` 里加了定时任务，半小时一轮（登录 90s 后首跑），走 `runExclusiveAutomationTask('solar_calendar', ...)` 全局互斥，不会和奶茶、神秘商人重叠。两个开关默认全开（用户 2026-10-16 确认只要自动领免费的）：
+
+| 配置键 | 动作 | 上游写操作 | 会不会花东西 |
+| --- | --- | --- | --- |
+| `solar_calendar_claim_events` | 领开放中节令的直达奖励 | `ClaimSolarTermsV2` | 不花 |
+| `solar_calendar_claim_seasons` | 领已达标的季度奖励 | `ClaimSolarSeason` | 不花 |
+
+判断依据只用服务端返回的状态：`events[].canClaim`（在开放窗口里且 `direct_claimed` 为假）才领节令，`seasons[].canClaim`（`reward_claimable`、没领过、且回包带了奖励）才领季度。没有可领的、活动不在窗口里，都只记一行按天去重的跳过日志，不发写请求。
+
+两项在一轮里串行执行，步骤间隔 800ms（`SOLAR_CALENDAR_TASK_SPACER_MS`），步骤内连续两笔领取间隔 400ms，一轮最多同时只有一个请求在飞。一轮最多领 5 个节令、3 个季度，剩下的下一轮接着领。每一步先做一次读请求拿可领清单，之后每笔写入都用回包里的 `updated_event`／`updated_season` 折回来的新日历接着判断——拿旧清单继续领会把已经领过的再领一次；写入成功但日历刷新失败（`refreshRequired`）时本轮立即收住，不基于旧数据继续。某项写失败只记错误日志，不牵连同一轮里的另一项，也不会自己重试（回包不完整时 `operateSolarCalendar` 已保证不重发，多领一次退不回来）。
+
+答题 `AnswerSolarTerms` 不建开关：官方活动配置 `solar-calendar.json` 只有 `question` 与 `answer` 的选项文本，没有正确答案索引，而答错会锁到第二天（`quiz_wrong_today`）。没有可自动化的固定选法时，挂一个空转开关比不挂更坏——这一项留在「节令日历」页面由用户自己选。
+
+默认值在 `DEFAULT_ACCOUNT_CONFIG.automation` 里（`core/src/models/store/shared-state.ts`），前端设置页的三处兜底块与 `AutomationSettingsForm.vue` 同步。两个 key 是布尔开关，走 `normalizeAccountConfig` 的通用 `!!v` 归一，不需要特判；已经把它们存成 false 的账号不会被翻回来。
+
+尚未实服验证过领取成功：2026-10-16 重阳（10/18 开）与霜降都还没进开放窗口，两个开关目前只会记跳过日志，到点才第一次真发写请求。

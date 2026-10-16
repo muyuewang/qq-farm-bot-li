@@ -87,6 +87,8 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_hire_duration_id: 1,
         milk_tea_hire_talent_id: 0,
         milk_tea_hire_allow_robots: true,
+        solar_calendar_claim_events: true,
+        solar_calendar_claim_seasons: true,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
