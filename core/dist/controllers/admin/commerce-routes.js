@@ -45,6 +45,9 @@ function mountCommerceRoutes(app, ctx) {
             }
         };
     };
+    app.get('/api/solar-calendar', withAccount((accountId) => ctx.provider.getSolarCalendar(accountId)));
+    app.post('/api/solar-calendar/:action', withAccount((accountId, req) => ctx.provider.operateSolarCalendar(accountId, req.params.action, req.body)));
+    app.post('/api/illustrated/claim', withAccount((accountId, req) => ctx.provider.claimIllustratedRewards(accountId, req.body?.type)));
     app.get('/api/activities/milk-tea', withAccount((accountId, req) => ctx.provider.getMilkTeaActivity(accountId, req.query.page || 'shop', req.query)));
     app.post('/api/activities/milk-tea/:action', withAccount((accountId, req) => ctx.provider.operateMilkTeaActivity(accountId, req.params.action, req.body)));
     app.get('/api/activities/share-reward/:activityId', withAccount((accountId, req) => (ctx.provider.getShareRewardActivity(accountId, req.params.activityId))));
