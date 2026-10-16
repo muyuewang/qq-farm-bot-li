@@ -7,6 +7,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
 import { menuRoutes } from '@/router/menu'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
@@ -106,6 +107,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearReloginButtonTimer()
   statusStore.disconnectRealtime()
 })
 
@@ -271,6 +273,51 @@ const connectionStatus = computed(() => {
     pulse: false,
   }
 })
+
+// 切号时 status 会被清成 null，'未连接' 先闪一下再变回 '运行中'；这个窗口里「重新登录」是亮着的，
+// 本来就已登录的账号很容易误触。所以断线状态要持续满这么久才露出按钮，点它还要再确认一次。
+const RELOGIN_BUTTON_DELAY_MS = 5000
+const showReloginButton = ref(false)
+const showReloginConfirm = ref(false)
+let reloginButtonTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearReloginButtonTimer() {
+  if (reloginButtonTimer === null)
+    return
+  clearTimeout(reloginButtonTimer)
+  reloginButtonTimer = null
+}
+
+// 账号也进 key：在两个都没连上的账号之间切换时，计时要重新开始，不该沿用上一个账号攒出来的时长。
+watch(
+  () => `${connectionStatus.value.text}|${currentAccount.value?.id || currentAccount.value?.uin || ''}`,
+  (key) => {
+    clearReloginButtonTimer()
+    showReloginButton.value = false
+    showReloginConfirm.value = false
+    if (!key.startsWith('未连接|'))
+      return
+    reloginButtonTimer = setTimeout(() => {
+      reloginButtonTimer = null
+      showReloginButton.value = true
+    }, RELOGIN_BUTTON_DELAY_MS)
+  },
+  { immediate: true },
+)
+
+function askRelogin() {
+  showReloginConfirm.value = true
+  showAccountDropdown.value = false
+}
+
+function confirmRelogin() {
+  showReloginConfirm.value = false
+  // 确认过就先把按钮收回去：状态刷新成 '运行中' 或再次断线满时长后，它自己会再出现。
+  clearReloginButtonTimer()
+  showReloginButton.value = false
+  accountToEdit.value = currentAccount.value
+  showAccountModal.value = true
+}
 
 const navItems = computed(() => {
   return menuRoutes
@@ -578,10 +625,10 @@ async function copyToken() {
 
       <!-- Re-login prompt when account is stopped/disconnected -->
       <button
-        v-if="connectionStatus.text === '未连接'"
+        v-if="showReloginButton"
         type="button"
         class="sidebar-relogin-btn mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors"
-        @click="accountToEdit = currentAccount; showAccountModal = true; showAccountDropdown = false"
+        @click="askRelogin"
       >
         <div class="i-carbon-renew shrink-0 text-base" />
         <span v-show="!isSidebarCollapsed">重新登录</span>
@@ -773,6 +820,16 @@ async function copyToken() {
     :edit-data="accountToEdit"
     @close="showAccountModal = false; accountToEdit = null"
     @saved="handleAccountSaved"
+  />
+
+  <ConfirmModal
+    :show="showReloginConfirm"
+    title="重新登录当前账号？"
+    :message="`当前显示未连接的账号：${displayName}。\n\n如果它本来就是登录状态（刚切换账号、状态还没刷新的时候最常见），请先取消——重新提交登录码会另起一次登录。确认确实掉线了再点「重新登录」。`"
+    type="danger"
+    confirm-text="重新登录"
+    @confirm="confirmRelogin"
+    @cancel="showReloginConfirm = false"
   />
 
   <RemarkModal
