@@ -49,7 +49,7 @@ async function claimAllIllustratedRewards(): Promise<any> {
         return { items: [], bonus_items: [] };
     }
     const body: Uint8Array = types.ClaimAllRewardsV2Request.encode(types.ClaimAllRewardsV2Request.create({
-        only_claimable: true,
+        type: 1,
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.illustratedpb.IllustratedService', 'ClaimAllRewardsV2', body);
     return types.ClaimAllRewardsV2Reply.decode(replyBody);
@@ -203,8 +203,7 @@ async function checkAndClaimIllustratedRewards(): Promise<boolean> {
         const beforeTicket: number = await getTicketBalanceFromBag();
         const reply: any = await claimAllIllustratedRewards();
         const items: any[] = [
-            ...(Array.isArray(reply && reply.items) ? reply.items : []),
-            ...(Array.isArray(reply && reply.bonus_items) ? reply.bonus_items : []),
+            ...(Array.isArray(reply && reply.total_rewards) ? reply.total_rewards : []),
         ];
         const afterTicket: number = await getTicketBalanceFromBag();
         const gainTicket: number = Math.max(0, afterTicket - beforeTicket);

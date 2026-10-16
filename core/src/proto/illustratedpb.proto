@@ -1,84 +1,102 @@
 syntax = "proto3";
-
 package gamepb.illustratedpb;
-
 import "corepb.proto";
 
 message GetIllustratedListV2Request {
-    bool refresh = 1;
+    int32 rarity = 1;
     int32 type = 2;
 }
 
-message IllustratedItem {
-    int64 seed_id = 1;
-    // Reward tier (2=40, 3=80, 4=200 in the captured responses), not the
-    // golden/activity/decoration fruit group.
-    int32 reward_category = 2;
+message GuaranteeProgressV2 {
+    int32 source_rarity = 1;
+    int32 cur = 2;
+    int32 total = 3;
+}
+
+message IllustratedInfoV2 {
+    int32 fruit_id = 1;
+    int32 rarity = 2;
     bool unlocked = 3;
     int32 progress = 4;
-    int32 crop_category = 5;
-    IllustratedReward reward = 6;
+    int32 layer = 5;
+    repeated corepb.Item reward = 6;
     bool is_new = 7;
-    repeated IllustratedAttribute attributes = 8;
+    repeated GuaranteeProgressV2 guarantees = 8;
 }
 
 message GetIllustratedListV2Reply {
-    repeated IllustratedItem items = 1;
-    int64 progress = 2;
-    int32 level = 3;
-    IllustratedReward reward = 4;
-    bytes reward_detail = 5;
+    repeated IllustratedInfoV2 list = 1;
+    int32 total_progress = 2;
+    int32 current_level = 3;
+    repeated corepb.Item total_rewards = 4;
+    repeated int32 rarity = 5;
     int32 type = 6;
-    int64 next_level_progress = 7;
-    bool red_dot = 9;
-    repeated IllustratedReward attribute_bonuses = 10;
-    IllustratedReward current_bonus = 11;
+    int32 next_level_progress = 7;
+    bool has_claimable_reward = 8;
+    bool has_claimed_reward = 9;
+    repeated corepb.BuffEffect buff_effects = 10;
+    corepb.BuffEffect next_buff_effect = 11;
 }
 
-message IllustratedReward {
-    int64 item_id = 1;
-    int64 count = 2;
-}
-
-message IllustratedAttribute {
+message ClaimAllRewardsV2Request {
     int32 type = 1;
-    int64 param = 2;
-    int64 value = 3;
+}
+
+message ClaimAllRewardsV2Reply {
+    repeated corepb.Item total_rewards = 1;
+    repeated int32 claimed_level_ids = 2;
+    int32 current_level = 3;
+    repeated corepb.Item next_level_rewards = 4;
+}
+
+message IllustratedLevelInfoV2 {
+    int32 level = 1;
+    int32 point_condition = 2;
+    repeated corepb.Item rewards = 3;
+    bool can_claim = 4;
+    bool claimed = 5;
 }
 
 message GetIllustratedLevelListV2Request {
     int32 type = 1;
 }
 
-message IllustratedLevel {
-    int32 level = 1;
-    int64 progress = 2;
-    repeated IllustratedReward rewards = 3;
-    bool claimed = 5;
-}
-
 message GetIllustratedLevelListV2Reply {
-    int32 level = 1;
-    int64 progress = 2;
-    repeated IllustratedLevel levels = 3;
+    int32 current_level = 1;
+    int32 total_progress = 2;
+    repeated IllustratedLevelInfoV2 level_list = 3;
 }
 
-message ClaimAllRewardsV2Request {
-    bool only_claimable = 1;
+message UnlockedFruitInfo {
+    int32 fruit_id = 1;
+    int32 progress = 2;
+    int32 progress_to_next_level = 3;
+    int32 total_progress_before = 4;
+    int32 total_progress_after = 5;
+    int32 level_before = 6;
+    int32 level_after = 7;
 }
 
-message ClaimAllRewardsV2Reply {
-    repeated corepb.Item items = 1;
-    repeated corepb.Item bonus_items = 4;
+message IllustratedChangeNotifyV2 {
+    repeated UnlockedFruitInfo unlocked_fruits = 1;
+    int32 old_level = 2;
+    int32 new_level = 3;
+    int32 type = 4;
+    int32 old_progress = 5;
+    int32 current_progress = 6;
+    repeated corepb.BuffEffect buff_effects = 7;
 }
 
-message IllustratedRewardRedDotNotifyV2 {}
+message IllustratedRewardRedDotNotifyV2 {
+    bool normal_reward_available = 1;
+    bool premium_reward_available = 2;
+    bool ranch_reward_available = 3;
+}
 
-// ============ 清除新解锁水果标记 V2 ============
 message ClearNewUnlockedFruitsV2Request {
-    bytes seed_id = 1;
+    repeated int32 fruit_ids = 1;
 }
 
 message ClearNewUnlockedFruitsV2Reply {
-    bytes seed_id = 1;
+    repeated int32 cleared_fruit_ids = 1;
 }

@@ -46,6 +46,13 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Analytics.vue'),
   },
   {
+    path: 'solar-calendar',
+    name: 'solar-calendar',
+    label: '节令日历',
+    icon: 'i-carbon-calendar',
+    component: () => import('@/views/SolarCalendar.vue'),
+  },
+  {
     path: 'game-mall',
     name: 'game-mall',
     label: '游戏商城',

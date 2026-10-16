@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useIntervalFn } from '@vueuse/core'
 import { computed, onMounted, ref, watch } from 'vue'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
 import MilkTeaWork from './MilkTeaWork.vue'
@@ -8,12 +9,18 @@ const emit = defineEmits<{ navigate: [page: string], operation: [action: string,
 const name = ref('')
 const hireDisabled = ref(false)
 const durationId = ref(1)
-const slotIndex = ref(0)
+const receivedAt = ref(Date.now())
+const tick = ref(Date.now())
+useIntervalFn(() => tick.value = Date.now(), 1000)
+const now = computed(() => Number(state?.serverTime || 0) + (tick.value - receivedAt.value) / 1000)
+const craftableFruits = computed<any[]>(() => (state?.fruits || []).filter((fruit: any) => !fruit.locked && Number(fruit.count) > 0 && state?.recipes?.some((recipe: any) => recipe.unlocked && recipe.fruitId === fruit.id)))
 const rankPage = ref(1)
 const logDate = ref('')
 const selectedFruitUids = ref<string[]>([])
 const candidates = computed<any[]>(() => [...(state?.hire?.friends || []), ...(state?.hire?.robots || [])])
 const levelConfig = computed(() => state?.levels.find((v: any) => v.level === Number(state.summary.level)))
+const freeSlot = computed(() => Array.from({ length: Number(levelConfig.value?.employee_slot_count || 0) }, (_, index) => index)
+  .find(index => !(state?.shop?.slots || []).some((slot: any) => Number(slot.slot_index || 0) === index && Number(slot.end_at) > now.value)))
 const canWork = computed(() => state?.active && !state?.settling)
 // 店铺、兑换、工作三个页签是主页面，其余页面都在弹窗里显示，弹窗自带标题
 const inDialog = computed(() => !['shop', 'exchange', 'work'].includes(page))
@@ -35,7 +42,15 @@ function itemImage(id: number | string) {
   return `/game-config/seed_images_named/seed_images/${id}.png`
 }
 function date(value: any) {
-  return Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleString('zh-CN') : '—'
+  return Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }) : '—'
+}
+function remaining(value: any) {
+  const seconds = Math.max(0, Math.ceil(Number(value) - now.value))
+  if (!seconds)
+    return '已结束'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor(seconds % 3600 / 60)
+  return `剩余 ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 function rewardsText(values: any[]) {
   return (values || []).map(v => `${v.name} ×${v.count}`).join('、')
@@ -59,14 +74,22 @@ function request(action = '', input: any = {}) {
     emit('operation', action, input)
   else emit('reload', { durationId: durationId.value, pageNumber: rankPage.value, day: logDate.value ? Math.floor(new Date(`${logDate.value}T00:00:00+08:00`).getTime() / 1000) : 0 })
 }
-function craft() {
-  const fruits = (state?.fruits || []).filter((v: any) => selectedFruitUids.value.includes(v.uid))
+function craft(all = false) {
+  if (busy || !canWork.value)
+    return
+  const fruits = craftableFruits.value.filter(v => all || selectedFruitUids.value.includes(v.uid))
+  if (!fruits.length)
+    return
   select('craft', '确认制作', { fruits: fruits.map((v: any) => ({ uid: v.uid, count: v.count })) }, fruits)
 }
 function hire(candidate: any) {
-  select('hire', '确认雇佣', { targetGid: candidate.friend.gid, slotIndex: slotIndex.value, durationId: durationId.value }, [{ id: 1041, name: '奶茶券', count: Number(state.hire.wage_total) }])
+  if (freeSlot.value === undefined || busy)
+    return
+  select('hire', '确认雇佣', { targetGid: candidate.friend.gid, durationId: durationId.value }, [{ id: 1041, name: '奶茶券', count: Number(state.hire.wage_total) }])
 }
 watch(() => state, () => {
+  receivedAt.value = Date.now()
+  tick.value = receivedAt.value
   name.value = state?.summary.shop_name || state?.recommendedNames?.[0] || ''
   hireDisabled.value = !!state?.summary.hire_disabled
   selectedFruitUids.value = []
@@ -273,7 +296,10 @@ onMounted(() => {
         <p class="hint hint--left hint--inline">
           勾选果实后点击确认制作，会消耗所选的整组果实。
         </p>
-        <button class="primary" :disabled="busy || !canWork || !selectedFruitUids.length" @click="craft">
+        <button class="primary" :disabled="busy || !canWork || !craftableFruits.length" @click="craft(true)">
+          一键制作
+        </button>
+        <button class="primary" :disabled="busy || !canWork || !selectedFruitUids.length" @click="craft(false)">
           {{ selectedFruitUids.length ? `确认制作（${selectedFruitUids.length}）` : '确认制作' }}
         </button>
       </div>
@@ -292,20 +318,24 @@ onMounted(() => {
     <section v-else-if="page === 'hireList' && state.hire" class="paper paper--list">
       <h2>好友雇佣</h2>
       <div class="actions">
-        <label class="field">雇佣时长 <select v-model="durationId" :disabled="busy" @change="request()"><option v-for="duration in state.durations" :key="duration.duration_id" :value="duration.duration_id">{{ duration.duration_sec / 3600 }}小时</option></select></label><label class="field">员工位置 <select v-model="slotIndex" :disabled="busy"><option v-for="index in levelConfig?.employee_slot_count || 1" :key="index" :value="index - 1">{{ index }}</option></select></label><span class="wallet__chip"><img :src="itemImage(1041)" alt="奶茶券"><b>{{ state.hire.wage_total }}</b></span>
+        <label class="field">雇佣时长 <select v-model="durationId" :disabled="busy" @change="request()"><option v-for="duration in state.durations" :key="duration.duration_id" :value="duration.duration_id">{{ duration.duration_sec / 3600 }}小时</option></select></label><span class="wallet__chip"><img :src="itemImage(1041)" alt="奶茶券"><b>{{ state.hire.wage_total }}</b></span>
       </div>
       <div class="panel-list" role="region" aria-label="员工列表" tabindex="0">
         <h3 class="divider">
           在岗员工
         </h3>
         <div v-for="slot in state.shop.slots" :key="slot.slot_index" class="row">
-          <strong>{{ slot.employee?.name }}</strong><span class="tag">{{ slot.talent_name }}</span><time class="muted">{{ date(slot.end_at) }}</time>
+          <strong>{{ slot.employee?.name }}</strong><span class="tag">{{ slot.talent_name }}</span><div class="employee-time">
+            <time class="muted">{{ date(slot.end_at) }}</time><strong>{{ remaining(slot.end_at) }}</strong>
+          </div>
         </div>
         <h3 class="divider">
           可雇佣
         </h3>
         <div v-for="candidate in candidates" :key="candidate.friend.gid" class="row">
-          <div><strong>{{ candidate.friend.name }}</strong><small>{{ candidate.talent_name }}</small></div><span v-if="Number(candidate.state)" class="muted">{{ date(candidate.state_until_at) }}</span><button class="primary" :disabled="busy || !canWork || Number(candidate.state || 0) !== 0 || Number(candidate.rehire_available_at || 0) > state.serverTime || state.shop.slots?.some((v: any) => Number(v.slot_index || 0) === slotIndex && Number(v.end_at) > state.serverTime)" @click="hire(candidate)">
+          <div><strong>{{ candidate.friend.name }}</strong><small>{{ candidate.talent_name }}</small></div><div v-if="Number(candidate.state_until_at) > 0" class="employee-time">
+            <time class="muted">{{ date(candidate.state_until_at) }}</time><strong>{{ remaining(candidate.state_until_at) }}</strong>
+          </div><button class="primary" :disabled="busy || !canWork || Number(candidate.state || 0) !== 0 || Number(candidate.rehire_available_at || 0) > now || freeSlot === undefined" @click="hire(candidate)">
             雇佣
           </button>
         </div>
@@ -758,6 +788,15 @@ input[type='checkbox'] {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+.employee-time {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 .tags {
   display: flex;

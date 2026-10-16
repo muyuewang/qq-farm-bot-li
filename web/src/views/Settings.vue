@@ -242,6 +242,28 @@ let bagSeedsLoadedAccountId = ''
 let bagSortRequestRevision = 0
 let previewRequestRevision = 0
 
+// 游戏本地配置的种子名称（seedId -> name），与后端 getBagSeeds 的名称来源（Plant.json）同源。
+const plantNameBySeedId = ref(new Map<number, string>())
+let plantConfigLoaded = false
+
+async function ensurePlantConfigLoaded() {
+  if (plantConfigLoaded)
+    return
+  plantConfigLoaded = true
+  try {
+    const res = await api.get('/game-config/Plant.json', { skipErrorToast: true } as any)
+    const plants = Array.isArray(res?.data) ? res.data : []
+    plantNameBySeedId.value = new Map(
+      plants
+        .map((plant: any): [number, string] => [Number(plant?.seed_id) || 0, String(plant?.name || '').trim()])
+        .filter(([seedId, name]) => seedId > 0 && !!name),
+    )
+  }
+  catch {
+    // 静态配置加载失败时保持按种子 ID 显示
+  }
+}
+
 const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
   return acc ? (acc.name || acc.nick || acc.id) : null
@@ -372,13 +394,12 @@ const orphanRestrictedSeeds = computed(() => {
     .filter(item => item.seedId > 0 && item.types.length > 0 && !visible.has(item.seedId))
     .sort((a, b) => a.seedId - b.seedId)
     .map((item) => {
-      const known = seedOptions.value.find(seed => seed.seedId === item.seedId)
       const labels = fertilizerLandTypeOptions
         .filter(option => item.types.includes(option.value))
         .map(option => option.label)
       return {
         seedId: item.seedId,
-        name: known ? known.name : `种子 #${item.seedId}`,
+        name: plantNameBySeedId.value.get(item.seedId) || `种子 #${item.seedId}`,
         scope: `仅种 ${labels.join('、')}`,
       }
     })
@@ -438,6 +459,7 @@ async function fetchBagSeeds(accountId = currentAccountId.value) {
   bagSeedsRequestAccountId = accountId
   bagSeedsLoading.value = true
   bagSeedsError.value = null
+  ensurePlantConfigLoaded()
   try {
     const res = await api.get('/api/bag/seeds', {
       headers: { 'x-account-id': accountId },

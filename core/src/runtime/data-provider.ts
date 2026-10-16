@@ -114,6 +114,9 @@ function createDataProvider(options: DataProviderOptions) {
 
         getLands: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getLands', true),
         getIllustratedSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getIllustratedSnapshot'),
+        claimIllustratedRewards: (accountRef: string, type: number) => callWorkerApi(resolveAccountRefId(accountRef), 'claimIllustratedRewards', type),
+        getSolarCalendar: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSolarCalendar'),
+        operateSolarCalendar: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateSolarCalendar', action, input),
         getFriends: (accountRef: string, forceSync = false) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriends', forceSync, true),
         getFriendsCache: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriendsCache'),
         clearFriendsCache: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'clearFriendsCache'),

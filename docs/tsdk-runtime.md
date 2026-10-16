@@ -4,10 +4,10 @@
 
 ## 版本与来源
 
-项目当前使用 `core/src/utils/tsdk.wasm`，来源为 2026-09-29 解包的官方 QQ 小游戏 `1.14.2.15_20260922` 中的 TSDK `v3.9.0.1790414929`，文件大小为 161,111 bytes，SHA-256 为：
+项目当前使用 `core/src/utils/tsdk.wasm`，来源为 2026-10-16 解包的官方 QQ 小游戏 `1.15.0.2_20261001` 中的 TSDK `v3.9.0.1792070537`，文件大小为 161,054 bytes，SHA-256 为：
 
 ```text
-f80c5f34f4e7dc55af468fbfd0a6e6ca43d0a1dcecd3f30731063aaf94704ff4
+837bd271557dc9a21d5cd28b66076ea012eb39a4f4cbe298f529716469c087fc
 ```
 
 运行时固定参数：
@@ -18,6 +18,8 @@ f80c5f34f4e7dc55af468fbfd0a6e6ca43d0a1dcecd3f30731063aaf94704ff4
 - appKey：`0`
 
 App ID 和宿主输入按账号平台选择。QQ 使用官方桌面端的设备文本 `windows;windows;windows 10.0;0;`、用户目录 `qqfile://usr/`，并在宿主不存在 `getAppBaseInfo` 时返回 debug 状态 `0`；微信账号继续使用项目设备配置、账号隔离目录和微信 App ID。QQ 虚拟用户目录收到的文件访问仍会安全映射到该账号自己的本地 TSDK 数据目录。
+
+本次逐字节验证与限制见 [2026-10-16 节令日历与资源更新](solar-calendar-20261016.md)。以下为历史验证记录。
 
 ## 2026-10-02 升级验证
 

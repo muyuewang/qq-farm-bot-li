@@ -111,6 +111,21 @@ test('hire partial failures are not reported as success and signed work links st
     assert.equal(JSON.stringify(state).includes('private-'), false);
 });
 
+test('hire automatically chooses a freshly vacant unlocked slot and rejects a full shop', async () => {
+    const h = harness();
+    h.shop.level = 3;
+    h.shop.slots = [{ slot_index: 0, end_at: 1792042000 }];
+    const input = { targetGid: '101', durationId: 1, expectedCosts: [{ id: 1041, count: 40 }] };
+    await assert.rejects(h.service.operateMilkTeaActivity('hire', input), /员工状态/);
+    assert.equal(h.calls[0].milk_tea_hire.hires[0].slot_index, 1);
+    h.shop.slots.push({ slot_index: 1, end_at: 1792042000 });
+    await assert.rejects(h.service.operateMilkTeaActivity('hire', input), /位置已满/);
+    assert.equal(h.calls.length, 1);
+    h.shop.slots[0].end_at = 1792031000;
+    await assert.rejects(h.service.operateMilkTeaActivity('hire', input), /员工状态/);
+    assert.equal(h.calls.at(-1).milk_tea_hire.hires[0].slot_index, 0);
+});
+
 test('settings validate the current shop and preserve boolean hire mode in the wire request', async () => {
     const h = harness();
     await assert.rejects(h.service.operateMilkTeaActivity('hireSetting', { disabled: 'false' }), /无效/);

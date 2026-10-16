@@ -16,7 +16,7 @@ const {
 } = require('../dist/utils/tsdk-runtime');
 
 const EXPECTED_QQ_CREDENTIAL_BYTES = Buffer.from(
-    "344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b677d833dc74225a37b1b257c6053c6e1737712575ce50f365089640e7209abbc0c4e39aeca66ea415d9f98593511a072675da44616710a810985e45b912ed9227944f5d3b8",
+    "344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b677d833d874225f2ece66c90a8a54bedaa3e3c268cedd45eba21ea8012181b8e07531b2fff2115806fcab709eaf585d9cd4febe86041236b292f15af917809b2fa1009d3b8",
     "hex",
 );
 
@@ -50,7 +50,7 @@ test('bundled TSDK matches the audited official QQ build', () => {
     const wasmPath = path.join(__dirname, '..', 'src', 'utils', 'tsdk.wasm');
     const hash = crypto.createHash('sha256').update(fs.readFileSync(wasmPath)).digest('hex');
 
-    assert.equal(TSDK_VERSION, 'v3.9.0.1791966448');
+    assert.equal(TSDK_VERSION, 'v3.9.0.1792070537');
     assert.equal(hash, TSDK_SHA256);
 });
 

@@ -25,10 +25,10 @@ const chances = computed(() => Math.max(0, Number(shift.value?.interact_limit ||
 const canInteract = computed(() => !!shift.value && state.active && !state.settling && remaining.value > 0 && !state.work.interact_done && chances.value > 0)
 const choice = computed(() => state.interactions?.find((value: any) => value.interaction_id === selected.value))
 function duration(seconds: number) {
-  return seconds < 60 ? `${seconds}秒` : `${Math.floor(seconds / 3600)}时${Math.floor(seconds % 3600 / 60)}分`
+  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}`
 }
 function date(seconds: any) {
-  return Number(seconds) > 0 ? new Date(Number(seconds) * 1000).toLocaleString('zh-CN') : '—'
+  return Number(seconds) > 0 ? new Date(Number(seconds) * 1000).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }) : '—'
 }
 function signed(value: number) {
   return `${value >= 0 ? '+' : ''}${value}`
@@ -67,7 +67,8 @@ function confirm() {
           <small>{{ shift.shop_name }}</small>
         </div>
         <div class="shift-details">
-          <strong>{{ remaining ? `剩余${duration(remaining)}` : '已结束' }}</strong>
+          <strong>{{ remaining ? `剩余 ${duration(remaining)}` : '已结束' }}</strong>
+          <time>{{ date(shift.end_at) }}</time>
           <div class="shift-progress" role="progressbar" aria-label="班次进度" :aria-valuenow="Math.round(progress)" :aria-valuemin="0" :aria-valuemax="100">
             <span :style="{ width: `${progress}%` }" />
           </div>

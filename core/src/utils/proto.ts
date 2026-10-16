@@ -281,6 +281,9 @@ async function loadProto(): Promise<void> {
     types.ClaimBattlePassRewardsReply = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsReply');
     types.BattlePassChangeNotify = root.lookupType('gamepb.seasonpb.BattlePassChangeNotify');
     types.GetSolarTermsRequest = root.lookupType('gamepb.solartermspb.GetSolarTermsRequest');
+    for (const name of ['GetSolarTermsV2', 'ClaimSolarTermsV2', 'AnswerSolarTerms', 'ClaimSolarSeason']) {
+        for (const suffix of ['Request', 'Reply']) types[name + suffix] = root.lookupType(`gamepb.solartermspb.${name}${suffix}`);
+    }
     types.GetSolarTermsReply = root.lookupType('gamepb.solartermspb.GetSolarTermsReply');
     types.GetSolarTermsRedDotRequest = root.lookupType('gamepb.solartermspb.GetSolarTermsRedDotRequest');
     types.GetSolarTermsRedDotReply = root.lookupType('gamepb.solartermspb.GetSolarTermsRedDotReply');

@@ -49,7 +49,7 @@ function attributeDto(input: any): any | null {
 }
 
 function itemDto(input: any): any {
-    const seedId = toNum(input && input.seed_id);
+    const seedId = toNum(input && input.fruit_id);
     const plant = getPlantBySeedId(seedId);
     const item = getItemById(seedId);
     const name = String(item && item.name || plant && plant.name || getPlantNameBySeedId(seedId));
@@ -57,14 +57,14 @@ function itemDto(input: any): any {
         seedId,
         name,
         image: getItemImageById(seedId),
-        rewardCategory: toNum(input && input.reward_category),
+        rewardCategory: toNum(input && input.rarity),
         group: getMutantGroup(seedId),
         sort: getIllustratedSortByParam(seedId),
-        cropCategory: toNum(input && input.crop_category),
+        cropCategory: toNum(input && input.layer),
         unlocked: input && input.unlocked === true,
         progress: Math.max(0, toNum(input && input.progress)),
         isNew: input && input.is_new === true,
-        reward: rewardDto(input && input.reward),
+        reward: rewardDto(input && input.reward?.[0]),
         attributes: (Array.isArray(input && input.attributes) ? input.attributes : [])
             .map(attributeDto)
             .filter(Boolean),
@@ -72,10 +72,10 @@ function itemDto(input: any): any {
 }
 
 async function getIllustratedList(type: number): Promise<any> {
-    // The game client writes refresh=false explicitly (field 1 = 0). protobufjs
+    // The game client writes rarity=0 explicitly (field 1 = 0). protobufjs
     // omits proto3 defaults, so keep the request wire shape identical to capture.
     const writer = protobuf.Writer.create();
-    writer.uint32(8).bool(false);
+    writer.uint32(8).int32(0);
     writer.uint32(16).int32(type);
     const body = writer.finish();
     const { body: replyBody } = await sendMsgAsync(SERVICE, 'GetIllustratedListV2', body);
@@ -89,14 +89,15 @@ async function getIllustratedLevels(type: number): Promise<any> {
 }
 
 function normalizeBook(type: number, listReply: any, levelReply: any): any {
-    const levels = (Array.isArray(levelReply && levelReply.levels) ? levelReply.levels : []).map((entry: any) => ({
+    const levels = (Array.isArray(levelReply && levelReply.level_list) ? levelReply.level_list : []).map((entry: any) => ({
         level: toNum(entry && entry.level),
-        progress: Math.max(0, toNum(entry && entry.progress)),
+        progress: Math.max(0, toNum(entry && entry.point_condition)),
         claimed: entry && entry.claimed === true,
+        canClaim: entry && entry.can_claim === true && entry.claimed !== true,
         rewards: (Array.isArray(entry && entry.rewards) ? entry.rewards : []).map(rewardDto).filter(Boolean),
     }));
-    const currentLevel = Math.max(toNum(listReply && listReply.level), toNum(levelReply && levelReply.level));
-    const currentProgress = Math.max(toNum(listReply && listReply.progress), toNum(levelReply && levelReply.progress));
+    const currentLevel = Math.max(toNum(listReply && listReply.current_level), toNum(levelReply && levelReply.current_level));
+    const currentProgress = Math.max(toNum(listReply && listReply.total_progress), toNum(levelReply && levelReply.total_progress));
     const configuredNext = toNum(listReply && listReply.next_level_progress);
     const nextLevel = levels.find((entry: any) => entry.level > currentLevel);
 
@@ -105,13 +106,11 @@ function normalizeBook(type: number, listReply: any, levelReply: any): any {
         level: currentLevel,
         progress: currentProgress,
         nextLevelProgress: configuredNext || Math.max(0, toNum(nextLevel && nextLevel.progress)),
-        currentBonus: rewardDto(listReply && listReply.current_bonus),
-        attributeBonuses: (Array.isArray(listReply && listReply.attribute_bonuses) ? listReply.attribute_bonuses : [])
-            .map(rewardDto)
-            .filter(Boolean),
+        claimable: levels.some((entry: any) => entry.canClaim),
+        rewards: (listReply.total_rewards || []).map(rewardDto).filter(Boolean),
         buffs: type === 2 ? getIllustratedBuffs() : [],
-        currentBuffs: type === 2 ? getIllustratedBuffsByLevel(Math.max(toNum(listReply && listReply.level), toNum(levelReply && levelReply.level))) : [],
-        items: (Array.isArray(listReply && listReply.items) ? listReply.items : [])
+        currentBuffs: type === 2 ? getIllustratedBuffsByLevel(currentLevel) : [],
+        items: (Array.isArray(listReply && listReply.list) ? listReply.list : [])
             .map(itemDto)
             .sort((a: any, b: any) => Number(a.sort || 0) - Number(b.sort || 0)),
         levels,
@@ -157,6 +156,26 @@ function getIllustratedSnapshot(): Promise<any> {
     return request;
 }
 
+let claimTail: Promise<any> = Promise.resolve();
+function claimIllustratedRewards(type: number) {
+    const request = claimTail.then(async () => {
+        if (type !== 1 && type !== 2) throw new Error('图鉴类型无效');
+        const levels = await getIllustratedLevels(type);
+        if (!(levels.level_list || []).some((v: any) => v.can_claim && !v.claimed)) throw new Error('暂无可领取奖励');
+        const body = types.ClaimAllRewardsV2Request.encode({ type }).finish();
+        const reply = await sendMsgAsync(SERVICE, 'ClaimAllRewardsV2', body);
+        const decoded = types.ClaimAllRewardsV2Reply.decode(reply.body);
+        if (!decoded.claimed_level_ids?.length) throw new Error('领取结果未确认，请刷新图鉴后查看');
+        const result = { rewards: (decoded.total_rewards || []).map(rewardDto).filter(Boolean), claimedLevels: decoded.claimed_level_ids };
+        if (pendingSnapshot) await pendingSnapshot.catch(() => {});
+        try { return { ...result, snapshot: await getIllustratedSnapshot() }; }
+        catch { return { ...result, snapshot: null, refreshRequired: true }; }
+    });
+    claimTail = request.catch(() => {});
+    return request;
+}
+
 module.exports = {
     getIllustratedSnapshot,
+    claimIllustratedRewards,
 };

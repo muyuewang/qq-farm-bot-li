@@ -224,10 +224,10 @@ async function perform(action: string, input: any) {
         }
         params = { fruit_uids: [...ids] };
     } else if (action === 'hire') {
-        const index = integer(input.slotIndex, 0, 1);
         const level = config.MilkTeaStoreLevelConfig.find(v => v.level === toNum(state.shop.level));
-        if (index >= (level?.employee_slot_count || 0)) fail('雇佣位置尚未解锁');
-        if ((state.shop.slots || []).some((v: any) => toNum(v.slot_index) === index && toNum(v.end_at) > getServerTimeSec())) fail('该位置已有员工');
+        const index = Array.from({ length: level?.employee_slot_count || 0 }, (_, slot) => slot)
+            .find(slot => !(state.shop.slots || []).some((v: any) => toNum(v.slot_index) === slot && toNum(v.end_at) > getServerTimeSec()));
+        if (index === undefined) fail('员工位置已满');
         const target = String(input.targetGid);
         const candidate = [...(state.hire.friends || []), ...(state.hire.robots || [])].find(v => String(v.friend?.gid) === target);
         if (!candidate || toNum(candidate.state) !== 0 || toNum(candidate.rehire_available_at) > getServerTimeSec()) fail('该员工当前不可雇佣');
