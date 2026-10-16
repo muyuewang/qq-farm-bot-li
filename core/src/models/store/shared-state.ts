@@ -83,7 +83,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_hire: true,
         milk_tea_upgrade: true,
         milk_tea_boost: true,
-        milk_tea_seed_buy: true,
+        milk_tea_work_interact: true,
         milk_tea_hire_duration_id: 1,
         milk_tea_hire_talent_id: 0,
         milk_tea_hire_allow_robots: true,

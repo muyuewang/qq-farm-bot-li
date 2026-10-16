@@ -130,7 +130,7 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
     };
 }
 
-// 六个领取动作。会花东西的五项单独用 WORK_FLAGS 打开，避免既有断言把它们的
+// 六个领取动作。会花东西的四项和工作互动单独用 WORK_FLAGS 打开，避免既有断言把它们的
 // 请求混进「只该发这一笔」的清单里。
 const FLAGS = {
     claimRewards: true,
@@ -143,7 +143,7 @@ const FLAGS = {
     hire: false,
     upgrade: false,
     boost: false,
-    seedBuy: false,
+    workInteract: false,
 };
 
 // 关掉全部十一个开关的基线，再按用例单独打开一项，断言里就不会混进别的动作的请求。
@@ -158,15 +158,15 @@ const IDLE = {
     hire: false,
     upgrade: false,
     boost: false,
-    seedBuy: false,
+    workInteract: false,
 };
 
 const only = (key) => ({ ...IDLE, [key]: true });
 
-const WORK_FLAGS = { ...IDLE, craft: true, hire: true, upgrade: true, boost: true, seedBuy: true };
+const WORK_FLAGS = { ...IDLE, craft: true, hire: true, upgrade: true, boost: true };
 
 // 十一个开关全开。
-const ALL_FLAGS = { ...FLAGS, craft: true, hire: true, upgrade: true, boost: true, seedBuy: true };
+const ALL_FLAGS = { ...FLAGS, craft: true, hire: true, upgrade: true, boost: true, workInteract: true };
 
 function craftState(fruits, overrides = {}) {
     return { active: true, settling: false, summary: { shop_open_at: 1790000000 }, fruits, ...overrides };
@@ -198,34 +198,34 @@ function boostState(pending, perUse, owned, overrides = {}) {
     };
 }
 
-// 兑换页的形态跟 milk-tea.ts normalizeGoods 一致：available 已经把「买满、条件未满足、结算期的种子」都算进去了。
-function exchangeState(goods, overrides = {}) {
+// 「我的工作」页的形态跟 normalizeMilkTeaWork 一致：my_shift 是别人雇我当班的班次，
+// interact_done 是这一班/今天有没有互动过，interactions 是五项互动各自的 ready 标记。
+function myShift(overrides = {}) {
     return {
-        active: true,
-        settling: false,
-        summary: { shop_open_at: 1790000000 },
-        goods,
-        balances: { 1001: 5000, 1002: 20 },
+        shift_id: '70001',
+        begin_at: 1790260000,
+        end_at: 1790274400,
+        interact_limit: 2,
+        interact_count: 0,
+        employer: { gid: '88001', name: '甲老板' },
+        shop_name: '甲的奶茶店',
         ...overrides,
     };
 }
 
-function seedGoods(id, order, costId, count, extra = {}) {
+function jobState(overrides = {}) {
+    const { work: workOverrides, ...rest } = overrides;
     return {
-        id: String(id),
-        name: `种子 #${id}`,
-        category: 'seed',
-        available: true,
-        order,
-        diamondCost: 0,
-        remaining: 3,
-        rewards: [{ id: 2301, count: 1, name: '咖啡果实种子' }],
-        costs: costId === null ? [] : [{ id: costId, count, name: costId === 1002 ? '点券' : '金币' }],
-        ...extra,
+        active: true,
+        settling: false,
+        summary: { shop_open_at: 1790000000 },
+        work: { slips: [], interact_done: false, my_shift: myShift(), ...workOverrides },
+        interactions: [1, 2, 3, 4, 5].map(id => ({ interaction_id: id, name: `互动 ${id}`, ready: true })),
+        ...rest,
     };
 }
 
-test('六个领取加五个用户给定选法的动作有开关位', () => {
+test('六个领取加五个会花东西/要上班的动作有开关位', () => {
     assert.deepEqual([...MILK_TEA_AUTOMATION_KEYS].sort(), [
         'milk_tea_boost',
         'milk_tea_craft',
@@ -236,11 +236,11 @@ test('六个领取加五个用户给定选法的动作有开关位', () => {
         'milk_tea_happy_milestones',
         'milk_tea_happy_share',
         'milk_tea_hire',
-        'milk_tea_seed_buy',
+        'milk_tea_work_interact',
         'milk_tea_upgrade',
     ].sort());
     // 要用户拿主意的动作仍然不预建开关：空转开关比没有开关更坏。
-    for (const forbidden of ['create', 'rename', 'interact', 'unlock', 'hire_setting', 'logs', 'rank', 'workshop']) {
+    for (const forbidden of ['create', 'rename', 'unlock', 'hire_setting', 'logs', 'rank', 'workshop', 'seed']) {
         assert.equal(MILK_TEA_AUTOMATION_KEYS.some(key => key.includes(forbidden)), false, forbidden);
     }
     assert.equal(MILK_TEA_CHECK_INTERVAL_MS, 30 * 60 * 1000);
@@ -390,16 +390,15 @@ const WORK_PAGES = () => ({
     hireList: hireState(),
     upgrade: { active: true, settling: false, summary: { shop_open_at: 1790000000, level: 3, can_upgrade: true } },
     shop: boostState(95, 30, 500),
-    exchange: exchangeState([seedGoods(3, 10, 1001, 50)]),
 });
 
-test('五个会花东西的动作在开关关闭时一笔都不发', async () => {
+test('四个会花东西的动作和工作互动在开关关闭时一笔都不发', async () => {
     const h = harness({ pages: { ...WORK_PAGES(), shop: shopState(), work: workState(), fund: fundState() }, share: { 2026110104: shareState() } });
     await h.automation.runMilkTeaAutomation(FLAGS);
     assert.deepEqual(h.operations, ['claim', 'wages', 'fundClaim']);
-    assert.equal(h.calls.some(v => ['craft', 'hire', 'upgrade', 'boost', 'exchange'].includes(v.action)), false);
+    assert.equal(h.calls.some(v => ['craft', 'hire', 'upgrade', 'boost', 'interact'].includes(v.action)), false);
     // 关掉的动作连状态都不该去读，省下的是一次活动页请求。
-    for (const page of ['workshop', 'hireList', 'upgrade', 'exchange']) {
+    for (const page of ['workshop', 'hireList', 'upgrade']) {
         assert.equal(h.reads.includes(page), false, page);
     }
 });
@@ -595,51 +594,69 @@ test('爆单按待售杯数算喇叭用量，再用持有量和单次上限夹�
     assert.ok(settling.skipLogs().some(entry => entry.message.includes('结算期不可爆单')));
 });
 
-test('兑换只买种子：按 order 取第一个买得起的非钻石种子，成本原样报给服务端', async () => {
-    const goods = [
-        { ...seedGoods(101, 1, 1001, 10), category: 'deco' },          // 非种子
-        seedGoods(102, 2, 1001, 10, { diamondCost: 30 }),              // 带钻石价签
-        seedGoods(103, 3, 1004, 10),                                    // 成本就是钻石
-        seedGoods(104, 4, null, 0),                                     // 没标价
-        seedGoods(105, 5, 1001, 99999),                                // 金币付不起
-        seedGoods(106, 6, 1002, 50),                                    // 点券付不起
-        seedGoods(107, 7, 1001, 5000),                                 // 刚好付得起：该买这个
-        seedGoods(108, 8, 1001, 10),                                    // 更便宜但排在后面，不该买
-    ];
-    const h = harness({ pages: { exchange: exchangeState(goods) } });
-    await h.automation.runMilkTeaAutomation(only('seedBuy'));
-    assert.deepEqual(h.calls.map(v => v.input), [{ goodsId: '107', count: 1, expectedCosts: [{ id: 1001, count: 5000 }] }]);
-    assert.ok(h.logs.some(entry => entry.message.includes('购买兑换种子 种子 #107')));
+test('被雇到别人的店就选花式摇杯（interaction_id 2），班次 id 原样传给服务端复核', async () => {
+    const h = harness({ pages: { work: jobState() } });
+    await h.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(h.calls, [{ action: 'interact', input: { interactionType: 2, expectedShiftId: '70001' } }]);
+    assert.ok(h.logs.some(entry => entry.message.includes('工作互动·花式摇杯（在 甲老板 的店，本班还剩 2 次）')));
 });
 
-test('兑换的 available 为假（买满、条件未达、结算期）就跳过，不发购买请求', async () => {
-    const goods = [
-        seedGoods(201, 1, 1001, 10, { available: false, remaining: 0 }),
-        seedGoods(202, 2, 1001, 10, { available: false }),
-    ];
-    const h = harness({ pages: { exchange: exchangeState(goods) } });
-    await h.automation.runMilkTeaAutomation(only('seedBuy'));
-    assert.deepEqual(h.operations, []);
-    assert.ok(h.skipLogs().some(entry => entry.meta.action === 'seed_buy' && entry.message.includes('没有可买的种子')));
+test('没有被雇的班次、这一班已经互动过、已经下班、次数用完时都只跳过，不发互动', async () => {
+    const noShift = harness({ pages: { work: jobState({ work: { my_shift: null } }) } });
+    await noShift.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(noShift.operations, []);
+    assert.ok(noShift.skipLogs().some(entry => entry.meta.action === 'work_interact' && entry.message.includes('没有被雇佣的班次')));
 
-    // 还没开业时兑换也发不出去（服务端会拒），读一眼就跳过。
-    const closed = harness({ pages: { exchange: exchangeState([seedGoods(203, 1, 1001, 10)], { summary: { shop_open_at: 0 } }) } });
-    await closed.automation.runMilkTeaAutomation(only('seedBuy'));
+    const done = harness({ pages: { work: jobState({ work: { interact_done: true } }) } });
+    await done.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(done.operations, []);
+    assert.ok(done.skipLogs().some(entry => entry.message.includes('互动已经做过')));
+
+    // end_at 已经过点：这一班下了班，互动做了也不结算
+    const offDuty = harness({ pages: { work: jobState({ work: { my_shift: myShift({ end_at: 1790259999 }) } }) } });
+    await offDuty.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(offDuty.operations, []);
+    assert.ok(offDuty.skipLogs().some(entry => entry.message.includes('已经下班')));
+
+    const usedUp = harness({ pages: { work: jobState({ work: { my_shift: myShift({ interact_count: 2 }) } }) } });
+    await usedUp.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(usedUp.operations, []);
+    assert.ok(usedUp.skipLogs().some(entry => entry.message.includes('互动次数已用完')));
+});
+
+test('花式摇杯这一项数据不完整、结算期、还没开业时都不互动，等下一轮', async () => {
+    const noReady = harness({ pages: { work: jobState({ interactions: [{ interaction_id: 1, name: '宣传推广', ready: true }] }) } });
+    await noReady.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(noReady.operations, []);
+    assert.ok(noReady.skipLogs().some(entry => entry.message.includes('花式摇杯的工作事项数据不完整')));
+
+    const notReady = harness({ pages: { work: jobState({ interactions: [{ interaction_id: 2, name: '花式摇杯', ready: false }] }) } });
+    await notReady.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(notReady.operations, []);
+
+    const settling = harness({ pages: { work: jobState({ settling: true }) } });
+    await settling.automation.runMilkTeaAutomation(only('workInteract'));
+    assert.deepEqual(settling.operations, []);
+    assert.ok(settling.skipLogs().some(entry => entry.message.includes('结算期不可互动')));
+
+    // 还没开业时服务端连打工入口都不给，读一眼就跳过
+    const closed = harness({ pages: { work: jobState({ summary: { shop_open_at: 0 } }) } });
+    await closed.automation.runMilkTeaAutomation(only('workInteract'));
     assert.deepEqual(closed.operations, []);
     assert.ok(closed.skipLogs().some(entry => entry.message.includes('还没开业')));
 });
 
-test('五个会花东西的动作里任何一笔失败都不会带走同一轮里的其它动作', async () => {
+test('四个会花东西的动作和工作互动里任何一笔失败都不会带走同一轮里的其它动作', async () => {
     const eligible = [{ friend: { gid: '10001', name: '甲' }, state: 0, rehire_available_at: 0 }];
     const h = harness({ pages: {
         workshop: craftState([{ id: 2001, uid: 'u1', count: 1 }]),
         hireList: hireState(eligible),
         upgrade: { active: true, settling: false, summary: { shop_open_at: 1790000000, level: 3, can_upgrade: true } },
         shop: boostState(95, 30, 500),
-        exchange: exchangeState([seedGoods(3, 10, 1001, 50)]),
+        work: jobState(),
     }, operate: (action) => (action === 'craft' ? new Error('果实数量或锁定状态已变化') : { rewards: [] }) });
-    await h.automation.runMilkTeaAutomation(WORK_FLAGS);
-    assert.deepEqual(h.operations, ['craft', 'hire', 'upgrade', 'boost', 'exchange']);
+    await h.automation.runMilkTeaAutomation({ ...WORK_FLAGS, workInteract: true });
+    assert.deepEqual(h.operations, ['craft', 'hire', 'upgrade', 'boost', 'interact']);
     assert.equal(h.errorLogs().length, 1);
     assert.equal(h.errorLogs()[0].meta.action, 'craft');
 });
@@ -651,12 +668,11 @@ test('十一个任务串行执行、任务之间休眠，不并发压连接', as
             shop: { pending_rewards: [{ id: 1001, count: 120, name: '金币' }], sales_item_id: 1042, boost_cups_per_use: 30, pending_cups_by_recipe: { 1: 95 }, is_settling: false },
             balances: { 1042: 500 },
         }),
-        work: workState(),
+        work: jobState({ work: { slips: [{ wage_status: 1 }] } }),
         fund: fundState(),
         workshop: craftState([{ id: 2001, uid: 'u1', count: 2, name: '草莓' }]),
         hireList: hireState(eligible),
         upgrade: { active: true, settling: false, summary: { shop_open_at: 1790000000, level: 3, can_upgrade: true } },
-        exchange: exchangeState([seedGoods(3, 10, 1001, 50)]),
     };
     const h = harness({ pages, share: { 2026110104: shareState() } });
     const started = Date.now();
@@ -664,8 +680,8 @@ test('十一个任务串行执行、任务之间休眠，不并发压连接', as
     assert.equal(h.maxInflight(), 1, '同时只能有一个请求在飞');
     // 九个步骤（三个快乐值领取算一步），步骤之间各隔一次 MILK_TEA_TASK_SPACER_MS。
     assert.ok(Date.now() - started >= 8 * MILK_TEA_TASK_SPACER_MS, `十一项之间只隔了 ${Date.now() - started}ms`);
-    // 读一页做一项，按开关列出的顺序走，不会两组请求交错着发。
-    assert.deepEqual(h.reads, ['shop', 'work', 'fund', 'workshop', 'hireList', 'upgrade', 'shop', 'exchange']);
-    assert.deepEqual(h.operations, ['claim', 'wages', 'fundClaim', 'craft', 'hire', 'upgrade', 'boost', 'exchange']);
+    // 读一页做一项，按开关列出的顺序走，不会两组请求交错着发。领工资和工作互动共用「我的工作」那一页，各读各的。
+    assert.deepEqual(h.reads, ['shop', 'work', 'fund', 'workshop', 'hireList', 'upgrade', 'shop', 'work']);
+    assert.deepEqual(h.operations, ['claim', 'wages', 'fundClaim', 'craft', 'hire', 'upgrade', 'boost', 'interact']);
     assert.deepEqual(h.shareOperations.map(v => v.action), ['daily', 'share', 'milestones']);
 });

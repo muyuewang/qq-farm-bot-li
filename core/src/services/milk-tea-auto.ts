@@ -6,13 +6,15 @@ export {};
 // 十一个开关，每一个都落在上游 milk-tea.ts / share-reward-activity.ts 里已经用
 // 官方 1.15.0.1 编码向量验证过的 operate_type（收银台收益 59 / 工资 64 / 成长基金 76 /
 // 今日快乐值 74 / 首次分享 70 / 档位奖励 71 / 制作 62 / 雇佣 57 / 升级 61 / 爆单 60 /
-// 兑换购买 1）。六个领取只做「服务端说可以领、领了不花东西」的事。制作、雇佣、升级、爆单、
-// 兑换会花果实、奶茶券、店内金币、宣传喇叭和兑换货币，用户 2026-10-15 明确要求自动化并给定选法：
+// 工作互动 65）。七项领取和互动只做「服务端说可以领、做了不花东西」的事——互动反而是老板给我
+// 本班工资 30% 的奖金。制作、雇佣、升级、爆单会花果实、奶茶券、店内金币和宣传喇叭，用户 2026-10-15
+// 明确要求自动化并给定选法：
 // 制作按背包顺序取有库存且未锁定的果实；雇佣在可雇的候选里随机一个，班次档数和特长由设置页挑、
-// 机器人候选可以关掉；升级达标就升；爆单按待售杯数决定喇叭用量；兑换只买种子、按官方列表顺序取第一个买得起的、一次一件。
-// 要人拿主意的（开业/改名要起店名、兑换里的非种子商品要挑、基金解锁要花钻石、
-// 工作互动要选类型、躺平开关会影响好友能否雇你）仍然不建开关——
-// 挂着什么都不执行的自动化开关比没有开关更坏。
+// 机器人候选可以关掉；升级达标就升；爆单按待售杯数决定喇叭用量。
+// 工作互动固定选花式摇杯（interaction_id 2，2026-10-16 用户给定：被雇佣时选它），
+// 兑换购买不做开关（要用户挑东西，2026-10-16 按要求把自动买种子撤了）。
+// 要人拿主意的（开业/改名要起店名、兑换商品要挑、基金解锁要花钻石、躺平开关会影响好友能否雇你）
+// 仍然不建开关——挂着什么都不执行的自动化开关比没有开关更坏。
 // 十一个开关默认全开（用户 2026-10-15 要求：活动进行中就让它自己跑），一轮里串行执行、
 // 项间隔 800ms，不做并发；runExclusiveAutomationTask 已经把整个活动自动化串在一条锁上。
 // 雇佣另有三个选法配置（不是开关）：milk_tea_hire_duration_id、milk_tea_hire_talent_id、
@@ -28,7 +30,7 @@ const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_hire',
     'milk_tea_upgrade',
     'milk_tea_boost',
-    'milk_tea_seed_buy',
+    'milk_tea_work_interact',
 ] as const;
 
 const MILK_TEA_CHECK_INTERVAL_MS = 30 * 60 * 1000;
@@ -58,6 +60,11 @@ function normalizeHireOptions(flags: any): { durationId: number; talentId: numbe
 function talentName(id: number): string {
     return milkTeaConfig.MilkTeaTalentConfig.find((v: any) => Number(v.talent_id) === id)?.talent_name || `特长 ${id}`;
 }
+
+// 工作互动固定选花式摇杯（MilkTeaInteractionType 的 interaction_id 2，2026-10-16 用户给定：被雇佣时选它）。
+// 它的收益是「老板未来 3 小时奶茶券收益 +10%、我拿本班工资 30% 的奖金」，官方配置里这一项没有失败分支，
+// 不像划水摸鱼（40% 拿喇叭／60% 工资减半）和申请涨薪（60% 翻倍／40% 减半）那样要赌。
+const WORK_INTERACTION_ID = 2;
 
 function isMilkTeaAutomationEnabled(automation: any = {}): boolean {
     return MILK_TEA_AUTOMATION_KEYS.some(key => automation[key] === true);
@@ -316,31 +323,44 @@ function createMilkTeaAutomation(deps: {
     }
 
     /**
-     * 兑换购买（1）。只买 category_tag==='seed' 的种子：按官方列表顺序（order 升序）取第一个
-     * 「已解锁、没买满、成本里没有钻石、当前余额付得起」的，一次 1 件，一轮最多一件。
-     * 成本原样带进 expectedCosts，服务端价格变了会被 checkCost 拒掉而不是按旧价买。
-     * 结算期不可买种子，钻石价签（diamond_cost_count）的商品一律跳过。
+     * 我的工作互动（65）。只有被雇佣到别人的店里当班才有班次可互动：my_shift 在、还没下班、
+     * 这一班没做过互动（interact_done）、剩余次数大于 0，三条都满足才发这一笔。
+     * 互动类型固定花式摇杯，并把刚读到的 shift_id 当 expectedShiftId 交上去——中途换班了由服务端拒，
+     * 不会把互动做错别人的班次上。自己没被雇佣（空闲）只记一行跳过，不发写请求。
      */
-    async function runSeedBuy(): Promise<void> {
-        const state = await shopState('exchange', 'seed_buy');
+    async function runInteract(): Promise<void> {
+        const state = await shopState('work', 'work_interact');
         if (!state) return;
-        const candidates = (state.goods || []).filter((v: any) => v.category === 'seed' && v.available && !v.diamondCost
-            && (v.costs || []).length && !v.costs.some((c: any) => Number(c.id) === 1004)
-            && v.costs.every((c: any) => Number(state.balances?.[String(c.id)] || 0) >= Number(c.count)))
-            .sort((a: any, b: any) => Number(a.order) - Number(b.order));
-        if (!candidates.length) {
-            skip('seed_buy', '没有可买的种子（未解锁、已买满、需钻石或余额不足）');
+        if (!canOperate(state)) {
+            skip('work_interact', '结算期不可互动');
             return;
         }
-        const goods = candidates[0];
-        const label = goods.name || goods.rewards?.[0]?.name || `商品 ${goods.id}`;
-        const cost = goods.costs.map((c: any) => `${c.name || c.id}x${c.count}`).join('、');
-        await perform(`购买兑换种子 ${label}（花 ${cost}）`,
-            () => operateMilkTeaActivity('exchange', {
-                goodsId: goods.id,
-                count: 1,
-                expectedCosts: goods.costs.map((c: any) => ({ id: c.id, count: c.count })),
-            }), 'seed_buy');
+        const shift = state.work?.my_shift;
+        if (!shift) {
+            skip('work_interact', '当前没有被雇佣的班次，先在「我的工作」里出去打工或等好友雇佣');
+            return;
+        }
+        if (state.work?.interact_done) {
+            skip('work_interact', '这一班的互动已经做过');
+            return;
+        }
+        if (Number(shift.end_at || 0) <= getServerTimeSec()) {
+            skip('work_interact', '这一班已经下班');
+            return;
+        }
+        const chances = Number(shift.interact_limit || 0) - Number(shift.interact_count || 0);
+        if (chances <= 0) {
+            skip('work_interact', '这一班的互动次数已用完');
+            return;
+        }
+        if (!state.interactions?.find((v: any) => Number(v.interaction_id) === WORK_INTERACTION_ID)?.ready) {
+            skip('work_interact', '花式摇杯的工作事项数据不完整，等下一轮刷新');
+            return;
+        }
+        const employer = shift.employer?.name || shift.shop_name || '老板';
+        await perform(`工作互动·花式摇杯（在 ${employer} 的店，本班还剩 ${chances} 次）`,
+            () => operateMilkTeaActivity('interact', { interactionType: WORK_INTERACTION_ID, expectedShiftId: String(shift.shift_id ?? '') }),
+            'work_interact');
     }
 
     /**
@@ -399,7 +419,7 @@ function createMilkTeaAutomation(deps: {
         hire: boolean;
         upgrade: boolean;
         boost: boolean;
-        seedBuy: boolean;
+        workInteract: boolean;
         hireDurationId?: number;
         hireTalentId?: number;
         hireAllowRobots?: boolean;
@@ -413,7 +433,7 @@ function createMilkTeaAutomation(deps: {
         if (flags.hire) steps.push({ action: 'hire', run: () => runHire(hireOptions) });
         if (flags.upgrade) steps.push({ action: 'upgrade', run: runUpgrade });
         if (flags.boost) steps.push({ action: 'boost', run: runBoost });
-        if (flags.seedBuy) steps.push({ action: 'seed_buy', run: runSeedBuy });
+        if (flags.workInteract) steps.push({ action: 'work_interact', run: runInteract });
         if (flags.happyDaily || flags.happyShare || flags.happyMilestones) {
             steps.push({
                 action: 'share_reward',
