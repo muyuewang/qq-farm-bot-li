@@ -46,6 +46,8 @@ export interface AutomationConfig {
     milk_tea_hire_duration_id: number;
     milk_tea_hire_talent_id: number;
     milk_tea_hire_allow_robots: boolean;
+    solar_calendar_claim_events: boolean;
+    solar_calendar_claim_seasons: boolean;
 }
 export interface IntervalConfig {
     farm: number;
