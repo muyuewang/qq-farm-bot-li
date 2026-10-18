@@ -248,11 +248,8 @@ async function plantFromBagSeeds(landsToPlant, landTypeById, options = {}) {
             module: 'farm', event: '种植种子', result: 'bag_seed_skip', strategy: 'bag_priority', skipped: skippedSeeds,
         });
     }
-    // 有土地限制的种子先种，否则不限制的种子会把受限种子唯一能用的地块占光。
-    const plantingOrder = [
-        ...usableSeeds.filter((seed) => !!seed.landTypes),
-        ...usableSeeds.filter((seed) => !seed.landTypes),
-    ];
+    // 严格按优先级列表顺序种植；限制种子无可用地块时跳过，等待下一轮。
+    const plantingOrder = usableSeeds;
     if (plantingOrder.length > 0) {
         const orderedSeeds = plantingOrder.map((seed, index) => {
             const scope = seed.landTypes ? `[仅${formatFertilizerLandTypes(seed.landTypes).join('/')}]` : '';

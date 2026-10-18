@@ -19,6 +19,9 @@ const fruitToPlant = new Map();
 let itemInfoConfig = null;
 const itemInfoMap = new Map();
 const seedItemMap = new Map();
+const itemImageIds = new Set();
+const iconImageIds = new Map();
+const assetImageIds = new Map();
 let landConfig = null;
 const landConfigMap = new Map();
 const landCoordinateMap = new Map();
@@ -178,6 +181,37 @@ function loadConfigs() {
     catch (e) {
         console.warn('[配置] 加载 BuffCfg.json 失败:', e.message);
     }
+    // 图片目录只在加载配置时扫描，避免列表请求为每个物品反复访问磁盘。
+    itemImageIds.clear();
+    iconImageIds.clear();
+    assetImageIds.clear();
+    try {
+        const imageDir = path.join(configDir, 'seed_images_named', 'seed_images');
+        for (const filename of fs.readdirSync(imageDir)) {
+            if (/^[1-9]\d*\.png$/.test(filename))
+                itemImageIds.add(Number(filename.slice(0, -4)));
+        }
+        for (const item of itemInfoMap.values()) {
+            if (!itemImageIds.has(item.id))
+                continue;
+            const icon = getItemImageKey(item, 'icon_res');
+            if (icon)
+                iconImageIds.set(icon, item.id);
+            // 无 icon_res 的图片由 asset_name 生成，才能作为同一物品模型的备用图。
+            else {
+                const asset = getItemImageKey(item, 'asset_name');
+                if (asset)
+                    assetImageIds.set(asset, item.id);
+            }
+        }
+    }
+    catch (e) {
+        console.warn('[配置] 加载物品图片目录失败:', e.message);
+    }
+}
+function getItemImageKey(item, field) {
+    const resource = String(item[field] || '').trim().replace(/\/spriteFrame$/, '');
+    return resource ? `${String(item.bundle_name || '').trim()}:${resource}` : '';
 }
 // ============ 等级经验相关 ============
 function getLevelExpTable() {
@@ -275,20 +309,23 @@ function getAllSeeds() {
     }));
 }
 function getMappedSeedImage(targetId) {
-    const id = Number(targetId) || 0;
-    if (id <= 0)
-        return '';
-    return `/game-config/seed_images_named/seed_images/${id}.png`;
+    return getItemImageById(targetId);
 }
 function getSeedImageBySeedId(seedId) {
     return getMappedSeedImage(seedId);
 }
 function getItemImageById(itemId) {
-    const id = Number(itemId) || 0;
-    if (id <= 0)
+    const id = Number(itemId);
+    if (!Number.isSafeInteger(id) || id <= 0)
         return '';
-    // 直接按ID返回
-    return `/game-config/seed_images_named/seed_images/${id}.png`;
+    let imageId = itemImageIds.has(id) ? id : 0;
+    const item = itemInfoMap.get(id);
+    if (!imageId && item) {
+        // 复用配置明确指向的同一图标；解锁卡也可使用其对应作物的模型图。
+        imageId = iconImageIds.get(getItemImageKey(item, 'icon_res'))
+            || assetImageIds.get(getItemImageKey(item, 'asset_name')) || 0;
+    }
+    return imageId ? `/game-config/seed_images_named/seed_images/${imageId}.png` : '';
 }
 function getItemById(itemId) {
     return itemInfoMap.get(Number(itemId) || 0);

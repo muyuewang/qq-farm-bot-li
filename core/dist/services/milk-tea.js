@@ -94,7 +94,7 @@ function checkCost(costs, expected, balances, count = 1) {
             fail('货币或道具数量不足');
     }
 }
-function recipeConfig(id) { return milk_tea_20261015_json_1.default.MilkTeaRecipeConfig.find(v => v.recipe_id === toNum(id)); }
+function recipeConfig(id) { return milk_tea_20261015_json_1.default.MilkTeaRecipeConfig.find(v => v.recipe_id === Number(toNum(id))); }
 function normalizeRecipes(reply) {
     return (reply.recipes || []).map((v) => {
         const row = recipeConfig(v.recipe_id);

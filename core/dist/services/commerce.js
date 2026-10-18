@@ -137,7 +137,6 @@ async function getMallCatalog(slotTypeInput = 1, subSlotTypeInput = 0) {
     let membership = null;
     if (slotType === 4) {
         const vip = require('./qqvip');
-        await vip.refreshVipInfo();
         const status = await vip.getQQVipRewardsStatus();
         membership = { isSvip: status.is_qq_vip === true, remainingDays: toNum(status.remaining_days) };
     }
