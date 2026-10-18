@@ -7,7 +7,8 @@ import LevelForecast from '@/components/LevelForecast.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
-import { useAccountStore } from '@/stores/account'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import { getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
@@ -23,6 +24,7 @@ const {
   realtimeConnected,
 } = storeToRefs(statusStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const isOnline = computed(() => !!currentAccount.value?.running && status.value?.connection?.connected === true)
 const { dashboardItems } = storeToRefs(bagStore)
 const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
@@ -33,6 +35,38 @@ const allLogs = computed(() => {
   return [...(statusLogs.value || [])]
     .slice(-200)
     .sort((a: any, b: any) => a.ts - b.ts)
+})
+
+type LogLevel = 'error' | 'warn' | 'success' | 'info'
+
+function getLogLevel(log: any): LogLevel {
+  const result = String(log?.meta?.result || '')
+  if (log?.tag === '错误' || result === 'error' || result === 'failed')
+    return 'error'
+  if (log?.isWarn || log?.tag === '警告' || result === 'defer' || result === 'skip')
+    return 'warn'
+  if (['ok', 'success', 'done', 'resume', 'resumed'].includes(result))
+    return 'success'
+  return 'info'
+}
+
+/**
+ * 连续出现、仅数字不同的同类日志合并为一行（×N + 时间范围），保留最新一条的内容，
+ * 避免巡查类日志刷屏。
+ */
+const logGroups = computed(() => {
+  const groups: Array<{ key: string, log: any, level: LogLevel, count: number, firstTime: string }> = []
+  for (const log of allLogs.value) {
+    const signature = `${log.tag}|${log.meta?.event || ''}|${String(log.msg || '').replace(/\d+/g, '#')}`
+    const last = groups[groups.length - 1]
+    if (last && last.key === signature) {
+      last.count += 1
+      last.log = log
+      continue
+    }
+    groups.push({ key: signature, log, level: getLogLevel(log), count: 1, firstTime: log.time })
+  }
+  return groups
 })
 
 const filter = reactive({
@@ -103,7 +137,7 @@ const displayName = computed(() => {
   const gameName = status.value?.status?.name
   if (gameName) {
     // 如果有备注，显示为“昵称（备注）”
-    if (account?.name) {
+    if (account?.name && account.name !== gameName) {
       return `${gameName} (${account.name})`
     }
     return gameName
@@ -113,7 +147,7 @@ const displayName = computed(() => {
   if (!status.value?.connection?.connected) {
     if (account) {
       // 如果有备注和昵称，显示为“昵称（备注）”
-      if (account.name && account.nick) {
+      if (account.name && account.nick && account.name !== account.nick) {
         return `${account.nick} (${account.name})`
       }
       return account.name || account.nick || '未登录'
@@ -124,7 +158,7 @@ const displayName = computed(() => {
   // Fallback to account name (usually ID) or '未命名'
   if (account) {
     // 如果有备注和昵称，显示为“昵称（备注）”
-    if (account.name && account.nick) {
+    if (account.name && account.nick && account.name !== account.nick) {
       return `${account.nick} (${account.name})`
     }
     return account.name || account.nick || '未命名'
@@ -239,22 +273,6 @@ function formatDuration(seconds: number) {
   return `${pad(h)}:${pad(m)}:${pad(s)}`
 }
 
-function getLogTagClass(tag: string) {
-  if (tag === '错误')
-    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  if (tag === '系统')
-    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-  if (tag === '警告')
-    return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-}
-
-function getLogMsgClass(tag: string) {
-  if (tag === '错误')
-    return 'text-red-600 dark:text-red-400'
-  return 'text-gray-700 dark:text-gray-300'
-}
-
 function formatLogTime(timeStr: string) {
   // 2024/5/20 12:34:56 -> 12:34:56
   if (!timeStr)
@@ -291,6 +309,31 @@ function getOpName(key: string | number) {
 
 function getOpIcon(key: string | number) {
   return OP_META[String(key)]?.icon
+}
+
+const platformLabel = computed(() => getPlatformLabel(accountStore.currentAccount?.platform))
+const accountAvatar = computed(() => {
+  const account = accountStore.currentAccount
+  if (!account)
+    return ''
+  const live = String(status.value?.accountId || '') === String(account.id || '')
+    ? String(status.value?.status?.avatarUrl || '').trim()
+    : ''
+  return live || String(account.avatar || '').trim()
+})
+const failedAccountAvatar = ref('')
+
+watch(accountAvatar, () => {
+  failedAccountAvatar.value = ''
+})
+
+function handleAccountAvatarError(event: Event) {
+  failedAccountAvatar.value = (event.currentTarget as HTMLImageElement | null)?.getAttribute('src') || ''
+}
+
+function formatPlainNumber(value: unknown) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num.toLocaleString('zh-CN') : '0'
 }
 
 function getExpPercent(p: any) {
@@ -466,165 +509,103 @@ useIntervalFn(updateCountdowns, 1000)
 
 <template>
   <div class="page-stack flex flex-col gap-5">
-    <!-- Status Cards -->
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2">
-      <!-- Account & Exp -->
-      <div class="flex flex-col farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-        <div class="mb-2 flex items-start justify-between">
-          <div class="flex items-center gap-1.5 text-sm text-gray-500">
-            <div class="i-fas-user-circle" />
-            账号
+    <!-- Overview -->
+    <div class="overview-grid">
+      <!-- 账号：身份、在线状态与等级进度 -->
+      <section class="ov-card ov-account">
+        <div class="ov-account__head">
+          <div class="ov-avatar" :class="{ 'is-online': isOnline }">
+            <img v-if="accountAvatar && accountAvatar !== failedAccountAvatar" :key="accountAvatar" :src="accountAvatar" alt="" @error="handleAccountAvatarError">
+            <span v-else class="i-carbon-user-avatar" />
+            <i class="ov-avatar__dot" />
           </div>
-          <div class="farm-badge rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-            Lv.{{ status?.status?.level || 0 }}
+          <div class="min-w-0 flex-1">
+            <div class="ov-account__name-row">
+              <strong class="ov-account__name" :title="displayName">{{ displayName }}</strong>
+              <span class="ov-level">Lv.{{ status?.status?.level || 0 }}</span>
+            </div>
+            <div class="ov-presence">
+              <span class="ov-presence__state" :class="isOnline ? 'is-online' : 'is-offline'">{{ isOnline ? '在线' : '离线' }}</span>
+              <span v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time" />已运行 {{ formatDuration(localUptime) }}</span>
+              <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
+            </div>
           </div>
-        </div>
-        <div class="mb-1 truncate text-xl font-bold" :title="displayName">
-          {{ displayName }}
         </div>
 
-        <!-- Level Progress -->
-        <div class="mt-auto">
-          <div class="mb-1 flex justify-between text-xs text-gray-500">
-            <div class="flex items-center gap-1">
-              <div class="i-fas-bolt text-blue-400" />
-              <span>EXP</span>
-            </div>
-            <span>{{ status?.levelProgress?.current || 0 }} / {{ status?.levelProgress?.needed || '?' }}</span>
+        <div class="ov-exp">
+          <div class="ov-exp__labels">
+            <span>经验</span>
+            <span class="ov-exp__value">
+              {{ formatPlainNumber(status?.levelProgress?.current) }} / {{ status?.levelProgress?.needed ? formatPlainNumber(status.levelProgress.needed) : '?' }}
+              <b>{{ Math.floor(getExpPercent(status?.levelProgress)) }}%</b>
+            </span>
           </div>
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-            <div
-              class="h-full rounded-full bg-blue-500 transition-all duration-500"
-              :style="{ width: `${getExpPercent(status?.levelProgress)}%` }"
-            />
+          <div class="ov-exp__track">
+            <div class="ov-exp__bar" :style="{ width: `${getExpPercent(status?.levelProgress)}%` }" />
           </div>
-          <div class="mt-2 flex justify-between text-xs text-gray-400">
-            <span>会话效率: {{ expRate }}</span>
-          </div>
-          <LevelForecast v-if="status?.connection?.connected" :forecast="status?.levelForecast" />
         </div>
-      </div>
 
-      <!-- Assets & Status -->
-      <div class="flex flex-col justify-between farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-        <div class="grid grid-cols-2 gap-px bg-gray-100 dark:bg-gray-700">
-          <div class="bg-white pb-3 pr-3 dark:bg-gray-800">
-            <div class="flex items-center gap-1.5 text-xs text-gray-500">
-              <div class="i-fas-coins text-yellow-500" />
-              金币
-            </div>
-            <div class="text-2xl text-yellow-600 font-bold tabular-nums dark:text-yellow-500">
-              {{ formatAssetAmount(status?.status?.gold) }}
-            </div>
-            <div
-              v-if="(status?.sessionGoldGained || 0) !== 0"
-              class="text-[10px]"
-              :class="(status?.sessionGoldGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
-            >
-              {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ status?.sessionGoldGained || 0 }}
-            </div>
-          </div>
-          <div class="bg-white pb-3 pl-3 text-right dark:bg-gray-800">
-            <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
-              <div class="i-fas-ticket-alt text-emerald-400" />
-              点券
-            </div>
-            <div class="text-2xl text-emerald-500 font-bold tabular-nums dark:text-emerald-400">
-              {{ formatAssetAmount(status?.status?.coupon) }}
-            </div>
-            <div
-              v-if="(status?.sessionCouponGained || 0) !== 0"
-              class="text-[10px]"
-              :class="(status?.sessionCouponGained || 0) > 0 ? 'text-green-500' : 'text-red-500'"
-            >
-              {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ status?.sessionCouponGained || 0 }}
-            </div>
-          </div>
-          <div class="bg-white pr-3 pt-3 dark:bg-gray-800">
-            <div class="flex items-center gap-1.5 text-xs text-gray-500">
-              <div class="i-fas-seedling text-amber-500" />
-              金豆豆
-            </div>
-            <div class="text-2xl text-amber-500 font-bold tabular-nums dark:text-amber-400">
-              {{ formatAssetAmount(status?.status?.goldBean) }}
-            </div>
-          </div>
-          <div class="bg-white pl-3 pt-3 text-right dark:bg-gray-800">
-            <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
-              <div class="i-fas-gem text-cyan-500" />
-              钻石
-            </div>
-            <div class="text-2xl text-cyan-600 font-bold tabular-nums dark:text-cyan-400">
-              {{ formatAssetAmount(diamondBalance) }}
-            </div>
-          </div>
+        <div class="ov-account__foot">
+          <span>会话效率 <b>{{ expRate }}</b></span>
+          <LevelForecast v-if="isOnline" class="ov-forecast" :forecast="status?.levelForecast" />
         </div>
-        <div class="mt-4 border-t border-gray-100 pt-3 dark:border-gray-700">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <div class="h-2.5 w-2.5 rounded-full" :class="status?.connection?.connected ? 'bg-green-500' : 'bg-red-500'" />
-              <span class="text-xs font-bold">{{ status?.connection?.connected ? '在线' : '离线' }}</span>
-            </div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-400">
-              <span class="text-purple-400">🕐</span>
-              {{ formatDuration(localUptime) }}
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      <!-- Items (Fertilizer & Collection) -->
-      <div class="flex flex-col justify-between farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-        <div class="mb-2 flex items-center gap-1.5 text-sm text-gray-500">
-          <div class="i-fas-flask text-emerald-400" />
-          化肥容器
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <div class="i-fas-flask text-emerald-400" />
-              普通
-            </div>
-            <div class="font-bold">
-              {{ formatBucketTime(fertilizerNormal) }}
-            </div>
+      <!-- 资产 -->
+      <section class="ov-card">
+        <h3 class="ov-card__title">
+          资产
+        </h3>
+        <div class="ov-tiles">
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-coins text-yellow-500" />金币</span>
+            <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.gold) }}</strong>
+            <small v-if="(status?.sessionGoldGained || 0) !== 0" class="ov-tile__delta" :class="(status?.sessionGoldGained || 0) > 0 ? 'is-up' : 'is-down'">
+              本次 {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.sessionGoldGained) }}
+            </small>
           </div>
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <div class="i-fas-vial text-emerald-400" />
-              有机
-            </div>
-            <div class="font-bold">
-              {{ formatBucketTime(fertilizerOrganic) }}
-            </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-ticket-alt text-emerald-500" />点券</span>
+            <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.coupon) }}</strong>
+            <small v-if="(status?.sessionCouponGained || 0) !== 0" class="ov-tile__delta" :class="(status?.sessionCouponGained || 0) > 0 ? 'is-up' : 'is-down'">
+              本次 {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.sessionCouponGained) }}
+            </small>
           </div>
-        </div>
-        <div class="my-2 border-t border-gray-100 dark:border-gray-700" />
-        <div class="mb-1 flex items-center gap-1.5 text-sm text-gray-500">
-          <div class="i-fas-star text-emerald-400" />
-          收藏点
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <div class="i-fas-bookmark text-emerald-400" />
-              普通
-            </div>
-            <div class="font-bold">
-              {{ collectionNormal?.count || 0 }}
-            </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-seedling text-amber-500" />金豆豆</span>
+            <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.goldBean) }}</strong>
           </div>
-          <div>
-            <div class="flex items-center gap-1 text-xs text-gray-400">
-              <div class="i-fas-gem text-emerald-400" />
-              典藏
-            </div>
-            <div class="font-bold">
-              {{ collectionRare?.count || 0 }}
-            </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-gem text-cyan-500" />钻石</span>
+            <strong class="ov-tile__value">{{ formatAssetAmount(diamondBalance) }}</strong>
           </div>
         </div>
-      </div>
+      </section>
+
+      <!-- 库存：化肥容器与收藏点 -->
+      <section class="ov-card">
+        <h3 class="ov-card__title">
+          库存
+        </h3>
+        <div class="ov-tiles">
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-flask text-emerald-500" />普通化肥</span>
+            <strong class="ov-tile__value">{{ formatBucketTime(fertilizerNormal) }}</strong>
+          </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-vial text-emerald-500" />有机化肥</span>
+            <strong class="ov-tile__value">{{ formatBucketTime(fertilizerOrganic) }}</strong>
+          </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-bookmark text-violet-400" />普通收藏点</span>
+            <strong class="ov-tile__value">{{ formatPlainNumber(collectionNormal?.count) }}</strong>
+          </div>
+          <div class="ov-tile">
+            <span class="ov-tile__label"><span class="i-fas-gem text-violet-400" />典藏收藏点</span>
+            <strong class="ov-tile__value">{{ formatPlainNumber(collectionRare?.count) }}</strong>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- Main Content Flex -->
@@ -632,78 +613,94 @@ useIntervalFn(updateCountdowns, 1000)
       <!-- Logs (Left Column) -->
       <div class="flex flex-1 flex-col gap-6 md:w-3/4">
         <!-- Logs -->
-        <div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-6 shadow-md md:overflow-hidden dark:bg-gray-800">
-          <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h3 class="flex items-center gap-2 text-lg font-medium font-display">
+        <div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-5 shadow-md md:overflow-hidden dark:bg-gray-800">
+          <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <h3 class="flex shrink-0 items-center gap-2 whitespace-nowrap text-lg font-bold">
               <span class="i-carbon-document" /> <span>运行日志</span>
             </h3>
 
-            <div class="flex flex-wrap items-center gap-2 text-sm">
+            <div class="log-filters">
               <BaseSelect
                 v-model="filter.module"
                 :options="modules"
-                class="w-32"
                 @change="onLogFilterChange"
               />
 
               <BaseSelect
                 v-model="filter.event"
                 :options="events"
-                class="w-32"
                 @change="onLogFilterChange"
               />
 
               <BaseSelect
                 v-model="filter.isWarn"
                 :options="logs"
-                class="w-32"
                 @change="onLogFilterChange"
               />
 
               <BaseInput
                 v-model="filter.keyword"
-                placeholder="关键词..."
-                class="w-32"
+                placeholder="关键词"
                 clearable
                 @keyup.enter="onLogSearchTrigger"
                 @clear="onLogSearchTrigger"
               />
 
-              <BaseButton
-                variant="primary"
-                size="sm"
-                @click="onLogSearchTrigger"
-              >
-                <span class="i-carbon-search" />
-              </BaseButton>
+              <div class="log-filters__buttons">
+                <BaseButton
+                  variant="primary"
+                  class="log-filters__icon"
+                  title="搜索日志"
+                  aria-label="搜索日志"
+                  @click="onLogSearchTrigger"
+                >
+                  <span class="i-carbon-search" />
+                </BaseButton>
 
-              <BaseButton
-                variant="secondary"
-                size="sm"
-                :loading="clearingLogs"
-                @click="clearLogs"
-              >
-                <span class="i-carbon-trash-can" />
-              </BaseButton>
+                <BaseButton
+                  variant="secondary"
+                  class="log-filters__icon"
+                  title="清空日志"
+                  aria-label="清空日志"
+                  :loading="clearingLogs"
+                  @click="clearLogs"
+                >
+                  <template #icon>
+                    <span class="i-carbon-trash-can" />
+                  </template>
+                </BaseButton>
+              </div>
             </div>
           </div>
 
-          <div ref="logContainer" class="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded-xl bg-gray-50 p-4 text-sm leading-relaxed font-mono dark:bg-gray-900" @scroll="onLogScroll">
+          <div ref="logContainer" class="log-list max-h-[50vh] min-h-0 flex-1 overflow-y-auto" @scroll="onLogScroll">
             <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
               暂无日志
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="log-row mb-1 break-all">
-              <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
-              <span class="mr-2 rounded-full px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
-              <span v-if="log.meta?.event" class="mr-2 rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
-              <span :class="getLogMsgClass(log.tag)">{{ log.msg }}</span>
+            <div
+              v-for="group in logGroups"
+              :key="group.log.ts + group.key"
+              class="log-row"
+              :class="`log-row--${group.level}`"
+            >
+              <span class="log-row__time">
+                {{ formatLogTime(group.log.time) }}
+              </span>
+              <span class="log-row__tag">{{ group.log.tag }}</span>
+              <span class="log-row__body">
+                <span v-if="group.log.meta?.event" class="log-row__event">{{ getEventLabel(group.log.meta.event) }}</span>
+                <span class="log-row__msg">{{ group.log.msg }}</span>
+                <span v-if="group.count > 1" class="log-row__repeat" :title="`${formatLogTime(group.firstTime)} 起重复 ${group.count} 次`">
+                  ×{{ group.count }} · {{ formatLogTime(group.firstTime) }} 起
+                </span>
+              </span>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Right Column Stack -->
-      <div class="flex flex-col gap-6 md:w-1/4">
+      <div class="min-w-0 flex flex-col gap-6 md:w-1/4 md:self-start">
         <!-- Next Checks -->
         <div class="flex flex-col farm-card rounded-2xl bg-white p-6 shadow-md dark:bg-gray-800">
           <h3 class="mb-4 flex items-center gap-2 text-lg font-medium font-display">
@@ -715,7 +712,7 @@ useIntervalFn(updateCountdowns, 1000)
                 <span class="i-carbon-sprout text-lg text-green-500" />
                 <span>农场</span>
               </div>
-              <div class="text-lg font-bold font-mono">
+              <div class="text-lg font-bold tabular-nums">
                 {{ nextFarmCheck }}
               </div>
             </div>
@@ -724,7 +721,7 @@ useIntervalFn(updateCountdowns, 1000)
                 <span class="i-carbon-collaborate text-lg text-blue-500" />
                 <span>好友任务</span>
               </div>
-              <div class="text-lg font-bold font-mono">
+              <div class="text-lg font-bold tabular-nums">
                 {{ nextFriendCheck }}
               </div>
             </div>
@@ -732,21 +729,17 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
 
         <!-- Operations Grid -->
-        <div class="flex-1 farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+        <div class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
           <h3 class="mb-3 flex items-center gap-2 text-lg font-medium font-display">
             <span class="i-carbon-chart-column" /> <span>今日统计</span>
           </h3>
-          <div v-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-            <span class="i-carbon-network-4 text-4xl text-gray-400" />
-            <div class="flex flex-col">
-              <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
-                账号未登录
-              </div>
-              <div class="mt-1 text-sm text-gray-400">
-                请先运行账号或检查网络连接
-              </div>
-            </div>
-          </div>
+          <EmptyState
+            v-if="!status?.connection?.connected"
+            bare
+            title="账号未登录"
+            description="启动账号后显示今日收获与互动统计"
+            icon="i-carbon-connection-signal-off"
+          />
           <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3">
             <div
               v-for="(val, key) in filteredOperations"
@@ -771,8 +764,430 @@ useIntervalFn(updateCountdowns, 1000)
 </template>
 
 <style scoped>
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ov-account {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1280px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ov-account {
+    grid-column: auto;
+  }
+}
+
+.ov-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--ui-shadow-sm);
+}
+
+.ov-card__title {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* 账号 */
+.ov-account__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ov-avatar {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--ui-subtle);
+  background: var(--ui-surface-soft);
+  font-size: 26px;
+}
+
+.ov-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.ov-avatar__dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ui-surface-strong);
+  border-radius: 999px;
+  background: var(--ui-subtle);
+}
+
+.ov-avatar.is-online .ov-avatar__dot {
+  background: #3fa765;
+}
+
+.ov-account__name-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.ov-account__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-level {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--ui-blue);
+  background: var(--ui-blue-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-presence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 5px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.ov-presence__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 9px 1px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.ov-presence__state::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  content: '';
+}
+
+.ov-presence__state.is-online {
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.ov-presence__state.is-offline {
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+}
+
+.ov-presence__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-exp__labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.ov-exp__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-exp__value b {
+  margin-left: 6px;
+  color: var(--ui-ink);
+  font-weight: 700;
+}
+
+.ov-exp__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ui-surface-soft);
+}
+
+.ov-exp__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5c9fd0, #4b86c5);
+  transition: width 0.5s ease;
+}
+
+.ov-account__foot {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--ui-border-strong);
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.ov-account__foot b {
+  color: var(--ui-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-forecast {
+  margin-top: 0 !important;
+}
+
+/* 资产 / 库存数据格 */
+.ov-tiles {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ov-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ui-surface-soft);
+}
+
+.ov-tile__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ov-tile__label > span {
+  flex: none;
+  font-size: 13px;
+}
+
+.ov-tile__value {
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-tile__delta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-tile__delta.is-up {
+  color: var(--ui-primary);
+}
+
+.ov-tile__delta.is-down {
+  color: var(--ui-danger);
+}
+
+@media (max-width: 520px) {
+  .ov-card {
+    padding: 16px;
+  }
+
+  .ov-tile {
+    padding: 10px 12px;
+  }
+
+  .ov-tile__value {
+    font-size: clamp(15px, 4.5vw, 18px);
+  }
+}
+
+.log-filters {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.log-filters__buttons {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.log-filters__icon {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 !important;
+}
+
+@media (min-width: 640px) {
+  .log-filters {
+    grid-template-columns: repeat(4, minmax(0, 8.5rem)) auto;
+    align-items: center;
+  }
+
+  .log-filters__buttons {
+    grid-column: auto;
+  }
+}
+
+.log-list {
+  padding: 6px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .log-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px 5px 10px;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
   content-visibility: auto;
-  contain-intrinsic-size: auto 24px;
+  contain-intrinsic-size: auto 28px;
+}
+
+.log-row + .log-row {
+  margin-top: 2px;
+}
+
+.log-row__time {
+  color: var(--ui-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.log-row__tag {
+  min-width: 2.5em;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.log-row__body {
+  min-width: 0;
+  color: var(--ui-ink);
+  overflow-wrap: anywhere;
+}
+
+.log-row__event {
+  margin-right: 6px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.log-row__event::after {
+  margin-left: 6px;
+  color: var(--ui-subtle);
+  content: '·';
+}
+
+.log-row__repeat {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-surface-strong);
+  color: var(--ui-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.log-row--success {
+  border-left-color: var(--ui-primary);
+}
+
+.log-row--warn {
+  border-left-color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning-soft) 70%, transparent);
+}
+
+.log-row--warn .log-row__tag {
+  color: var(--ui-warning);
+}
+
+.log-row--error {
+  border-left-color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger-soft) 80%, transparent);
+}
+
+.log-row--error .log-row__tag,
+.log-row--error .log-row__msg {
+  color: var(--ui-danger);
+}
+
+@media (max-width: 640px) {
+  .log-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+
+  .log-row__body {
+    grid-column: 1 / -1;
+  }
 }
 </style>

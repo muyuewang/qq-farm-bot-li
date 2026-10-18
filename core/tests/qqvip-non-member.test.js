@@ -17,26 +17,28 @@ function harness(status, claimError) {
 test('nonmember receives configs but must never claim them',async()=>{
  const h=harness({is_qq_vip:false,can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5}]});
  assert.equal(await h.service.performDailyVipGift(),false);
- assert.deepEqual(h.calls.map(c=>c.method),['RefreshVipInfo','GetQQVipRewardsStatus']);
+ assert.deepEqual(h.calls.map(c=>c.method),['GetQQVipRewardsStatus']);
  assert.equal(h.service.getVipDailyState().doneToday,true);
  assert.equal(h.service.getVipDailyState().hasGift,false);
- await h.service.performDailyVipGift();assert.equal(h.calls.length,2);
+ await h.service.performDailyVipGift();assert.equal(h.calls.length,1);
 });
 test('membership expiring between check and claim skips rest of day',async()=>{
  const h=harness({is_qq_vip:true,can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5}]},1021001);
  assert.equal(await h.service.performDailyVipGift(),false);
- assert.deepEqual(h.calls[2].body.reward_types,[5]);
- assert.deepEqual(h.calls[2].options.expectedErrorCodes,[1021001,1021002]);
+ const claim=h.calls.find(c=>c.method==='ClaimQQVipRewards');
+ assert.deepEqual(claim.body.reward_types,[5]);
+ assert.deepEqual(claim.options.expectedErrorCodes,[1021001,1021002]);
  assert.equal(h.service.getVipDailyState().doneToday,true);
  assert.equal(h.service.getVipDailyState().hasGift,false);
 });
 test('claim uses config IDs and distinct daily/season flags',async()=>{
  const h=harness({is_qq_vip:true,can_claim:false,rewards_can_claim:true,reward_statuses:[{type:1,is_enable:true,reward_type:5},{type:2,is_enable:true,reward_type:6},{type:2,is_enable:false,reward_type:7}]});
  assert.equal(await h.service.performDailyVipGift(),true);
- assert.deepEqual(h.calls[2].body.reward_types,[6]);
+ assert.deepEqual(h.calls.find(c=>c.method==='ClaimQQVipRewards').body.reward_types,[6]);
 });
 test('free SVIP gift never spends diamonds and checks eligibility and limits',async()=>{
- const h=harness({}),bought=[];
+ const h=harness({});
+ const bought=[];
  const base={is_free:true,is_available:true,price:{count:0},goods_id:1053};
  h.mock('../dist/services/mall',{getMallListBySlotType:async slot=>{assert.equal(slot,4);return {goods_list:[base,{...base,goods_id:1054,price:{id:1004,count:110}},{...base,goods_id:1055,is_available:false},{...base,goods_id:1056,purchase_limit:{bought_count:1,limit_count:1}}]};},purchaseMallGoods:async id=>bought.push(id)});
  assert.equal(await h.service.claimSvipMallFreeGift({is_qq_vip:false,mall_free_can_claim:true}),false);

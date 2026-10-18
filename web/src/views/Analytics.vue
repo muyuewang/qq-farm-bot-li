@@ -286,7 +286,7 @@ function getSeedNameById(seedId: number) {
 
 <template>
   <div class="page-stack space-y-4">
-    <NTabs v-model:value="activeTab" type="line">
+    <NTabs v-model:value="activeTab" class="page-tabs" type="line">
       <NTab name="strategy">
         <span class="inline-flex items-center gap-2"><span class="i-carbon-chart-line" />种植策略</span>
       </NTab>
@@ -480,7 +480,9 @@ function getSeedNameById(seedId: number) {
                 :loading="batchLoading"
                 @click="handleAddAllToBlacklist"
               >
-                <span class="i-carbon-add" />
+                <template #icon>
+                  <span class="i-carbon-add" />
+                </template>
                 一键全部加入黑名单
               </NButton>
               <NButton

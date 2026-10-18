@@ -82,7 +82,7 @@ function checkCost(costs: any[], expected: any, balances: any, count = 1) {
         if ((balances[String(cost.id)] || 0) < toNum(cost.count) * count) fail('货币或道具数量不足');
     }
 }
-function recipeConfig(id: any) { return config.MilkTeaRecipeConfig.find(v => v.recipe_id === toNum(id)); }
+function recipeConfig(id: any) { return config.MilkTeaRecipeConfig.find(v => v.recipe_id === Number(toNum(id))); }
 function normalizeRecipes(reply: any) {
     return (reply.recipes || []).map((v: any) => {
         const row = recipeConfig(v.recipe_id);

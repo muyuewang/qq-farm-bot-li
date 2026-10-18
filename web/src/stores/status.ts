@@ -20,6 +20,11 @@ interface DailyGift {
   checkedToday?: boolean
   checkStatus?: 'unchecked' | 'entry_available' | 'entry_unavailable' | 'already_claimed' | 'check_failed'
   canShare?: boolean | null
+  isVip?: boolean | null
+  hasGift?: boolean | null
+  canClaim?: boolean | null
+  result?: string
+  lastError?: string
 }
 
 interface DailyGiftsResponse {
@@ -32,6 +37,9 @@ export const useStatusStore = defineStore('status', () => {
   const status = ref<any>(null)
   const logs = ref<any[]>([])
   const dailyGifts = ref<DailyGiftsResponse | null>(null)
+  const dailyGiftsLoading = ref(false)
+  const dailyGiftsError = ref('')
+  let dailyGiftsSequence = 0
   const diamondBalance = ref(0)
   const loading = ref(false)
   const error = ref('')
@@ -247,19 +255,29 @@ export const useStatusStore = defineStore('status', () => {
   async function fetchDailyGifts(accountId: string) {
     if (!accountId)
       return
+    const sequence = ++dailyGiftsSequence
+    dailyGiftsLoading.value = true
+    dailyGiftsError.value = ''
     try {
       const { data } = await api.get('/api/daily-gifts', {
         headers: { 'x-account-id': accountId },
       })
+      if (sequence !== dailyGiftsSequence)
+        return
       if (data.ok) {
         dailyGifts.value = data.data
       }
       else {
-        error.value = getApiErrorMessage(data, '获取每日奖励失败')
+        dailyGiftsError.value = getApiErrorMessage(data, '获取每日奖励失败')
       }
     }
     catch (e) {
-      error.value = getApiErrorMessage(e, '获取每日奖励失败')
+      if (sequence === dailyGiftsSequence)
+        dailyGiftsError.value = getApiErrorMessage(e, '获取每日奖励失败')
+    }
+    finally {
+      if (sequence === dailyGiftsSequence)
+        dailyGiftsLoading.value = false
     }
   }
 
@@ -271,6 +289,8 @@ export const useStatusStore = defineStore('status', () => {
     status,
     logs,
     dailyGifts,
+    dailyGiftsLoading,
+    dailyGiftsError,
     diamondBalance,
     loading,
     error,

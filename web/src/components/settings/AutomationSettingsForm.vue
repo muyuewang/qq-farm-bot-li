@@ -71,25 +71,25 @@ const milkTeaHireTalentOptions = [
 
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.farm" label="自动种植收获" />
+              <BaseSwitch v-model="settings.automation.farm" class="automation-setting-item" label="自动种植收获" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.farm_push" label="推送触发巡田" />
+              <BaseSwitch v-model="settings.automation.farm_push" class="automation-setting-item" label="推送触发巡田" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.skip_own_weed_bug" label="巡田时跳过一键务农" />
+              <BaseSwitch v-model="settings.automation.skip_own_weed_bug" class="automation-setting-item" label="巡田时跳过一键务农" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.land_upgrade" label="自动升级土地" />
+              <BaseSwitch v-model="settings.automation.land_upgrade" class="automation-setting-item" label="自动升级土地" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.task" label="自动做任务" />
+              <BaseSwitch v-model="settings.automation.task" class="automation-setting-item" label="自动做任务" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.sell" label="自动卖果实" />
+              <BaseSwitch v-model="settings.automation.sell" class="automation-setting-item" label="自动卖果实" />
             </div>
             <div class="automation-setting-item sm:col-span-2">
-              <BaseSwitch v-model="settings.automation.fertilizer_gift" label="自动填充化肥" />
+              <BaseSwitch v-model="settings.automation.fertilizer_gift" class="automation-setting-item" label="自动填充化肥" />
             </div>
           </div>
         </section>
@@ -111,16 +111,16 @@ const milkTeaHireTalentOptions = [
 
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
+              <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" class="automation-setting-item" label="自动购买有机化肥" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
+              <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" class="automation-setting-item" label="自动购买无机化肥" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.fertilizer_multi_season" label="多季补肥" />
+              <BaseSwitch v-model="settings.automation.fertilizer_multi_season" class="automation-setting-item" label="多季补肥" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.show_manual_fertilizer" label="显示手动施肥按钮" />
+              <BaseSwitch v-model="settings.automation.show_manual_fertilizer" class="automation-setting-item" label="显示手动施肥按钮" />
             </div>
           </div>
 
@@ -211,7 +211,7 @@ const milkTeaHireTalentOptions = [
           </div>
 
           <div class="automation-setting-item">
-            <BaseSwitch v-model="settings.automation.friend" label="自动好友互动" />
+            <BaseSwitch v-model="settings.automation.friend" class="automation-setting-item" label="自动好友互动" />
           </div>
           <div v-if="settings.automation.friend" class="mt-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <div class="mb-2 text-xs text-blue-700 font-medium dark:text-blue-300">
@@ -219,35 +219,35 @@ const milkTeaHireTalentOptions = [
             </div>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.friend_steal" label="自动偷菜" />
+                <BaseSwitch v-model="settings.automation.friend_steal" class="automation-setting-item" label="自动偷菜" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.friend_help" label="自动帮忙" />
+                <BaseSwitch v-model="settings.automation.friend_help" class="automation-setting-item" label="自动帮忙" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.friend_bad" label="自动捣乱" />
+                <BaseSwitch v-model="settings.automation.friend_bad" class="automation-setting-item" label="自动捣乱" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满不帮忙" />
+                <BaseSwitch v-model="settings.automation.friend_help_exp_limit" class="automation-setting-item" label="经验满不帮忙" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.friend_help_protect_dog_ignore_exp_limit" label="护主犬经验满仍帮忙" />
+                <BaseSwitch v-model="settings.automation.friend_help_protect_dog_ignore_exp_limit" class="automation-setting-item" label="护主犬经验满仍帮忙" />
               </div>
             </div>
           </div>
 
           <div class="mt-3 rounded-lg bg-blue-50 p-3 space-y-3 dark:bg-blue-900/20">
-            <BaseSwitch v-model="settings.automation.friend_auto_accept" label="自动通过好友申请" />
+            <BaseSwitch v-model="settings.automation.friend_auto_accept" class="automation-setting-item" label="自动通过好友申请" />
             <template v-if="settings.automation.friend_auto_accept">
               <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
                 <BaseInput v-model.number="settings.autoAcceptFriendMinLevel" label="最低等级" type="number" min="0" max="200" />
-                <BaseSwitch v-model="settings.autoAcceptRequireOwnLevel" label="不低于自己等级" />
+                <BaseSwitch v-model="settings.autoAcceptRequireOwnLevel" class="automation-setting-item" label="不低于自己等级" />
               </div>
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 最低等级设为 0 表示不限制固定等级；开启等级条件时需同时满足所有条件。
               </p>
               <div class="flex flex-wrap items-end gap-3">
-                <BaseSwitch v-model="settings.autoAcceptHarvestStealEnabled" label="收偷比过滤" />
+                <BaseSwitch v-model="settings.autoAcceptHarvestStealEnabled" class="automation-setting-item" label="收偷比过滤" />
                 <BaseInput
                   v-model.number="settings.autoAcceptHarvestStealHarvest"
                   label="收获"
@@ -407,14 +407,15 @@ const milkTeaHireTalentOptions = [
 
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.mystery_shop_auto_buy" label="自动购买" />
+              <BaseSwitch v-model="settings.automation.mystery_shop_auto_buy" class="automation-setting-item" label="自动购买" />
             </div>
             <div class="automation-setting-item">
-              <BaseSwitch v-model="settings.automation.mystery_shop_arrival_notify" label="到货提醒" />
+              <BaseSwitch v-model="settings.automation.mystery_shop_arrival_notify" class="automation-setting-item" label="到货提醒" />
             </div>
             <div class="automation-setting-item sm:col-span-2">
               <BaseSwitch
                 v-model="settings.automation.mystery_shop_purchase_notify"
+                class="automation-setting-item"
                 label="购买提醒"
                 :disabled="!settings.automation.mystery_shop_auto_buy"
               />
@@ -427,16 +428,16 @@ const milkTeaHireTalentOptions = [
             </div>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold" label="金币" />
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold" class="automation-setting-item" label="金币" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.mystery_shop_allow_coupon" label="点券" />
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_coupon" class="automation-setting-item" label="点券" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold_bean" label="金豆豆" />
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold_bean" class="automation-setting-item" label="金豆豆" />
               </div>
               <div class="automation-setting-item">
-                <BaseSwitch v-model="settings.automation.mystery_shop_allow_diamond" label="钻石" />
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_diamond" class="automation-setting-item" label="钻石" />
               </div>
             </div>
             <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -459,6 +460,16 @@ const milkTeaHireTalentOptions = [
 </template>
 
 <style scoped>
+.automation-setting-item {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  padding: 9px 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-surface-strong) 58%, transparent);
+}
+
 .automation-card-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

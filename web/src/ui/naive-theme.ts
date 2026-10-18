@@ -1,6 +1,53 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-export function createNaiveThemeOverrides(): GlobalThemeOverrides {
+/** 深色模式下的通用色，与 style.css 中 .dark 的 --ui-* 变量保持一致。 */
+const DARK_COMMON = {
+  primaryColor: '#5aa077',
+  primaryColorHover: '#6fb38b',
+  primaryColorPressed: '#4a8c66',
+  primaryColorSuppl: '#5aa077',
+  infoColor: '#79a9c1',
+  successColor: '#5aa077',
+  warningColor: '#d4a159',
+  errorColor: '#d9787f',
+  bodyColor: '#141c18',
+  cardColor: '#202c25',
+  modalColor: '#202c25',
+  popoverColor: '#28372e',
+  inputColor: '#19251e',
+  tableColor: 'transparent',
+  tableHeaderColor: '#25332b',
+  textColorBase: '#e3ece5',
+  textColor1: '#e3ece5',
+  textColor2: '#acbcb0',
+  textColor3: '#819487',
+  borderColor: 'rgba(179, 204, 186, 0.18)',
+  dividerColor: 'rgba(179, 204, 186, 0.14)',
+  boxShadow1: '0 2px 10px rgba(0, 0, 0, 0.25)',
+  boxShadow2: '0 12px 32px rgba(0, 0, 0, 0.32)',
+  boxShadow3: '0 24px 64px rgba(0, 0, 0, 0.4)',
+}
+
+export function createNaiveThemeOverrides(dark = false): GlobalThemeOverrides {
+  const light = createLightOverrides()
+  if (!dark)
+    return light
+  return {
+    ...light,
+    common: { ...light.common, ...DARK_COMMON },
+    Tabs: { ...light.Tabs, tabColorSegment: '#25332b' },
+    DataTable: {
+      borderColor: 'rgba(179, 204, 186, 0.14)',
+      thColor: '#25332b',
+      thColorHover: '#2b3a31',
+      tdColorHover: '#25332b',
+    },
+    Switch: { ...light.Switch, railColorActive: '#5aa077' },
+    Modal: { boxShadow: '0 24px 64px rgba(0, 0, 0, 0.45)' },
+  }
+}
+
+function createLightOverrides(): GlobalThemeOverrides {
   return {
     common: {
       primaryColor: '#438d63',
@@ -54,6 +101,13 @@ export function createNaiveThemeOverrides(): GlobalThemeOverrides {
       heightMedium: '38px',
       heightLarge: '42px',
       borderRadius: '10px',
+    },
+    Select: {
+      peers: {
+        InternalSelection: {
+          borderRadius: '10px',
+        },
+      },
     },
     Card: {
       borderRadius: '8px',

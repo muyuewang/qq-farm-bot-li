@@ -9,6 +9,7 @@ import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
+import BrandMark from '@/components/ui/BrandMark.vue'
 import { menuRoutes } from '@/router/menu'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
@@ -45,6 +46,14 @@ const tokenCopied = ref(false)
 const accountToEdit = ref<any>(null)
 const wsErrorNotifiedAt = ref<Record<string, number>>({})
 const accountAvatarErrors = ref<Set<string>>(new Set())
+const userAvatar = computed(() => String(userStore.avatar || '').trim())
+const failedUserAvatar = ref('')
+
+function handleUserAvatarError(event: Event) {
+  const failedSource = (event.target as HTMLImageElement).getAttribute('src')
+  if (failedSource === userAvatar.value)
+    failedUserAvatar.value = failedSource
+}
 
 const systemConnected = ref(true)
 const serverUptimeBase = ref(0)
@@ -218,7 +227,7 @@ const displayName = computed(() => {
   const liveName = status.value?.status?.name
   if (liveName && liveName !== '未登录') {
     // 如果有备注，显示为"昵称（备注）"
-    if (acc.name) {
+    if (acc.name && acc.name !== liveName) {
       return `${liveName} (${acc.name})`
     }
     return liveName
@@ -227,7 +236,7 @@ const displayName = computed(() => {
   // 2. 其次显示账号存储的备注名称 (name)
   if (acc.name) {
     // 如果有同步的昵称，显示为"昵称（备注）"
-    if (acc.nick) {
+    if (acc.nick && acc.nick !== acc.name) {
       return `${acc.nick} (${acc.name})`
     }
     return acc.name
@@ -384,7 +393,7 @@ async function copyToken() {
       <NTooltip :disabled="!isSidebarCollapsed" placement="right" :show-arrow="false" :theme-overrides="sidebarTooltipTheme">
         <template #trigger>
           <div class="sidebar-brand__identity min-w-0 flex items-center gap-2.5">
-            <span class="brand-mark i-carbon-sprout" />
+            <BrandMark class="brand-mark" :size="28" />
             <span v-show="!isSidebarCollapsed" class="min-w-0 truncate text-sm font-semibold font-display">
               QQ农场智能助手
             </span>
@@ -425,12 +434,16 @@ async function copyToken() {
             >
               <div class="flex items-center gap-3 overflow-hidden">
                 <div class="farm-avatar-ring relative h-9 w-9 shrink-0 overflow-hidden rounded-full shadow-md" style="background: var(--ui-primary); padding: 2px;">
-                  <div class="h-full w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
+                  <div class="admin-avatar h-full w-full flex items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
                     <img
-                      :src="userStore.avatar || 'https://thirdqq.qlogo.cn/qqapp/1112386029/BF9C8FC0E5563BEBD93B22F14A9C0566/100'"
+                      v-if="userAvatar && userAvatar !== failedUserAvatar"
+                      :key="userAvatar"
+                      :src="userAvatar"
+                      alt=""
                       class="h-full w-full object-cover"
-                      @error="(e) => (e.target as HTMLImageElement).src = 'https://thirdqq.qlogo.cn/qqapp/1112386029/BF9C8FC0E5563BEBD93B22F14A9C0566/100'"
+                      @error="handleUserAvatarError"
                     >
+                    <span v-else class="i-carbon-user-avatar text-xl text-gray-500 dark:text-gray-300" aria-hidden="true" />
                   </div>
                   <div class="admin-star absolute z-10 h-4 w-4 flex items-center justify-center rounded-full text-[8px] shadow-sm -right-1 -top-1">
                     <span>&#9733;</span>
@@ -576,7 +589,7 @@ async function copyToken() {
                   </div>
                   <div class="min-w-0 flex flex-1 flex-col items-start">
                     <span class="w-full truncate text-left text-sm font-medium">
-                      {{ acc.nick && acc.name ? `${acc.nick} (${acc.name})` : acc.name || acc.nick || acc.uin }}
+                      {{ acc.nick && acc.name && acc.nick !== acc.name ? `${acc.nick} (${acc.name})` : acc.name || acc.nick || acc.uin }}
                     </span>
                     <div class="flex items-center gap-1.5">
                       <span
@@ -627,7 +640,7 @@ async function copyToken() {
       <button
         v-if="showReloginButton"
         type="button"
-        class="sidebar-relogin-btn mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors"
+        class="sidebar-relogin-btn mt-2 w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors"
         @click="askRelogin"
       >
         <div class="i-carbon-renew shrink-0 text-base" />
@@ -699,27 +712,29 @@ async function copyToken() {
         v-show="showTokenDropdown"
         class="sidebar-token__details px-1 pt-2 transition-all"
       >
-        <div class="mb-1 flex items-center justify-between">
+        <div class="token-field" :class="{ 'is-revealed': tokenVisible }">
+          <code class="token-field__value">
+            {{ tokenVisible ? userStore.token : '••••••••••••••••' }}
+          </code>
           <button
-            class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
-            :class="tokenVisible ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'"
+            type="button"
+            class="token-field__action"
+            :title="tokenVisible ? '隐藏 Token' : '显示 Token'"
+            :aria-label="tokenVisible ? '隐藏 Token' : '显示 Token'"
             @click="tokenVisible = !tokenVisible"
           >
-            <div :class="tokenVisible ? 'i-carbon-view-off' : 'i-carbon-view'" />
-            <span>{{ tokenVisible ? '隐藏' : '显示' }}</span>
+            <span :class="tokenVisible ? 'i-carbon-view-off' : 'i-carbon-view'" />
           </button>
           <button
-            class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
-            :class="tokenCopied ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'"
+            type="button"
+            class="token-field__action"
+            :class="{ 'is-done': tokenCopied }"
+            :title="tokenCopied ? '已复制' : '复制 Token'"
+            :aria-label="tokenCopied ? '已复制' : '复制 Token'"
             @click="copyToken"
           >
-            <div v-if="tokenCopied" class="i-carbon-checkmark" />
-            <div v-else class="i-carbon-copy" />
-            <span>{{ tokenCopied ? '已复制' : '复制' }}</span>
+            <span :class="tokenCopied ? 'i-carbon-checkmark' : 'i-carbon-copy'" />
           </button>
-        </div>
-        <div class="break-all rounded-xl bg-gray-100/50 px-2 py-1.5 text-[10px] text-gray-600 font-mono dark:bg-gray-700/50 dark:text-gray-400">
-          {{ tokenVisible ? userStore.token : '••••••••••••••••' }}
         </div>
       </div>
     </div>
@@ -844,10 +859,10 @@ async function copyToken() {
 .app-sidebar {
   color: var(--ui-ink);
   border-right: 1px solid var(--ui-border);
-  background: rgba(250, 251, 247, 0.84);
+  background: color-mix(in srgb, var(--ui-bg) 84%, transparent);
   box-shadow:
     10px 0 32px rgba(55, 75, 61, 0.06),
-    inset -1px 0 0 rgba(255, 255, 255, 0.84);
+    inset -1px 0 0 var(--glass-highlight);
   transition:
     transform 0.2s ease,
     width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
@@ -858,26 +873,104 @@ async function copyToken() {
 .sidebar-brand {
   min-height: 62px;
   border-bottom: 1px solid var(--ui-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .brand-mark {
-  width: 22px;
-  height: 22px;
   flex: none;
+  filter: drop-shadow(0 2px 6px rgba(45, 122, 83, 0.22));
+}
+
+.token-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 3px 3px 3px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--glass-input);
+}
+
+.token-field__value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-field.is-revealed .token-field__value {
+  color: var(--ui-ink);
+  letter-spacing: 0;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.token-field__action {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--ui-muted);
+  font-size: 14px;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.token-field__action:hover {
   color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.token-field__action.is-done {
+  color: var(--ui-primary);
+}
+
+.token-field__action:focus-visible,
+.token-reset:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-primary) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.token-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  color: var(--ui-subtle);
+  font-size: 12px;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.token-reset:hover {
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
 }
 
 .sidebar-control {
   border: 1px solid var(--ui-border);
   border-radius: 12px;
   color: var(--ui-ink);
-  background: rgba(255, 255, 255, 0.56);
+  background: color-mix(in srgb, var(--ui-surface-strong) 56%, transparent);
 }
 
 .sidebar-control:hover {
   border-color: var(--ui-border-strong);
-  background: rgba(255, 255, 255, 0.82);
+  background: color-mix(in srgb, var(--ui-surface-strong) 82%, transparent);
 }
 
 .sidebar-control:focus-visible,
@@ -894,7 +987,7 @@ async function copyToken() {
   color: var(--ui-ink);
   background: var(--ui-surface-strong);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 1px 0 var(--glass-highlight),
     var(--ui-shadow-lg);
   -webkit-backdrop-filter: blur(18px) saturate(145%);
   backdrop-filter: blur(18px) saturate(145%);
@@ -902,7 +995,7 @@ async function copyToken() {
 
 .sidebar-footer {
   border-top: 1px solid var(--ui-border);
-  background: rgba(242, 246, 240, 0.58);
+  background: color-mix(in srgb, var(--ui-bg-soft) 58%, transparent);
 }
 
 .sidebar-footer__compact {
@@ -928,7 +1021,7 @@ async function copyToken() {
 
 .sidebar-footer__icon:hover {
   color: var(--ui-primary);
-  background: rgba(230, 241, 232, 0.82);
+  background: var(--ui-primary-soft);
 }
 
 .sidebar-status-dot {
@@ -937,7 +1030,7 @@ async function copyToken() {
   bottom: 7px;
   width: 7px;
   height: 7px;
-  border: 1.5px solid rgba(250, 251, 247, 0.96);
+  border: 1.5px solid color-mix(in srgb, var(--ui-bg) 96%, transparent);
   border-radius: 999px;
 }
 
@@ -961,7 +1054,7 @@ async function copyToken() {
 }
 
 nav a:hover {
-  background: rgba(230, 241, 232, 0.76);
+  background: var(--ui-primary-soft);
 }
 
 .nav-icon {
@@ -1161,7 +1254,7 @@ nav a:hover {
     color: var(--ui-ink);
     background: var(--ui-surface-strong);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      inset 0 1px 0 var(--glass-highlight),
       var(--ui-shadow-lg);
     -webkit-backdrop-filter: blur(18px) saturate(145%);
     backdrop-filter: blur(18px) saturate(145%);

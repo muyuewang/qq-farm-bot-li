@@ -198,13 +198,13 @@ onUnmounted(() => {
 
       <main class="autumn-scroll">
         <div v-if="!currentAccountId" class="autumn-state">
-          <span class="i-carbon-user-avatar" />
+          <span class="autumn-state__icon i-carbon-user-avatar" />
           <strong>请先选择账号</strong>
           <small>活动数据按当前账号加载</small>
         </div>
         <div v-else-if="!state" class="autumn-state">
           <div v-if="busy" class="autumn-spinner" />
-          <span v-else class="i-carbon-cloud-offline" />
+          <span v-else class="autumn-state__icon i-carbon-cloud-offline" />
           <strong>{{ busy ? '正在读取活动进度' : '暂未获取到活动数据' }}</strong>
           <button v-if="!busy" type="button" class="btn btn--ghost" @click="request()">
             <span class="i-carbon-renew" />重新加载
@@ -554,7 +554,7 @@ summary:focus-visible {
   padding: 24px;
   text-align: center;
 }
-.autumn-state > [class^='i-carbon'] {
+.autumn-state__icon {
   color: var(--muted);
   font-size: 34px;
   opacity: 0.6;

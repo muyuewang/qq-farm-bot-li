@@ -21,22 +21,40 @@ test('member and nonmember full replies decode actual entitlement and mall flags
  assert.equal(Number(mall.goods_list[2].reward_items[0].id),2121);
 });
 
-function harness({member=true,bag=[{id:1901,count:20},{id:1901,count:10}],bagFailure=false,refreshFailure=false,now=1790215551,slotType=4,mallFile='000327-recv.bin',diamond=7,transformGoods=goods=>goods}={}){
- const bought=[];let reads=0;
+function harness({member=true,bag=[{id:1901,count:20},{id:1901,count:10}],bagFailure=false,refreshFailure=false,vipRefreshFailure=false,vipStatusFailure=false,now=1790215551,slotType=4,mallFile='000327-recv.bin',diamond=7,transformGoods=goods=>goods}={}){
+ const bought=[];
  const mock=(name,exports)=>{const id=require.resolve(name);require.cache[id]={id,filename:id,loaded:true,exports};};
  mock('../dist/config/gameConfig',{getItemById:()=>({name:'item'}),getItemImageById:()=>''});
  mock('../dist/utils/utils',{toNum:v=>Number(v)||0,getServerTimeSec:()=>now});
- mock('../dist/services/qqvip',{refreshVipInfo:async()=>{},getQQVipRewardsStatus:async()=>({is_qq_vip:member,remaining_days:1562})});
+ mock('../dist/services/qqvip',{
+  refreshVipInfo:async()=>{if(vipRefreshFailure)throw Object.assign(new Error('网络繁忙，请稍候再试。'),{code:1000032});},
+  getQQVipRewardsStatus:async()=>{if(vipStatusFailure)throw Object.assign(new Error('网络繁忙，请稍候再试。'),{code:1000032});return {is_qq_vip:member,remaining_days:1562};},
+ });
  mock('../dist/services/warehouse',{getBag:async()=>{if(bagFailure)throw new Error('bag unavailable');return bag;},getBagItems:v=>v});
  mock('../dist/services/pay',{getDiamondBalance:async()=>diamond});
  mock('../dist/services/mystery-shop',{});
  mock('../dist/services/mall',{getMallListBySlotType:async slot=>{
-  reads++;if(refreshFailure&&bought.length)throw new Error('offline');
+  if(refreshFailure&&bought.length)throw new Error('offline');
   assert.equal(slot,slotType);const reply=decode(mallFile,'gamepb.mallpb.GetMallListBySlotTypeResponse');reply.goods_list=transformGoods(reply.goods_list);return reply;
  },purchaseMallGoods:async (id,count)=>{bought.push({id,count});return {goods_id:id,success:true,reward_items:[]};}});
  const id=require.resolve('../dist/services/commerce');delete require.cache[id];
  return {service:require(id),bought};
 }
+
+test('SVIP free gifts remain available when the optional membership refresh service is busy',async()=>{
+ const h=harness({vipRefreshFailure:true});
+ const catalog=await h.service.getMallCatalog(4);
+ assert.equal(catalog.membership.isSvip,true);
+ assert.equal(catalog.goods.find(g=>g.id===1053).purchasable,true);
+ await h.service.purchaseMallProduct(1053,1,4);
+ assert.deepEqual(h.bought,[{id:1053,count:1}]);
+});
+
+test('SVIP purchases still require a successful membership status read',async()=>{
+ const h=harness({vipStatusFailure:true});
+ await assert.rejects(h.service.purchaseMallProduct(1053,1,4),e=>e.code===1000032);
+ assert.equal(h.bought.length,0);
+});
 test('nonmember may browse but backend rejects every SVIP purchase',async()=>{
  const h=harness({member:false});const list=await h.service.getMallCatalog(4);
  assert.equal(list.goods.length,4);assert.ok(list.goods.every(g=>!g.purchasable));

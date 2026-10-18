@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MallGoodsDto } from '@/stores/commerce'
+import { NButton } from 'naive-ui/es/button'
 import { computed, ref, watch } from 'vue'
 import CommerceItemImage from './CommerceItemImage.vue'
 
@@ -33,60 +34,84 @@ function setCount(value: number) {
 <template>
   <div v-if="open && goods" class="purchase-mask" @click.self="!pending && emit('close')">
     <section class="purchase-dialog" role="dialog" aria-modal="true" :aria-label="`购买${goods.name}`">
-      <header>
-        <div>
-          <p>确认购买</p>
+      <!-- 头部：小图 + 名称 + 单价，主图不再单独占据大块面积 -->
+      <header class="purchase-head">
+        <CommerceItemImage :src="goods.rewards[0]?.image" :alt="goods.rewards[0]?.name" size="md" />
+        <div class="purchase-head__text">
           <h2>{{ goods.name }}</h2>
+          <p>
+            <template v-if="goods.isFree">
+              免费领取
+            </template>
+            <template v-else>
+              单价
+              <CommerceItemImage :src="goods.price.image" :alt="goods.price.name" size="sm" />
+              <b>{{ goods.price.count.toLocaleString() }}</b>
+              <del v-if="goods.originalPrice">{{ goods.originalPrice.toLocaleString() }}</del>
+            </template>
+            <span v-if="goods.discountText" class="purchase-tag">{{ goods.discountText }}</span>
+          </p>
         </div>
-        <button type="button" title="关闭" :disabled="pending" @click="emit('close')">
-          <div class="i-carbon-close" />
+        <button type="button" class="purchase-close" title="关闭" aria-label="关闭" :disabled="pending" @click="emit('close')">
+          <span class="i-carbon-close" />
         </button>
       </header>
 
-      <div class="purchase-product">
-        <CommerceItemImage :src="goods.rewards[0]?.image" :alt="goods.rewards[0]?.name" size="lg" />
-        <div class="purchase-rewards">
-          <span>每份获得</span>
-          <div v-for="reward in goods.rewards" :key="reward.id" class="reward-row">
+      <div class="purchase-body">
+        <div class="purchase-section-label">
+          每份包含<span v-if="goods.rewards.length > 1"> · {{ goods.rewards.length }} 件</span>
+        </div>
+        <ul class="purchase-rewards">
+          <li v-for="reward in goods.rewards" :key="reward.id">
             <CommerceItemImage :src="reward.image" :alt="reward.name" size="sm" />
-            <b>{{ reward.name }}</b>
-            <strong>x{{ reward.count }}</strong>
+            <span class="purchase-rewards__name">{{ reward.name }}</span>
+            <b>×{{ reward.count.toLocaleString() }}</b>
+          </li>
+        </ul>
+
+        <div class="purchase-row">
+          <div>
+            <span class="purchase-row__label">购买数量</span>
+            <small v-if="goods.limit">还可购买 {{ maxCount }} 份</small>
+          </div>
+          <div class="stepper">
+            <button type="button" title="减少" aria-label="减少" :disabled="pending || count <= 1" @click="setCount(count - 1)">
+              <span class="i-carbon-subtract" />
+            </button>
+            <input :value="count" inputmode="numeric" aria-label="购买数量" :disabled="pending" @input="setCount(Number(($event.target as HTMLInputElement).value))">
+            <button type="button" title="增加" aria-label="增加" :disabled="pending || count >= maxCount" @click="setCount(count + 1)">
+              <span class="i-carbon-add" />
+            </button>
           </div>
         </div>
-      </div>
 
-      <div class="purchase-controls">
-        <span>购买数量</span>
-        <div class="stepper">
-          <button type="button" title="减少" :disabled="pending || count <= 1" @click="setCount(count - 1)">
-            <div class="i-carbon-subtract" />
-          </button>
-          <input :value="count" inputmode="numeric" aria-label="购买数量" :disabled="pending" @input="setCount(Number(($event.target as HTMLInputElement).value))">
-          <button type="button" title="增加" :disabled="pending || count >= maxCount" @click="setCount(count + 1)">
-            <div class="i-carbon-add" />
-          </button>
+        <div class="purchase-row purchase-row--total">
+          <div>
+            <span class="purchase-row__label">合计</span>
+            <small v-if="!goods.isFree && goods.price.balance != null">余额 {{ goods.price.balance.toLocaleString() }}</small>
+          </div>
+          <strong v-if="goods.isFree" class="purchase-total is-free">免费</strong>
+          <strong v-else class="purchase-total" :class="{ 'is-short': insufficient }">
+            <CommerceItemImage :src="goods.price.image" :alt="goods.price.name" size="sm" />
+            {{ totalCost.toLocaleString() }}
+          </strong>
         </div>
+
+        <p v-if="balanceUnknown" class="purchase-error" role="alert">
+          余额暂不可用，请刷新商城
+        </p>
+        <p v-else-if="insufficient" class="purchase-error" role="alert">
+          {{ goods.price.name }}余额不足
+        </p>
       </div>
 
-      <div class="purchase-total">
-        <span>合计</span>
-        <strong v-if="goods.isFree">免费</strong>
-        <strong v-else><CommerceItemImage :src="goods.price.image" :alt="goods.price.name" size="sm" />{{ totalCost.toLocaleString() }}</strong>
-      </div>
-      <p v-if="balanceUnknown" class="purchase-error">余额暂不可用，请刷新商城</p>
-      <p v-else-if="insufficient" class="purchase-error">
-        {{ goods.price.name }}余额不足
-      </p>
-
-      <footer>
-        <button type="button" class="secondary" :disabled="pending" @click="emit('close')">
+      <footer class="purchase-foot">
+        <NButton :disabled="pending" @click="emit('close')">
           取消
-        </button>
-        <button type="button" class="primary" :disabled="pending || insufficient || balanceUnknown || !goods.purchasable" @click="emit('confirm', count)">
-          <div v-if="pending" class="i-carbon-circle-dash animate-spin" />
-          <div v-else class="i-carbon-shopping-cart-plus" />
-          {{ pending ? '购买中' : '确认购买' }}
-        </button>
+        </NButton>
+        <NButton type="primary" :loading="pending" :disabled="pending || insufficient || balanceUnknown || !goods.purchasable" @click="emit('confirm', count)">
+          {{ pending ? '购买中' : goods.isFree ? '确认领取' : '确认购买' }}
+        </NButton>
       </footer>
     </section>
   </div>
@@ -104,163 +129,264 @@ function setCount(value: number) {
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
 }
+
 .purchase-dialog {
-  width: min(520px, 100%);
-  max-height: min(720px, calc(100dvh - 32px));
-  overflow: auto;
+  width: min(440px, 100%);
+  max-height: min(680px, calc(100dvh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--ui-border);
-  border-radius: 12px;
+  border-radius: var(--ui-radius-card);
   color: var(--ui-ink);
   background: var(--ui-surface-strong);
   box-shadow: var(--ui-shadow-lg);
 }
-header {
+
+.purchase-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 20px 22px 16px;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 18px 16px 20px;
   border-bottom: 1px solid var(--ui-border);
 }
-header p {
-  margin: 0 0 3px;
-  color: var(--ui-primary);
+
+.purchase-head :deep(.item-image--md) {
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ui-surface-soft);
+}
+
+.purchase-head__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.purchase-head h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-head p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-head p b {
+  color: var(--ui-warning);
+  font-size: 13px;
+}
+
+.purchase-head p del {
+  color: var(--ui-subtle);
+}
+
+.purchase-head p :deep(.item-image--sm),
+.purchase-total :deep(.item-image--sm) {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+}
+
+.purchase-tag {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.purchase-close {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  flex: none;
+  align-self: flex-start;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--ui-muted);
+  font-size: 18px;
+}
+
+.purchase-close:hover:not(:disabled) {
+  background: var(--ui-surface-soft);
+}
+
+.purchase-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 4px;
+  overflow-y: auto;
+}
+
+.purchase-section-label {
+  color: var(--ui-muted);
   font-size: 12px;
   font-weight: 600;
 }
-header h2 {
-  overflow-wrap: anywhere;
-  margin: 0;
-  font-size: 20px;
-  letter-spacing: 0;
-}
-header button,
-.stepper button {
+
+.purchase-rewards {
   display: grid;
-  place-items: center;
-  border: 0;
-  color: var(--ui-muted);
-  background: transparent;
-  cursor: pointer;
-}
-header button {
-  flex-shrink: 0;
-  padding: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  font-size: 20px;
-}
-header button:hover,
-.stepper button:hover {
+  max-height: 232px;
+  gap: 2px;
+  margin: -6px 0 0;
+  padding: 6px;
+  overflow-y: auto;
+  border-radius: var(--ui-radius-control);
   background: var(--ui-surface-soft);
+  list-style: none;
 }
-header > div { min-width: 0; }
-.purchase-product {
+
+.purchase-rewards li {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 20px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 20px 22px;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 8px;
 }
-.purchase-rewards > span,
-.purchase-controls > span {
-  color: var(--ui-muted);
-  font-size: 12px;
+
+.purchase-rewards li :deep(.item-image--sm) {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ui-surface-strong);
 }
-.reward-row {
-  display: grid;
-  grid-template-columns: 36px 1fr auto;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-.reward-row b {
+
+.purchase-rewards__name {
+  overflow: hidden;
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.reward-row strong,
-.purchase-total strong {
-  color: var(--ui-warning);
+
+.purchase-rewards b {
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
-.purchase-controls,
-.purchase-total {
+
+.purchase-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 22px;
-  padding: 14px 0;
-  border-top: 1px solid var(--ui-border);
+  gap: 12px;
 }
+
+.purchase-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.purchase-row__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.purchase-row small {
+  color: var(--ui-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-row--total {
+  padding-top: 14px;
+  border-top: 1px dashed var(--ui-border-strong);
+}
+
+.purchase-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-warning);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-total.is-free {
+  color: var(--ui-primary);
+}
+
+.purchase-total.is-short {
+  color: var(--ui-danger);
+}
+
 .stepper {
+  height: 34px;
   display: grid;
-  grid-template-columns: 36px 58px 36px;
-  height: 36px;
+  grid-template-columns: 34px 56px 34px;
   overflow: hidden;
   border: 1px solid var(--ui-border);
-  border-radius: 9px;
+  border-radius: var(--ui-radius-control);
+  background: var(--glass-input);
 }
+
 .stepper button {
-  width: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--ui-muted);
 }
+
+.stepper button:hover:not(:disabled) {
+  color: var(--ui-primary);
+  background: var(--ui-surface-soft);
+}
+
+.stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .stepper input {
   min-width: 0;
   border: 0;
   border-inline: 1px solid var(--ui-border);
   outline: 0;
   color: var(--ui-ink);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
   text-align: center;
-  background: var(--ui-surface);
+  font-variant-numeric: tabular-nums;
 }
-.purchase-total strong {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-}
+
 .purchase-error {
-  margin: 0 22px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
   color: var(--ui-danger);
+  background: var(--ui-danger-soft);
   font-size: 12px;
-  text-align: right;
 }
-footer {
-  display: flex;
-  justify-content: flex-end;
+
+.purchase-foot {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
   gap: 10px;
-  padding: 16px 22px 20px;
+  padding: 16px 20px 18px;
 }
-footer button {
-  display: flex;
-  min-width: 108px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-footer .secondary {
-  border-color: var(--ui-border-strong);
-  color: var(--ui-ink);
-  background: var(--ui-surface);
-}
-footer .primary {
-  border-color: var(--ui-primary);
-  color: white;
-  background: var(--ui-primary);
-}
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-@media (max-width: 520px) {
-  .purchase-product {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-  .purchase-rewards {
-    width: 100%;
-  }
+
+.purchase-foot :deep(.n-button) {
+  height: 38px;
 }
 </style>

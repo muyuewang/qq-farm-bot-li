@@ -15,8 +15,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      vue(),
       UnoCSS() as any,
+      vue(),
       ...(compressedBuild
         ? [viteCompression({
             verbose: true,

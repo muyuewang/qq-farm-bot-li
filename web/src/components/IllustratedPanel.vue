@@ -8,6 +8,7 @@ import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useIllustratedStore } from '@/stores/illustrated'
 import { useToastStore } from '@/stores/toast'
@@ -18,6 +19,7 @@ const toast = useToastStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { data, loading, error } = storeToRefs(illustratedStore)
 const currentType = ref<'crop' | 'mutant'>('crop')
+const currentMutantGroup = ref('gold')
 const detailsOpen = ref(false)
 const claiming = ref(false)
 const rewardList = ref<HTMLElement | null>(null)
@@ -51,8 +53,9 @@ const mutantGroups = computed(() => {
     { key: 'gold', label: '黄金果实', items: items.filter((item: any) => item.group === 'gold') },
     { key: 'decoration', label: '装扮果实', items: items.filter((item: any) => item.group === 'decoration') },
     { key: 'activity', label: '活动果实', items: items.filter((item: any) => item.group === 'activity') },
-  ]
+  ] as const
 })
+const selectedMutantGroup = computed(() => mutantGroups.value.find(group => group.key === currentMutantGroup.value) || mutantGroups.value[0])
 
 function progressPercent(value: any, next: any) {
   const current = Math.max(0, Number(value) || 0)
@@ -96,7 +99,7 @@ async function purchaseSeed() {
 function seedAvailability(item: any) {
   const seed = item.shopSeed
   if (!seed)
-    return '当前商店未提供购买信息'
+    return ''
   if (seed.unknownMeta)
     return '活动/其他途径获取'
   if (seed.locked)
@@ -165,108 +168,110 @@ watch(isConnected, refresh)
 </script>
 
 <template>
-  <div class="space-y-5">
-    <div class="cartoon-card rounded-2xl bg-white p-5 shadow-lg dark:bg-gray-800">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 class="flex items-center gap-2 text-xl font-bold font-display">
-            <span class="i-carbon-book text-amber-600" /> 图鉴
-          </h3>
-          <p class="mt-1 text-sm text-gray-500">
-            查看作物收藏、超变果实与图鉴属性加成
-          </p>
+  <div class="illustrated">
+    <!-- 标题、类型切换与进度：桌面端吸顶，列表随页面滚动。 -->
+    <div class="illustrated-head">
+      <div class="illustrated-head__card">
+        <div class="illustrated-head__top">
+          <div class="min-w-0">
+            <h3 class="illustrated-head__title">
+              <span class="i-carbon-book" /> 图鉴
+            </h3>
+            <p class="illustrated-head__desc">
+              作物收藏、超变果实与图鉴属性加成
+            </p>
+          </div>
+          <NButton secondary :loading="loading" :disabled="!currentAccountId || !isConnected" @click="refresh">
+            <template #icon>
+              <span class="i-carbon-renew" />
+            </template>
+            刷新
+          </NButton>
         </div>
-        <NButton secondary :loading="loading" :disabled="!currentAccountId || !isConnected" @click="refresh">
-          <span class="i-carbon-renew mr-1" /> 刷新
-        </NButton>
-      </div>
 
-      <NTabs v-model:value="currentType" type="segment" animated>
-        <NTab name="crop">
-          作物图鉴
-        </NTab>
-        <NTab name="mutant">
-          超变图鉴
-        </NTab>
-      </NTabs>
-    </div>
+        <NTabs v-model:value="currentType" type="segment" animated>
+          <NTab name="crop">
+            作物图鉴
+          </NTab>
+          <NTab name="mutant">
+            超变图鉴
+          </NTab>
+        </NTabs>
 
-    <div v-if="!currentAccountId" class="cartoon-card rounded-2xl p-12 text-center text-gray-500 shadow-md">
-      <span class="i-carbon-user-avatar mb-3 block text-5xl" /> 请先选择农场账号
-    </div>
-    <div v-else-if="!isConnected" class="cartoon-card rounded-2xl p-12 text-center text-gray-500 shadow-md">
-      <span class="i-carbon-network-4 mb-3 block text-5xl" /> 请先启动账号
-    </div>
-    <div v-else-if="loading && !data" class="flex justify-center cartoon-card rounded-2xl p-12 shadow-md">
-      <span class="i-svg-spinners-90-ring-with-bg text-4xl text-amber-500" />
-    </div>
-    <div v-else-if="error" class="cartoon-card rounded-2xl p-8 text-center text-red-600 shadow-md">
-      <div>{{ error }}</div>
-      <NButton class="mt-3" secondary type="error" @click="refresh">
-        重试
-      </NButton>
-    </div>
-    <template v-else-if="book">
-      <section class="illustrated-progress rounded-2xl p-4">
-        <div class="illustrated-progress__badge">
-          <b>{{ book.level || 0 }}</b><small>等级</small>
-        </div>
-        <div class="illustrated-progress__main">
-          <div class="flex items-center justify-between gap-2">
-            <strong>{{ currentType === 'mutant' ? '超变图鉴进度' : '作物图鉴进度' }}</strong>
-            <div class="flex items-center gap-2">
-              <span class="text-sm font-bold">{{ book.progress || 0 }} / {{ book.nextLevelProgress || '—' }}</span><NButton size="tiny" secondary @click="detailsOpen = true">
-                详情
+        <section v-if="book && currentAccountId && isConnected && !error" class="illustrated-progress">
+          <div class="illustrated-progress__badge">
+            <b>{{ book.level || 0 }}</b><small>等级</small>
+          </div>
+          <div class="illustrated-progress__main">
+            <div class="illustrated-progress__heading">
+              <strong>{{ currentType === 'mutant' ? '超变图鉴进度' : '作物图鉴进度' }}</strong>
+              <span class="illustrated-progress__value">{{ book.progress || 0 }} / {{ book.nextLevelProgress || '—' }}</span>
+              <NButton class="illustrated-progress__details" size="tiny" secondary @click="detailsOpen = true">
+                奖励详情
               </NButton>
             </div>
+            <NProgress class="mt-2" type="line" status="success" :percentage="progressPercent(book.progress, book.nextLevelProgress)" :show-indicator="false" />
           </div>
-          <NProgress class="mt-2" type="line" status="success" :percentage="progressPercent(book.progress, book.nextLevelProgress)" :show-indicator="false" />
-        </div>
-      </section>
+        </section>
+      </div>
+    </div>
 
-      <div v-if="currentType === 'mutant'" class="space-y-4">
-        <div v-for="group in mutantGroups" :key="group.key" class="cartoon-card rounded-2xl bg-white p-5 shadow-lg dark:bg-gray-800">
-          <h4 class="mb-3 text-lg font-bold">
-            {{ group.label }} <span class="text-sm text-gray-400">({{ group.items.length }})</span>
-          </h4>
-          <div v-if="group.items.length" class="grid grid-cols-4 gap-2 lg:grid-cols-6 md:grid-cols-5">
-            <div v-for="item in group.items" :key="item.seedId" class="border rounded-xl p-3" :class="item.unlocked ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-950/20' : 'border-gray-200 opacity-55 dark:border-gray-700'">
+    <EmptyState v-if="!currentAccountId" title="请先选择账号" description="在左侧选择账号后查看图鉴进度" icon="i-carbon-user-avatar" />
+    <EmptyState v-else-if="!isConnected" title="账号未运行" description="请先启动账号；启动后会读取图鉴进度" icon="i-carbon-connection-signal-off" />
+    <div v-else-if="loading && !data" class="flex justify-center py-12">
+      <span class="i-svg-spinners-90-ring-with-bg text-3xl text-green-600" />
+    </div>
+    <EmptyState v-else-if="error" tone="error" title="图鉴读取失败" :description="error" icon="i-carbon-warning-alt">
+      <NButton secondary @click="refresh">
+        重新读取
+      </NButton>
+    </EmptyState>
+    <template v-else-if="book">
+      <div v-if="currentType === 'mutant'" class="illustrated-collection cartoon-card rounded-2xl bg-white p-5 shadow-lg dark:bg-gray-800">
+        <NTabs v-model:value="currentMutantGroup" class="shrink-0" type="line" animated>
+          <NTab v-for="group in mutantGroups" :key="group.key" :name="group.key">
+            {{ group.label }} <span class="ml-1 text-xs text-gray-400">{{ group.items.length }}</span>
+          </NTab>
+        </NTabs>
+        <div :key="currentMutantGroup" class="illustrated-list custom-scrollbar" role="region" :aria-label="`${selectedMutantGroup.label}列表`" tabindex="0">
+          <div v-if="selectedMutantGroup.items.length" class="illustrated-grid">
+            <div v-for="item in selectedMutantGroup.items" :key="item.seedId" class="border rounded-xl p-3" :class="item.unlocked ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-950/20' : 'border-gray-200 opacity-55 dark:border-gray-700'">
               <img v-if="item.image" :src="item.image" alt="" class="mx-auto h-10 w-10 object-contain sm:h-12 sm:w-12">
-              <div class="mt-1 truncate text-center text-xs font-medium">
+              <div class="illustrated-item__name mt-1 text-center text-xs font-medium" :title="item.name">
                 {{ item.name }}
               </div>
-              <div class="text-center text-xs text-gray-500">
+              <div class="whitespace-nowrap text-center text-xs text-gray-500">
                 {{ item.unlocked ? '已解锁' : '未解锁' }}
               </div>
             </div>
           </div>
-          <div v-else class="text-sm text-gray-400">
-            暂无记录
-          </div>
+          <EmptyState v-else bare title="暂无记录" :description="`当前没有${selectedMutantGroup.label}图鉴记录`" icon="i-carbon-book" />
         </div>
       </div>
-      <div v-else class="cartoon-card rounded-2xl bg-white p-5 shadow-lg dark:bg-gray-800">
-        <div class="mb-3 flex items-center justify-between">
+      <div v-else class="illustrated-collection cartoon-card rounded-2xl bg-white p-5 shadow-lg dark:bg-gray-800">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <h4 class="text-lg font-bold">
             作物图鉴
           </h4><span class="text-sm text-gray-500">已收藏 {{ collectedCount }} / {{ book.items?.length || 0 }}</span>
         </div>
-        <div class="grid grid-cols-4 gap-2 lg:grid-cols-6 md:grid-cols-5">
-          <div v-for="item in book.items" :key="item.seedId" class="border rounded-xl p-3" :class="item.unlocked ? 'border-green-300 bg-green-50/50 dark:bg-green-950/20' : 'border-gray-200 opacity-55 dark:border-gray-700'">
-            <img v-if="item.image" :src="item.image" alt="" class="mx-auto h-10 w-10 object-contain sm:h-12 sm:w-12">
-            <div class="mt-1 truncate text-center text-xs font-medium">
-              {{ item.name }}
-            </div>
-            <div class="text-center text-xs text-gray-500">
-              {{ item.unlocked ? '已收藏' : '未收藏' }}
-            </div>
-            <div v-if="item.shopSeed?.goodsId && !item.shopSeed.locked && !item.shopSeed.soldOut && !item.shopSeed.unknownMeta" class="mt-2 flex justify-center">
-              <NButton size="tiny" type="primary" :loading="purchasingSeedId === item.seedId" :disabled="purchasingSeedId !== null" @click="openSeedPurchase(item)">
-                购买
-              </NButton>
-            </div>
-            <div v-else class="mt-2 min-h-8 text-center text-[10px] text-gray-500 leading-4">
-              {{ seedAvailability(item) }}
+        <div class="illustrated-list custom-scrollbar" role="region" aria-label="作物图鉴列表" tabindex="0">
+          <div class="illustrated-grid">
+            <div v-for="item in book.items" :key="item.seedId" class="border rounded-xl p-3" :class="item.unlocked ? 'border-green-300 bg-green-50/50 dark:bg-green-950/20' : 'border-gray-200 opacity-55 dark:border-gray-700'">
+              <img v-if="item.image" :src="item.image" alt="" class="mx-auto h-10 w-10 object-contain sm:h-12 sm:w-12">
+              <div class="illustrated-item__name mt-1 text-center text-xs font-medium" :title="item.name">
+                {{ item.name }}
+              </div>
+              <div class="whitespace-nowrap text-center text-xs text-gray-500">
+                {{ item.unlocked ? '已收藏' : '未收藏' }}
+              </div>
+              <div v-if="item.shopSeed?.goodsId && !item.shopSeed.locked && !item.shopSeed.soldOut && !item.shopSeed.unknownMeta" class="mt-2 flex justify-center">
+                <NButton size="tiny" type="primary" :loading="purchasingSeedId === item.seedId" :disabled="purchasingSeedId !== null" @click="openSeedPurchase(item)">
+                  购买
+                </NButton>
+              </div>
+              <div v-else-if="seedAvailability(item)" class="mt-2 text-center text-[11px] text-gray-500 leading-4">
+                {{ seedAvailability(item) }}
+              </div>
             </div>
           </div>
         </div>
@@ -354,6 +359,60 @@ watch(isConnected, refresh)
 </template>
 
 <style scoped>
+.illustrated {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.illustrated-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.illustrated-list {
+  min-width: 0;
+}
+.illustrated-list:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.illustrated-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+}
+.illustrated-item__name {
+  display: -webkit-box;
+  min-height: 2.8em;
+  line-height: 1.4;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 380px) {
+  .illustrated-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 640px) {
+  .illustrated-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 768px) {
+  .illustrated-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .illustrated-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
 .illustrated-rewards-modal {
   max-height: calc(100dvh - 32px);
 }
@@ -415,63 +474,132 @@ watch(isConnected, refresh)
   font-size: 12px;
   white-space: nowrap;
 }
+.illustrated-head {
+  flex-shrink: 0;
+}
+/* 桌面端标题与进度吸在 Tab 下方；手机端随内容滚走，给作物列表留出阅读空间。 */
+@media (min-width: 1024px) {
+  .illustrated-head {
+    position: sticky;
+    top: var(--sticky-top, 0px);
+    z-index: 6;
+    padding-bottom: 12px;
+    margin-bottom: -12px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--ui-bg) 92%, transparent) 70%, transparent);
+  }
+}
+.illustrated-head__card {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: color-mix(in srgb, var(--ui-surface-strong) 94%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--ui-shadow-sm);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+.illustrated-head__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.illustrated-head__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.illustrated-head__title span {
+  color: var(--ui-warning);
+  font-size: 20px;
+}
+.illustrated-head__desc {
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
 .illustrated-progress {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  color: #263d36;
-  border: 1px solid rgba(42, 112, 86, 0.18);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow:
-    0 12px 30px rgba(40, 74, 61, 0.08),
-    inset 0 1px rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px);
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--ui-border-strong);
+  color: var(--ui-ink);
 }
 .illustrated-progress__badge {
-  width: 58px;
-  height: 58px;
+  width: 52px;
+  height: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(38, 129, 94, 0.16);
   border-radius: 14px;
-  color: #1f7453;
-  background: rgba(226, 245, 237, 0.9);
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
 }
 .illustrated-progress__badge b {
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .illustrated-progress__badge small {
+  margin-top: 3px;
   font-size: 10px;
+  opacity: 0.8;
 }
 .illustrated-progress__main {
   min-width: 0;
 }
+.illustrated-progress__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 8px;
+}
 .illustrated-progress__main strong {
-  color: #263d36;
+  color: var(--ui-ink);
+  font-size: 14px;
 }
-:global(.dark) .illustrated-progress {
-  color: #d8e7e1;
-  border-color: rgba(116, 174, 151, 0.2);
-  background: rgba(31, 41, 55, 0.78);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
-}
-:global(.dark) .illustrated-progress__badge {
-  color: #9bd9bd;
-  border-color: rgba(116, 174, 151, 0.22);
-  background: rgba(45, 91, 73, 0.48);
-}
-:global(.dark) .illustrated-progress__main strong {
-  color: #e5eee9;
+.illustrated-progress__value {
+  white-space: nowrap;
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 520px) {
+  .illustrated-head__card {
+    gap: 14px;
+    padding: 16px;
+  }
   .illustrated-progress {
-    grid-template-columns: 54px minmax(0, 1fr);
-    gap: 8px;
-    padding: 12px;
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .illustrated-progress__badge {
+    width: 46px;
+    height: 46px;
+  }
+  .illustrated-progress__heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .illustrated-progress__heading strong {
+    grid-area: 1 / 1;
+  }
+  .illustrated-progress__value {
+    grid-area: 2 / 1;
+  }
+  .illustrated-progress__details {
+    grid-area: 1 / 2 / 3 / 3;
   }
 }
 </style>

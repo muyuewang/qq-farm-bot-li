@@ -68,6 +68,9 @@ function handleRouterClick(event: MouseEvent, navigate: (event?: MouseEvent) => 
     :text="variant === 'text'"
     @click="handleClick"
   >
+    <template v-if="$slots.icon" #icon>
+      <slot name="icon" />
+    </template>
     <slot />
   </NButton>
   <RouterLink v-else v-slot="{ href: routerHref, navigate }" :to="to" custom>
@@ -86,6 +89,9 @@ function handleRouterClick(event: MouseEvent, navigate: (event?: MouseEvent) => 
       :text="variant === 'text'"
       @click="handleRouterClick($event, navigate)"
     >
+      <template v-if="$slots.icon" #icon>
+        <slot name="icon" />
+      </template>
       <slot />
     </NButton>
   </RouterLink>

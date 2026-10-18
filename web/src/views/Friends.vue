@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
 import { NButtonGroup } from 'naive-ui/es/button-group'
 import { NCard } from 'naive-ui/es/card'
+import { NDropdown } from 'naive-ui/es/dropdown'
 import { NModal } from 'naive-ui/es/modal'
 import { NPagination } from 'naive-ui/es/pagination'
 import { NSpin } from 'naive-ui/es/spin'
@@ -17,6 +18,7 @@ import LandCard from '@/components/LandCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
@@ -610,18 +612,52 @@ async function handleDeleteFriend(friend: any, e: Event) {
   )
 }
 
-function getFriendStatusText(friend: any) {
-  const p = friend.plant || {}
-  const info = []
-  if (p.stealNum)
-    info.push(`偷${p.stealNum}`)
-  if (p.dryNum)
-    info.push(`水${p.dryNum}`)
-  if (p.weedNum)
-    info.push(`草${p.weedNum}`)
-  if (p.insectNum)
-    info.push(`虫${p.insectNum}`)
-  return info.length ? info.join(' ') : '无操作'
+const FRIEND_ACTION_TAGS = [
+  { key: 'stealNum', kind: 'steal', label: '可偷', icon: 'i-carbon-wheat' },
+  { key: 'dryNum', kind: 'water', label: '缺水', icon: 'i-carbon-rain-drop' },
+  { key: 'weedNum', kind: 'weed', label: '杂草', icon: 'i-carbon-clean' },
+  { key: 'insectNum', kind: 'bug', label: '虫害', icon: 'i-carbon-debug' },
+] as const
+
+// 只展示有数量的可操作状态，“无操作”不再逐行占位。
+function friendActionTags(friend: any) {
+  const plant = friend?.plant || {}
+  return FRIEND_ACTION_TAGS
+    .map(tag => ({ ...tag, count: Number(plant[tag.key]) || 0 }))
+    .filter(tag => tag.count > 0)
+}
+
+function friendCanSteal(friend: any) {
+  return Number(friend?.plant?.stealNum) > 0
+}
+
+function friendNeedsCare(friend: any) {
+  const plant = friend?.plant || {}
+  return Number(plant.dryNum) > 0 || Number(plant.weedNum) > 0 || Number(plant.insectNum) > 0
+}
+
+function friendMoreOptions(friend: any) {
+  const blocked = blacklistGidSet.value.has(Number(friend.gid))
+  const options: any[] = [
+    { key: 'blacklist', label: blocked ? '移出黑名单' : '加入黑名单' },
+  ]
+  if (isQqAccount.value && knownFriendGidSet.value.has(Number(friend.gid)))
+    options.push({ key: 'unsync', label: '移出同步列表' })
+  options.push(
+    { type: 'divider', key: 'divider' },
+    { key: 'delete', label: '删除好友', disabled: !currentAccountRunning.value, props: { style: 'color: var(--ui-danger)' } },
+  )
+  return options
+}
+
+function handleFriendMore(key: string, friend: any) {
+  const event = { stopPropagation() {} } as Event
+  if (key === 'blacklist')
+    handleToggleBlacklist(friend, event)
+  else if (key === 'unsync')
+    handleRemoveKnownFriendGid(friend, event)
+  else if (key === 'delete')
+    handleDeleteFriend(friend, event)
 }
 
 function getFriendLevel(friend: any) {
@@ -642,6 +678,11 @@ function formatFriendGold(value: unknown) {
   const gold = Number.parseInt(String(value ?? ''), 10)
   if (!Number.isFinite(gold) || gold < 0)
     return '0'
+  // 标签里用紧凑写法，完整数值放在 title 中。
+  if (gold >= 100000000)
+    return `${Number((gold / 100000000).toFixed(2))}亿`
+  if (gold >= 10000)
+    return `${Number((gold / 10000).toFixed(1))}万`
   return gold.toLocaleString('zh-CN')
 }
 
@@ -850,33 +891,7 @@ async function handleBatchAddKnownFriendGids() {
 
 <template>
   <div class="page-stack">
-    <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <h2 class="flex items-center gap-2 text-2xl font-bold font-display">
-        <span class="i-carbon-user-multiple" />
-        好友
-      </h2>
-      <div class="flex items-center gap-3">
-        <div v-if="activeTab === 'friends'">
-          <BaseInput
-            v-model="searchKeyword"
-            placeholder="搜索好友..."
-            clearable
-            class="w-full sm:w-64"
-          />
-        </div>
-        <div v-if="activeTab === 'friends' && friends.length" class="text-sm text-gray-500">
-          共 {{ filteredFriends.length }}/{{ friends.length }} 名好友
-        </div>
-        <div v-if="activeTab === 'blacklist'" class="text-sm text-gray-500">
-          共 {{ blacklist.length }} 人
-        </div>
-        <div v-if="activeTab === 'visitors' && interactRecords.length" class="text-sm text-gray-500">
-          共 {{ filteredInteractRecords.length }}/{{ interactRecords.length }} 条记录
-        </div>
-      </div>
-    </div>
-
-    <NTabs class="mb-4" :value="activeTab" type="line" @update:value="setActiveTab">
+    <NTabs class="page-tabs" :value="activeTab" type="line" @update:value="setActiveTab">
       <NTab v-for="tab in TABS" :key="tab.key" :name="tab.key">
         <span class="inline-flex items-center gap-2">
           <span :class="tab.icon" />
@@ -888,33 +903,41 @@ async function handleBatchAddKnownFriendGids() {
       </NTab>
     </NTabs>
 
+    <div class="page-toolbar panel-sticky panel-sticky--page">
+      <span class="text-sm text-gray-500">
+        <template v-if="activeTab === 'friends'">共 {{ filteredFriends.length }}/{{ friends.length }} 名好友</template>
+        <template v-else-if="activeTab === 'blacklist'">共 {{ blacklist.length }} 人</template>
+        <template v-else>共 {{ filteredInteractRecords.length }}/{{ interactRecords.length }} 条记录</template>
+      </span>
+      <div v-if="activeTab === 'friends'" class="page-toolbar__actions friends-toolbar">
+        <BaseInput
+          v-model="searchKeyword"
+          placeholder="搜索好友名称或 GID"
+          clearable
+          class="friends-search"
+        />
+        <NButton
+          secondary
+          :loading="loading"
+          :disabled="!currentAccountId || !currentAccountRunning"
+          title="刷新好友列表"
+          aria-label="刷新好友列表"
+          @click="handleRefreshFriends"
+        >
+          <template #icon>
+            <span class="i-carbon-renew" />
+          </template>
+        </NButton>
+      </div>
+    </div>
+
     <div v-if="loading || interactLoading" class="flex justify-center py-12">
       <NSpin size="large" />
     </div>
 
-    <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-      <span class="i-carbon-user-avatar text-4xl text-gray-400" />
-      <div>
-        <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
-          未登录账号
-        </div>
-        <div class="mt-1 text-sm text-gray-400">
-          请先添加农场账号
-        </div>
-      </div>
-    </div>
+    <EmptyState v-else-if="!currentAccountId" title="请先选择账号" description="添加并选择账号后查看好友" icon="i-carbon-user-avatar" />
 
-    <div v-else-if="!currentAccountRunning" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-      <span class="i-carbon-network-4 text-4xl text-gray-400" />
-      <div>
-        <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
-          账号未运行
-        </div>
-        <div class="mt-1 text-sm text-gray-400">
-          请先启动账号；启动后土地请求的具体连接错误会在好友卡片中显示
-        </div>
-      </div>
-    </div>
+    <EmptyState v-else-if="!currentAccountRunning" title="账号未运行" description="启动账号后读取好友列表" icon="i-carbon-connection-signal-off" />
 
     <template v-else>
       <div v-if="activeTab === 'friends'" class="space-y-4">
@@ -987,137 +1010,92 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <template v-else>
-          <div class="flex flex-wrap items-center gap-2 farm-card rounded-2xl bg-white p-3 shadow-md dark:bg-gray-800">
-            <div class="flex-1" />
-            <BaseButton
-              variant="secondary"
-              size="sm"
-              :loading="loading"
-              @click="handleRefreshFriends"
-            >
-              刷新列表
-            </BaseButton>
-          </div>
-
           <div
             v-for="friend in paginatedFriends"
             :key="friend.gid"
-            class="overflow-hidden cartoon-card rounded-2xl bg-white shadow-md dark:bg-gray-800"
+            class="friend-card"
+            :class="{ 'is-expanded': expandedFriends.has(String(friend.gid)), 'is-blocked': blacklistGidSet.has(Number(friend.gid)) }"
           >
             <div
-              class="flex flex-col cursor-pointer justify-between gap-4 p-4 transition sm:flex-row sm:items-center hover:bg-gray-50 dark:hover:bg-gray-700/50"
-              :class="blacklistGidSet.has(Number(friend.gid)) ? 'opacity-50' : ''"
+              class="friend-row"
+              role="button"
+              tabindex="0"
+              :aria-expanded="expandedFriends.has(String(friend.gid))"
+              :aria-label="`${friend.name}，点击查看土地`"
               @click="toggleFriend(friend.gid)"
+              @keydown.enter.self.prevent="toggleFriend(friend.gid)"
+              @keydown.space.self.prevent="toggleFriend(friend.gid)"
             >
-              <div class="flex items-center gap-3">
-                <div class="h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-600 dark:ring-gray-700">
-                  <img
-                    v-if="canShowFriendAvatar(friend)"
-                    :src="getFriendAvatar(friend)"
-                    class="h-full w-full object-cover"
-                    loading="lazy"
-                    @error="handleFriendAvatarError(friend)"
-                  >
-                  <span v-else class="i-carbon-user text-gray-400" />
+              <div class="friend-avatar">
+                <img
+                  v-if="canShowFriendAvatar(friend)"
+                  :src="getFriendAvatar(friend)"
+                  alt=""
+                  loading="lazy"
+                  @error="handleFriendAvatarError(friend)"
+                >
+                <span v-else class="i-carbon-user" />
+              </div>
+
+              <div class="friend-main">
+                <div class="friend-name-row">
+                  <strong class="friend-name" :title="friend.name">{{ friend.name }}</strong>
+                  <span class="friend-gid">{{ friend.gid }}</span>
+                  <span v-if="blacklistGidSet.has(Number(friend.gid))" class="f-tag f-tag--blocked">已屏蔽</span>
                 </div>
-                <div>
-                  <div class="flex items-center gap-2 font-bold">
-                    {{ friend.name }} ({{ friend.gid }})
-
-                    <span v-if="blacklistGidSet.has(Number(friend.gid))" class="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">已屏蔽</span>
-                  </div>
-                  <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-                    <span
-                      v-if="getFriendLevel(friend) > 0"
-                      class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
-                    >
-                      Lv.{{ getFriendLevel(friend) }}
-                    </span>
-                    <span
-                      v-if="getFriendGold(friend) > 0"
-                      class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                    >
-                      金币 {{ formatFriendGold(friend.gold) }}
-                    </span>
-
-                    <span
-                      class="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
-                      :class="friendPetBadge(friend).class"
-                      :title="friendPetBadge(friend).title"
-                    >
-                      <img
-                        v-if="friendPetBadge(friend).image"
-                        :src="friendPetBadge(friend).image"
-                        class="h-3.5 w-3.5 object-contain"
-                        alt=""
-                        loading="lazy"
-                      >
-                      {{ friendPetBadge(friend).text }}
-                    </span>
-                  </div>
-                  <div class="text-sm" :class="getFriendStatusText(friend) !== '无操作' ? 'text-green-500 font-medium' : 'text-gray-400'">
-                    <span v-if="getFriendStatusText(friend) !== '无操作'" class="farm-badge inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-600 dark:bg-green-900/20 dark:text-green-400">
-                      {{ getFriendStatusText(friend) }}
-                    </span>
-                    <span v-else>{{ getFriendStatusText(friend) }}</span>
-                  </div>
+                <div class="friend-tags">
+                  <span v-if="getFriendLevel(friend) > 0" class="f-tag f-tag--level">Lv.{{ getFriendLevel(friend) }}</span>
+                  <span class="f-tag" :class="`f-tag--pet-${friendPetBadge(friend).state}`" :title="friendPetBadge(friend).title">
+                    <img v-if="friendPetBadge(friend).image" :src="friendPetBadge(friend).image" alt="" loading="lazy">
+                    <span v-else class="i-carbon-dog-walker" />
+                    {{ friendPetBadge(friend).state === 'unknown' ? '宠物未知' : friendPetBadge(friend).text }}
+                  </span>
+                  <span v-if="getFriendGold(friend) > 0" class="f-tag f-tag--gold" :title="`金币 ${getFriendGold(friend).toLocaleString('zh-CN')}`">
+                    <span class="i-fas-coins" />{{ formatFriendGold(friend.gold) }}
+                  </span>
+                  <span
+                    v-for="tag in friendActionTags(friend)"
+                    :key="tag.kind"
+                    class="f-tag"
+                    :class="`f-tag--${tag.kind}`"
+                  >
+                    <span :class="tag.icon" />{{ tag.label }} {{ tag.count }}
+                  </span>
                 </div>
               </div>
 
-              <div class="flex flex-wrap gap-2">
-                <NButton
-                  type="info"
-                  secondary
-                  size="small"
-                  @click="handleOp(friend.gid, 'steal', $event)"
-                >
+              <div class="friend-actions" @click.stop @keydown.stop>
+                <NButton size="small" :type="friendCanSteal(friend) ? 'primary' : 'default'" secondary @click="handleOp(friend.gid, 'steal', $event)">
+                  <template #icon>
+                    <span class="i-carbon-shopping-bag" />
+                  </template>
                   偷取
                 </NButton>
-                <NButton
-                  type="success"
-                  secondary
-                  size="small"
-                  @click="handleOp(friend.gid, 'farming', $event)"
-                >
-                  一键务农
+                <NButton size="small" :type="friendNeedsCare(friend) ? 'primary' : 'default'" secondary @click="handleOp(friend.gid, 'farming', $event)">
+                  <template #icon>
+                    <span class="i-carbon-sprout" />
+                  </template>
+                  务农
                 </NButton>
-                <NButton
-                  type="error"
-                  secondary
-                  size="small"
-                  @click="handleOp(friend.gid, 'bad', $event)"
-                >
+                <NButton size="small" secondary @click="handleOp(friend.gid, 'bad', $event)">
+                  <template #icon>
+                    <span class="i-carbon-debug" />
+                  </template>
                   捣乱
                 </NButton>
-                <NButton
-                  secondary
-                  size="small"
-                  @click="handleToggleBlacklist(friend, $event)"
-                >
-                  {{ blacklistGidSet.has(Number(friend.gid)) ? '移出黑名单' : '加入黑名单' }}
-                </NButton>
-                <NButton
-                  type="error"
-                  secondary
-                  size="small"
-                  :disabled="!currentAccountRunning"
-                  @click="handleDeleteFriend(friend, $event)"
-                >
-                  删除好友
-                </NButton>
-                <NButton
-                  v-if="isQqAccount && knownFriendGidSet.has(Number(friend.gid))"
-                  type="warning"
-                  secondary
-                  size="small"
-                  @click="handleRemoveKnownFriendGid(friend, $event)"
-                >
-                  移出同步列表
-                </NButton>
+                <NDropdown trigger="click" placement="bottom-end" :options="friendMoreOptions(friend)" @select="(key: string) => handleFriendMore(key, friend)">
+                  <NButton size="small" quaternary circle title="更多操作" aria-label="更多操作">
+                    <template #icon>
+                      <span class="i-carbon-overflow-menu-horizontal" />
+                    </template>
+                  </NButton>
+                </NDropdown>
               </div>
+
+              <span class="friend-chevron i-carbon-chevron-down" aria-hidden="true" />
             </div>
 
-            <div v-if="expandedFriends.has(String(friend.gid))" class="border-t bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+            <div v-if="expandedFriends.has(String(friend.gid))" class="friend-lands">
               <div class="mb-3 flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 text-sm text-gray-700 font-semibold dark:text-gray-200">
                   <span class="i-carbon-sprout" />
@@ -1130,27 +1108,25 @@ async function handleBatchAddKnownFriendGids() {
                   :disabled="!currentAccountId"
                   @click="refreshFriendLands(friend.gid)"
                 >
-                  <span class="i-carbon-renew mr-1" />
+                  <template #icon>
+                    <span class="i-carbon-renew" />
+                  </template>
                   刷新土地
                 </NButton>
               </div>
-              <div v-if="friendLandsLoading[friend.gid]" class="flex justify-center py-4">
-                <div class="i-svg-spinners-90-ring-with-bg text-2xl text-blue-500" />
+              <div v-if="friendLandsLoading[friend.gid]" class="flex justify-center py-6">
+                <div class="i-svg-spinners-90-ring-with-bg text-2xl text-green-600" />
               </div>
-              <div v-else-if="friendLandsError[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-red-600 dark:text-red-300">
-                <span class="i-carbon-warning-alt text-2xl" />
-                <span>{{ friendLandsError[friend.gid] }}</span>
-                <NButton size="small" secondary type="error" @click="refreshFriendLands(friend.gid)">
+              <EmptyState v-else-if="friendLandsError[friend.gid]" bare tone="error" title="土地读取失败" :description="friendLandsError[friend.gid]" icon="i-carbon-warning-alt">
+                <NButton size="small" secondary @click="refreshFriendLands(friend.gid)">
                   重新读取
                 </NButton>
-              </div>
-              <div v-else-if="!friendLandsLoaded[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-gray-500 dark:text-gray-400">
-                <span class="i-carbon-data-view-alt text-2xl" />
-                <span>尚未读取该好友土地</span>
+              </EmptyState>
+              <EmptyState v-else-if="!friendLandsLoaded[friend.gid]" bare title="尚未读取土地" icon="i-carbon-data-view-alt">
                 <NButton size="small" secondary @click="refreshFriendLands(friend.gid)">
                   读取土地
                 </NButton>
-              </div>
+              </EmptyState>
               <template v-else>
                 <div
                   v-if="friendCareer[friend.gid]"
@@ -1491,6 +1467,253 @@ async function handleBatchAddKnownFriendGids() {
 </template>
 
 <style scoped>
+.friends-toolbar {
+  flex-wrap: nowrap;
+}
+
+.friends-search {
+  width: 16rem;
+}
+
+/* 好友条目 */
+.friend-card {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--ui-shadow-sm);
+  transition: border-color 0.15s ease;
+}
+
+.friend-card.is-expanded {
+  border-color: color-mix(in srgb, var(--ui-primary) 32%, var(--ui-border));
+}
+
+.friend-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.friend-row:hover {
+  background: color-mix(in srgb, var(--ui-surface-soft) 60%, transparent);
+}
+
+.friend-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
+.friend-card.is-blocked .friend-avatar,
+.friend-card.is-blocked .friend-main {
+  opacity: 0.5;
+}
+
+.friend-avatar {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--ui-subtle);
+  background: var(--ui-surface-soft);
+  font-size: 20px;
+}
+
+.friend-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.friend-main {
+  min-width: 0;
+}
+
+.friend-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.friend-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-gid {
+  flex: none;
+  color: var(--ui-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.friend-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* 标签统一规格：中性信息用灰底，可操作状态用各自的颜色。 */
+.f-tag {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.f-tag img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.f-tag > span {
+  font-size: 12px;
+}
+
+.f-tag--level {
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.f-tag--pet-unknown {
+  color: var(--ui-subtle);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
+
+.f-tag--pet-protect {
+  color: var(--ui-violet);
+  background: var(--ui-violet-soft);
+}
+
+.f-tag--gold {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+}
+
+.f-tag--blocked {
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+}
+
+.f-tag--steal {
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  font-weight: 600;
+}
+
+.f-tag--water {
+  color: var(--ui-blue);
+  background: var(--ui-blue-soft);
+  font-weight: 600;
+}
+
+.f-tag--weed {
+  color: #8a6b1f;
+  background: var(--ui-warning-soft);
+  font-weight: 600;
+}
+
+.f-tag--bug {
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  font-weight: 600;
+}
+
+:global(.dark) .f-tag--weed {
+  color: #e2c36d;
+}
+
+.friend-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friend-chevron {
+  justify-self: end;
+  color: var(--ui-subtle);
+  font-size: 16px;
+  transition: transform 0.2s ease;
+}
+
+.friend-card.is-expanded .friend-chevron {
+  transform: rotate(180deg);
+}
+
+.friend-lands {
+  padding: 16px;
+  border-top: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-surface-soft) 55%, transparent);
+}
+
+@media (max-width: 767px) {
+  .friend-row {
+    grid-template-columns: 40px minmax(0, 1fr) 20px;
+    gap: 10px 12px;
+    padding: 12px;
+  }
+
+  .friend-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .friend-chevron {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  /* 手机端操作单独一行，三个常用操作等宽，更多菜单收在末尾。 */
+  .friend-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .friend-actions > .n-button:not(.n-button--circle) {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .friend-lands {
+    padding: 12px;
+  }
+
+  .friends-toolbar {
+    width: 100%;
+  }
+
+  .friends-search {
+    flex: 1;
+    width: auto;
+  }
+}
+
 .gid-entry-card {
   width: min(520px, calc(100vw - 32px));
 }

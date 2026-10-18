@@ -132,7 +132,8 @@ node tools/download-game-images.js --help
 ### 图片映射规则
 
 - `ItemInfo.icon_res` 非空时，严格使用它指向的 `cc.SpriteFrame`，再解析同组 `cc.ImageAsset`。
-- `icon_res` 为空时，才使用 `asset_name` 精确构造 `model/v4/<asset_name>_Seed`。
+- `icon_res` 为空时，使用 `asset_name` 构造图片路径：有 `bundle_name` 的物品使用该 bundle 中的 `texture/<asset_name>`，例如动物资源；其余使用 `model/v4/<asset_name>_Seed`。
+- 配置指定 `bundle_name` 时仅在该 bundle 内匹配，避免同名资源混用。
 - `Plant.seed_id` 非空时，通过对应 Item 的 `asset_name` 获取种子图。
 - `Plant.seed_id` 为空时，通过 `Plant.fruit.id` 对应 Item 的 `asset_name` 获取种子图。
 - Item 与 Plant 都使用各自的 ID 作为输出文件名，例如 `20002.png`、`40002.png`、`1020002.png`。

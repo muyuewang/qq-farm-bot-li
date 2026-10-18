@@ -36,7 +36,8 @@ export default defineConfig({
   },
   presets: [
     presetUno(),
-    presetAttributify(),
+    // Attribute utilities use un-* so Vue expressions are not parsed as icon names.
+    presetAttributify({ prefixedOnly: true }),
     presetIcons({
       scale: 1.2,
       warn: true,

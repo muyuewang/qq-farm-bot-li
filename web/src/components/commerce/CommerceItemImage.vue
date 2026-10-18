@@ -28,7 +28,7 @@ watch(() => props.src, () => failed.value = false)
   place-items: center;
   flex: none;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--ui-surface-strong) 72%, transparent);
   border: 1px solid rgba(125, 101, 68, 0.14);
   border-radius: 8px;
 }

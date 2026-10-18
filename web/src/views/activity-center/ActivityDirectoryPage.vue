@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ActivityDirectoryItemDto } from '@/stores/activity-center'
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { activityHasGameplay } from '@/components/activity/gameplays'
@@ -156,14 +157,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 </script>
 
 <template>
-  <section class="activity-picker">
-    <button type="button" class="picker-back" aria-label="返回" @click="emit('back')">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg>
-    </button>
-    <header class="picker-heading">
-      <span>活动中心</span>
-      <h1>{{ accountDataLoaded && !loading && !hasActivities ? '当前无活动' : '活动列表' }}</h1>
-    </header>
+  <section class="activity-picker page-stack">
+    <div class="page-toolbar">
+      <span class="text-sm text-gray-500">{{ hasActivities ? `共 ${displayActivities.length} 个活动` : '按当前账号读取活动' }}</span>
+      <NButton :loading="loading" :disabled="!currentAccountId" @click="load(true)">
+        <template #icon>
+          <span class="i-carbon-renew" />
+        </template>
+        刷新
+      </NButton>
+    </div>
     <div v-if="!currentAccountId" class="picker-state">
       <div class="i-carbon-user-avatar" />
       <strong>请先选择账号</strong>
@@ -223,6 +226,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 </template>
 
 <style scoped>
+.activity-picker {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
 .activity-entry__icon .activity-entry__pet {
   width: 26px;
   height: 26px;

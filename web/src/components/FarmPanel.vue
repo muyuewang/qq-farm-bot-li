@@ -3,6 +3,7 @@ import type { FertilizerType } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
+import { NPopover } from 'naive-ui/es/popover'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -12,6 +13,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
@@ -158,13 +160,15 @@ function handleOperate(opType: string) {
   confirmVisible.value = true
 }
 
+// 只有“一键全收”是主操作，其余保持同一层级，避免一排按钮各用一种颜色。
 const operations = [
-  { type: 'harvest', label: '收获', icon: 'i-carbon-wheat', buttonType: 'info' },
-  { type: 'clear', label: '一键务农', icon: 'i-carbon-clean', buttonType: 'success' },
-  { type: 'plant', label: '种植', icon: 'i-carbon-sprout', buttonType: 'primary' },
-  { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', buttonType: 'warning' },
+  { type: 'harvest', label: '收获', icon: 'i-carbon-wheat', buttonType: 'default' },
+  { type: 'clear', label: '一键务农', icon: 'i-carbon-clean', buttonType: 'default' },
+  { type: 'plant', label: '种植', icon: 'i-carbon-sprout', buttonType: 'default' },
+  { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', buttonType: 'default' },
   { type: 'all', label: '一键全收', icon: 'i-carbon-flash', buttonType: 'primary' },
 ] as const
+const secondaryOperations = operations.filter(op => op.type !== 'all')
 
 function interactionSelectionKey(itemId: unknown = selectedInteractionItemId.value) {
   return String(itemId || '')
@@ -489,14 +493,47 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-5">
-    <div class="cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800">
+  <div class="personal-panel">
+    <div class="personal-panel__card cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800 !p-0">
       <!-- Header with Title and Actions -->
-      <div class="flex flex-col items-center justify-between gap-4 border-b border-gray-100 p-5 sm:flex-row dark:border-gray-700">
-        <div class="w-full flex items-center justify-between gap-3 sm:w-auto">
-          <h3 class="flex items-center gap-2 text-xl font-bold font-display">
+      <div class="farm-head panel-sticky flex shrink-0 flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5">
+        <div class="farm-heading flex items-center justify-between gap-3">
+          <h3 class="flex items-center gap-2 text-lg font-bold">
             <span class="i-carbon-sprout text-green-600" /> 土地详情
           </h3>
+          <div class="farm-mobile-actions">
+            <NButton size="small" type="primary" class="farm-mobile-all" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate('all')">
+              一键全收
+            </NButton>
+            <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
+              <template #trigger>
+                <NButton size="small" circle quaternary title="土地概况与操作" aria-label="土地概况与操作">
+                  <template #icon>
+                    <span class="i-carbon-overflow-menu-horizontal" />
+                  </template>
+                </NButton>
+              </template>
+              <div class="w-60 space-y-3">
+                <div class="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                  <span>可收 {{ loaded && !error ? (summary?.harvestable || 0) : '--' }}</span>
+                  <span>生长 {{ loaded && !error ? (summary?.growing || 0) : '--' }}</span>
+                  <span>空闲 {{ loaded && !error ? (summary?.empty || 0) : '--' }}</span>
+                  <span>枯萎 {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
+                </div>
+                <div v-if="loaded && !error && career" class="flex flex-col gap-2 border-t border-gray-100 pt-3 text-xs dark:border-gray-700">
+                  <CareerHarvestSteal :career="career" />
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+                  <NButton size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)" @click="fertilizerConfirmVisible = true">
+                    一键施肥
+                  </NButton>
+                  <NButton v-for="op in secondaryOperations" :key="op.type" size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate(op.type)">
+                    {{ op.label }}
+                  </NButton>
+                </div>
+              </div>
+            </NPopover>
+          </div>
           <NButton
             circle
             quaternary
@@ -505,10 +542,12 @@ onUnmounted(() => {
             :disabled="!currentAccountId || !currentAccountRunning"
             @click="refreshFarm"
           >
-            <span :class="refreshIconClass" />
+            <template #icon>
+              <span :class="refreshIconClass" />
+            </template>
           </NButton>
         </div>
-        <div class="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+        <div class="farm-actions">
           <NButton
             :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)"
             @click="fertilizerConfirmVisible = true"
@@ -530,9 +569,9 @@ onUnmounted(() => {
       </div>
 
       <!-- Summary -->
-      <div class="flex flex-wrap gap-x-5 gap-y-2 border-b border-gray-100 px-5 py-3 text-sm dark:border-gray-700">
+      <div class="farm-summary flex shrink-0 flex-wrap gap-x-4 gap-y-2 border-b border-gray-100 px-4 py-3 text-xs dark:border-gray-700 sm:px-5 sm:text-sm">
         <div class="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-          <div class="i-carbon-clean" />
+          <div class="i-carbon-wheat" />
           <span class="font-body font-semibold">可收: {{ loaded && !error ? (summary?.harvestable || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-green-700 dark:text-green-300">
@@ -540,181 +579,175 @@ onUnmounted(() => {
           <span class="font-body font-semibold">生长: {{ loaded && !error ? (summary?.growing || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
-          <div class="i-carbon-checkbox" />
+          <div class="i-carbon-square-outline" />
           <span class="font-body font-semibold">空闲: {{ loaded && !error ? (summary?.empty || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-red-700 dark:text-red-300">
-          <div class="i-carbon-warning" />
+          <div class="i-carbon-misuse-outline" />
           <span class="font-body font-semibold">枯萎: {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
         </div>
-        <CareerHarvestSteal v-if="loaded && !error" :career="career" />
+        <template v-if="loaded && !error && career">
+          <div class="hidden sm:contents">
+            <CareerHarvestSteal :career="career" />
+          </div>
+          <NPopover trigger="click" placement="bottom-start" :show-arrow="false">
+            <template #trigger>
+              <button type="button" class="flex items-center gap-1.5 text-gray-500 sm:hidden" aria-label="查看生涯统计">
+                <span class="i-carbon-chart-relationship" />生涯统计
+              </button>
+            </template>
+            <div class="flex flex-col gap-2 text-sm">
+              <CareerHarvestSteal :career="career" />
+            </div>
+          </NPopover>
+        </template>
       </div>
 
       <!-- Grid -->
-      <div class="p-5">
-        <div v-if="loading" class="flex justify-center py-12">
-          <div class="i-svg-spinners-90-ring-with-bg text-4xl text-green-500" />
+      <div class="personal-panel__card p-4 sm:p-5">
+        <div v-if="loading || !currentAccountId || !currentAccountRunning || error || !loaded || !lands?.length" class="personal-panel__scroll custom-scrollbar" role="region" aria-label="土地状态" tabindex="0">
+          <div v-if="loading" class="flex justify-center py-12">
+            <div class="i-svg-spinners-90-ring-with-bg text-4xl text-green-500" />
+          </div>
+
+          <EmptyState v-else-if="!currentAccountId" bare title="请先选择账号" description="添加并选择账号后查看土地" icon="i-carbon-user-avatar" />
+
+          <EmptyState v-else-if="!currentAccountRunning" bare title="账号未运行" description="启动账号后会立即读取土地" icon="i-carbon-connection-signal-off" />
+
+          <EmptyState v-else-if="error" bare tone="error" title="土地读取失败" :description="error" icon="i-carbon-warning-alt">
+            <NButton secondary @click="refreshFarm">
+              重新读取
+            </NButton>
+          </EmptyState>
+
+          <EmptyState v-else-if="!loaded" bare title="尚未读取土地" icon="i-carbon-data-view-alt">
+            <NButton secondary @click="refreshFarm">
+              立即读取
+            </NButton>
+          </EmptyState>
+
+          <EmptyState v-else-if="!lands || lands.length === 0" bare title="没有可展示的土地" description="可重新读取确认" icon="i-carbon-sprout">
+            <NButton secondary @click="refreshFarm">
+              重新读取
+            </NButton>
+          </EmptyState>
         </div>
 
-        <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="i-carbon-user-avatar text-5xl" />
-          <div>
-            <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
-              未登录账号
-            </div>
-            <div class="font-body mt-1 text-sm text-gray-400">
-              请先添加农场账号开始种田吧!
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="!currentAccountRunning" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="i-carbon-network-4 text-5xl" />
-          <div>
-            <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
-              账号未运行
-            </div>
-            <div class="font-body mt-1 text-sm text-gray-400">
-              请先启动账号；启动后会立即读取土地
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="error" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-red-600 dark:text-red-300">
-          <div class="i-carbon-warning-alt text-5xl" />
-          <div class="max-w-xl text-sm">
-            {{ error }}
-          </div>
-          <NButton secondary type="error" @click="refreshFarm">
-            重新读取
-          </NButton>
-        </div>
-
-        <div v-else-if="!loaded" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-gray-500">
-          <div class="i-carbon-data-view-alt text-5xl" />
-          <div class="text-lg font-display">
-            尚未读取土地详情
-          </div>
-          <NButton secondary @click="refreshFarm">
-            立即读取
-          </NButton>
-        </div>
-
-        <div v-else-if="!lands || lands.length === 0" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-gray-500">
-          <div class="i-carbon-sprout text-5xl text-green-500" />
-          <div class="text-lg font-display">
-            当前没有可展示的土地
-          </div>
-          <div class="font-body text-sm text-gray-400">
-            暂未读取到可展示的土地，可重新读取确认
-          </div>
-          <NButton secondary @click="refreshFarm">
-            重新读取
-          </NButton>
-        </div>
-
-        <div v-else>
-          <div v-if="cleanableFarmSocialEvents.length > 0" class="mb-4 flex flex-wrap items-center justify-between gap-2 border border-emerald-200 rounded-xl bg-emerald-50/85 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
-            <span class="flex items-center gap-2">
-              <span class="i-carbon-pedestrian-child" />
-              好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农或点击下方标记地块的“务农”清理。
-            </span>
-          </div>
-
-          <div v-if="interactionItemsLoading || interactionItemsError || interactionItems.length > 0" class="mb-4 border border-amber-200 rounded-xl bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-950/25">
-            <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
-              <span class="i-svg-spinners-90-ring-with-bg" />
-              正在读取可用的互动道具
-            </div>
-            <div v-else-if="interactionItemsError" class="flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-300">
-              <span>{{ interactionItemsError }}</span>
-              <NButton size="small" secondary type="error" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">
-                重新读取
-              </NButton>
-            </div>
-            <template v-else>
-              <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                <div class="min-w-0 flex-1">
-                  <div class="mb-2 flex items-center gap-2 text-sm text-amber-950 font-bold dark:text-amber-100">
+        <div v-else class="personal-panel__card">
+          <div v-if="interactionItemsLoading || interactionItemsError || interactionItems.length > 0" class="farm-tools mb-3 flex shrink-0 flex-wrap items-center gap-2">
+            <NPopover trigger="click" placement="bottom-start" :show-arrow="false">
+              <template #trigger>
+                <NButton size="small" secondary :title="selectedInteractionItem?.name || '互动道具'" :loading="interactionItemsLoading" :type="interactionItemsError ? 'error' : 'default'">
+                  <template #icon>
                     <span class="i-carbon-game-console" />
-                    可对自己农场使用的道具
-                    <span class="text-xs text-amber-700 font-normal dark:text-amber-300">种草、黄金虫、足球等仅可放置到好友农场，清理由农场主完成</span>
-                  </div>
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      v-for="item in interactionItems"
-                      :key="item.itemId"
-                      type="button"
-                      class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-left transition dark:bg-gray-900"
-                      :class="selectedInteractionItemId === item.itemId
-                        ? 'border-amber-500 ring-2 ring-amber-200 dark:ring-amber-800'
-                        : 'border-amber-200 hover:border-amber-400 dark:border-amber-800'"
-                      :aria-pressed="selectedInteractionItemId === item.itemId"
-                      @click="selectedInteractionItemId = item.itemId"
-                    >
-                      <img :src="item.image" alt="" class="h-8 w-8 object-contain">
-                      <span>
-                        <span class="block text-sm text-gray-800 font-semibold dark:text-gray-100">{{ item.name }}</span>
-                        <span class="block text-xs text-amber-700 dark:text-amber-300">库存 {{ item.count }}</span>
-                      </span>
-                    </button>
-                  </div>
-                  <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
-                    {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
-                    <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
-                      其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
+                  </template>
+                  <span class="farm-tool-name">{{ interactionItemsError ? '道具读取失败' : selectedInteractionItem?.name || '互动道具' }}</span>
+                  <span class="farm-tool-short">{{ interactionItemsError ? '读取失败' : '道具' }}</span>
+                  <span class="i-carbon-chevron-down ml-2" />
+                </NButton>
+              </template>
+              <div class="farm-tool-picker custom-scrollbar">
+                <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
+                  <span class="i-svg-spinners-90-ring-with-bg" />
+                  正在读取可用的互动道具
+                </div>
+                <div v-else-if="interactionItemsError" class="flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-300">
+                  <span>{{ interactionItemsError }}</span>
+                  <NButton size="small" secondary type="error" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">
+                    重新读取
+                  </NButton>
+                </div>
+                <template v-else>
+                  <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div class="min-w-0 flex-1">
+                      <div class="mb-2 flex items-center gap-2 text-sm text-amber-950 font-bold dark:text-amber-100">
+                        <span class="i-carbon-game-console" />
+                        可对自己农场使用的道具
+                        <span class="text-xs text-amber-700 font-normal dark:text-amber-300">种草、黄金虫、足球等仅可放置到好友农场，清理由农场主完成</span>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <button
+                          v-for="item in interactionItems"
+                          :key="item.itemId"
+                          type="button"
+                          class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-left transition dark:bg-gray-900"
+                          :class="selectedInteractionItemId === item.itemId
+                            ? 'border-amber-500 ring-2 ring-amber-200 dark:ring-amber-800'
+                            : 'border-amber-200 hover:border-amber-400 dark:border-amber-800'"
+                          :aria-pressed="selectedInteractionItemId === item.itemId"
+                          @click="selectedInteractionItemId = item.itemId"
+                        >
+                          <img :src="item.image" alt="" class="h-8 w-8 object-contain">
+                          <span>
+                            <span class="block text-sm text-gray-800 font-semibold dark:text-gray-100">{{ item.name }}</span>
+                            <span class="block text-xs text-amber-700 dark:text-amber-300">库存 {{ item.count }}</span>
+                          </span>
+                        </button>
+                      </div>
+                      <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                        {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
+                        <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
+                          其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
+                        </div>
+                        <div class="mt-1 text-gray-600 dark:text-gray-300">
+                          仅可选择生长期作物。
+                        </div>
+                      </div>
                     </div>
-                    <div class="mt-1 text-gray-600 dark:text-gray-300">
-                      仅可选择生长期作物。
+                  </div>
+                  <div v-if="interactionFailures().length > 0" class="mt-3 rounded-lg bg-white/75 px-3 py-2 text-xs text-red-700 dark:bg-gray-900/60 dark:text-red-300">
+                    <div class="mb-1 font-semibold">
+                      未成功的地块
+                    </div>
+                    <div v-for="result in interactionFailures()" :key="`${result.landId}:${result.message}`">
+                      第 {{ result.landId }} 块：{{ result.message }}
                     </div>
                   </div>
-                </div>
-                <div class="flex shrink-0 flex-wrap gap-2 xl:max-w-72 xl:justify-end">
-                  <NButton size="small" secondary :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands()">
-                    全选可用
-                  </NButton>
-                  <NButton size="small" secondary :disabled="selectedInteractionIds().length === 0 || interactionUsePending" @click="setSelectedInteractionIds([])">
-                    清空
-                  </NButton>
-                  <NButton type="warning" size="small" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds().length === 0" @click="requestUseInteractionItem()">
-                    按顺序使用 {{ selectedInteractionIds().length || '' }} 个
-                  </NButton>
-                </div>
+                </template>
               </div>
-              <div v-if="interactionFailures().length > 0" class="mt-3 rounded-lg bg-white/75 px-3 py-2 text-xs text-red-700 dark:bg-gray-900/60 dark:text-red-300">
-                <div class="mb-1 font-semibold">
-                  未成功的地块
-                </div>
-                <div v-for="result in interactionFailures()" :key="`${result.landId}:${result.message}`">
-                  第 {{ result.landId }} 块：{{ result.message }}
-                </div>
-              </div>
-            </template>
+            </NPopover>
+            <NButton size="small" secondary title="全选可用土地" :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands()">
+              全选
+            </NButton>
+            <NButton size="small" secondary class="farm-tool-clear" title="清空所选土地" aria-label="清空所选土地" :disabled="selectedInteractionIds().length === 0 || interactionUsePending" @click="setSelectedInteractionIds([])">
+              <span class="farm-tool-name">清空</span><span class="farm-tool-short i-carbon-close" />
+            </NButton>
+            <NButton type="warning" size="small" title="按土地编号依次使用道具" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds().length === 0" @click="requestUseInteractionItem()">
+              使用 {{ selectedInteractionIds().length }} 个
+            </NButton>
           </div>
 
-          <div class="grid grid-cols-2 gap-4 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3">
-            <LandCard
-              v-for="land in lands"
-              :key="land.id"
-              :land="land"
-              show-details
-              :selectable="!!selectedInteractionItem"
-              :selected="isInteractionLandSelected(land)"
-              :selection-disabled="isInteractionLandDisabled(land)"
-              :selection-label="interactionLandSelectionLabel(land)"
-              :show-fertilizer-actions="showManualFertilizerButtons && isFertilizeCandidate(land)"
-              :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
-              :normal-fertilizer-disabled="fertilizePending || !canNormalFertilize(land)"
-              :normal-fertilizer-label="normalFertilizerLabel(land)"
-              :organic-fertilizer-disabled="fertilizePending"
-              :show-farming-action="isLandFarmingCandidate(land)"
-              :farming-pending="farmingLandId === land.id"
-              :farming-disabled="farmingLandId !== null || operating"
-              @details="detailLandId = $event.id"
-              @select="toggleInteractionLand(land)"
-              @fertilize="handleFertilize"
-              @farm="handleFarmLand"
-            />
+          <div class="personal-panel__scroll custom-scrollbar" role="region" aria-label="土地列表" tabindex="0">
+            <div v-if="cleanableFarmSocialEvents.length > 0" class="mb-4 flex flex-wrap items-center justify-between gap-2 border border-emerald-200 rounded-xl bg-emerald-50/85 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
+              <span class="flex items-center gap-2">
+                <span class="i-carbon-pedestrian-child" />
+                好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农或点击下方标记地块的“务农”清理。
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3 sm:gap-4">
+              <LandCard
+                v-for="land in lands"
+                :key="land.id"
+                :land="land"
+                show-details
+                :selectable="!!selectedInteractionItem"
+                :selected="isInteractionLandSelected(land)"
+                :selection-disabled="isInteractionLandDisabled(land)"
+                :selection-label="interactionLandSelectionLabel(land)"
+                :show-fertilizer-actions="showManualFertilizerButtons && isFertilizeCandidate(land)"
+                :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
+                :normal-fertilizer-disabled="fertilizePending || !canNormalFertilize(land)"
+                :normal-fertilizer-label="normalFertilizerLabel(land)"
+                :organic-fertilizer-disabled="fertilizePending"
+                :show-farming-action="isLandFarmingCandidate(land)"
+                :farming-pending="farmingLandId === land.id"
+                :farming-disabled="farmingLandId !== null || operating"
+                @details="detailLandId = $event.id"
+                @select="toggleInteractionLand(land)"
+                @fertilize="handleFertilize"
+                @farm="handleFarmLand"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -754,3 +787,88 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.farm-tool-picker {
+  width: min(560px, calc(100vw - 56px));
+  max-height: min(420px, 55dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.farm-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.farm-mobile-actions {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.farm-tool-short {
+  display: none;
+}
+
+@media (max-width: 479px) {
+  .farm-heading {
+    gap: 6px;
+  }
+
+  .farm-heading h3 {
+    flex: none;
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  .farm-mobile-actions {
+    display: flex;
+  }
+
+  .farm-actions,
+  .farm-summary,
+  .farm-tool-name {
+    display: none;
+  }
+
+  .farm-tool-short {
+    display: inline-flex;
+  }
+
+  .farm-mobile-all {
+    padding-inline: 8px;
+  }
+
+  .farm-tools :deep(.n-button) {
+    padding-inline: 8px;
+  }
+
+  .farm-tools .farm-tool-clear {
+    width: 28px;
+    padding: 0;
+  }
+}
+
+.farm-actions :deep(.n-button) {
+  width: 100%;
+}
+
+.farm-actions :deep(.n-button__content) {
+  gap: 4px;
+}
+
+@media (min-width: 640px) {
+  .farm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .farm-actions :deep(.n-button) {
+    width: auto;
+  }
+}
+</style>

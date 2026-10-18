@@ -39,7 +39,7 @@ defineProps<{ theme?: 'night' | 'day' }>()
 }
 @media (max-width: 1023px) {
   .activity-shell {
-    height: calc(100dvh - 166px - env(safe-area-inset-bottom));
+    height: 100%;
     min-height: 0;
   }
   .activity-shell__frame {

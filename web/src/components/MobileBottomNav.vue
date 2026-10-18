@@ -1,11 +1,12 @@
 <script setup lang="ts">
-const items = [
-  { path: '/', label: '首页', icon: 'i-carbon-home' },
-  { path: '/game-mall', label: '商城', icon: 'i-carbon-shopping-cart' },
-  { path: '/personal', label: '农场', icon: 'i-carbon-sprout' },
-  { path: '/activity', label: '活动', icon: 'i-carbon-events' },
-  { path: '/settings', label: '设置', icon: 'i-carbon-settings' },
-]
+import { menuRoutes } from '@/router/menu'
+
+// 与侧栏使用同一份名称和图标，只在底栏放最常用的五项。
+const MOBILE_ITEMS: Array<[string, string?]> = [['dashboard'], ['personal'], ['activity-center'], ['game-mall', '商城'], ['Settings']]
+const items = MOBILE_ITEMS.flatMap(([name, shortLabel]) => {
+  const route = menuRoutes.find(item => item.name === name)
+  return route ? [{ path: `/${route.path}`, label: shortLabel || route.label, icon: route.icon }] : []
+})
 </script>
 
 <template>
@@ -36,10 +37,10 @@ const items = [
   padding: 7px 8px;
   border: 1px solid rgba(58, 86, 68, 0.12);
   border-radius: 24px;
-  background: rgba(250, 251, 247, 0.84);
+  background: color-mix(in srgb, var(--ui-bg) 84%, transparent);
   box-shadow:
     0 16px 42px rgba(55, 75, 61, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    inset 0 1px 0 var(--glass-highlight);
   -webkit-backdrop-filter: blur(22px) saturate(135%);
   backdrop-filter: blur(22px) saturate(135%);
 }
@@ -74,7 +75,7 @@ const items = [
 
 .mobile-bottom-nav__item--active {
   color: var(--ui-primary);
-  background: rgba(225, 241, 230, 0.82);
+  background: var(--ui-primary-soft);
   box-shadow: none !important;
 }
 </style>

@@ -164,11 +164,8 @@ onUnmounted(() => sequence++)
 
 <template>
   <div class="solar">
-    <header class="solar-head">
-      <div>
-        <p>QQ 农场</p>
-        <h1>节令日历</h1>
-      </div>
+    <header class="page-toolbar">
+      <span class="text-sm text-gray-500">按当前账号读取节令进度</span>
       <NButton :loading="busy" :disabled="!currentAccountId || !connected" @click="request()">
         <template #icon>
           <span class="i-carbon-renew" />
@@ -302,8 +299,8 @@ onUnmounted(() => sequence++)
   --seal: #c0533f;
   --seal-soft: #fbece8;
   --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
-  max-width: 1100px;
-  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
   color: var(--ui-ink);
   container-type: inline-size;
 }
@@ -654,16 +651,21 @@ onUnmounted(() => sequence++)
   margin-top: 3px;
 }
 
-/* 宽屏：日历页 | 节令内容 | 奖励，左右两列固定宽度，各行按钮上下对齐 */
+/* 宽屏：节令是按时间排列的序列，保持单列时间线。
+   每行「日历页 | 节令内容 | 奖励」三栏统一垂直居中，奖励栏定宽，各行按钮落在同一条竖线上。 */
 @container (min-width: 820px) {
   .term {
-    grid-template-columns: 72px minmax(0, 1fr) 360px;
+    grid-template-columns: 72px minmax(0, 1fr) minmax(360px, 440px);
     align-items: center;
+    gap: 14px 24px;
+  }
+  .leaf {
+    align-self: center;
   }
   .term__rewards {
     grid-column: auto;
     align-self: center;
-    padding: 0 0 0 20px;
+    padding: 2px 0 2px 24px;
     border-top: 0;
     border-left: 1px dashed var(--ui-border-strong);
   }
@@ -764,9 +766,12 @@ onUnmounted(() => sequence++)
   }
   .season-bar__reward {
     width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
   }
-  .season-bar__reward .chips {
-    flex: 1;
+  .season-bar__reward .line-label {
+    grid-column: 1 / -1;
   }
   .timeline::before {
     left: 44px;

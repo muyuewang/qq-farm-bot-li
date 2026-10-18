@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
+import CommerceShopBar from '@/components/commerce/CommerceShopBar.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useCommerceStore } from '@/stores/commerce'
 
@@ -17,11 +20,28 @@ const remaining = computed(() => {
   const end = mystery.value?.expireTime || 0
   const diff = Math.max(0, end - clock.value)
   if (!end || diff === 0)
-    return '已离开'
+    return ''
+  const pad = (value: number) => String(value).padStart(2, '0')
   const hours = Math.floor(diff / 3600000)
   const minutes = Math.floor((diff % 3600000) / 60000)
   const seconds = Math.floor((diff % 60000) / 1000)
-  return `${hours}小时${minutes}分${seconds}秒`
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+})
+
+const shopStatus = computed(() => {
+  if (!mystery.value?.active || !mystery.value.npc)
+    return mystery.value ? '神秘商人暂未来访' : ''
+  return remaining.value ? `神秘商人来访中 · ${remaining.value} 后离开` : '神秘商人已离开'
+})
+
+const currencies = computed(() => {
+  const price = mystery.value?.active ? mystery.value.npc?.price : null
+  return price ? [{ id: price.id, name: price.name, image: price.image, amount: price.balance }] : []
+})
+
+const openedAt = computed(() => {
+  const time = mystery.value?.activeTime
+  return time ? new Date(time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 })
 
 const discountLabel = computed(() => {
@@ -33,6 +53,13 @@ const canPurchase = computed(() => {
   const npc = mystery.value?.npc
   return !!npc && npc.reward.count > 0 && (npc.price.balance === null || npc.price.balance >= npc.price.count)
 })
+
+const purchaseHint = computed(() => {
+  const npc = mystery.value?.npc
+  return npc && npc.price.balance !== null && npc.price.balance < npc.price.count ? '当前货币余额不足。' : ''
+})
+
+const buttonLabel = computed(() => mysteryPurchasing.value ? '购买中' : canPurchase.value ? '购买' : '暂不可购买')
 
 function load() {
   commerceStore.fetchMystery(String(currentAccountId.value || ''))
@@ -70,81 +97,71 @@ onUnmounted(() => {
 
 <template>
   <div class="mystery-panel">
-    <header class="mystery-header">
-      <div>
-        <p>限时来访</p>
-        <span v-if="mystery?.active">距离离开 {{ remaining }}</span>
-      </div>
-      <button type="button" title="刷新神秘商人" :disabled="mysteryLoading" @click="load">
-        <div class="i-carbon-renew" :class="{ 'animate-spin': mysteryLoading }" />
-      </button>
-    </header>
+    <CommerceShopBar
+      :status="shopStatus"
+      :status-tone="mystery?.active && mystery.npc && remaining ? 'violet' : 'muted'"
+      status-icon="i-carbon-hourglass"
+      :currencies="currencies"
+      :loading="mysteryLoading"
+      :disabled="!currentAccountId || mysteryPurchasing"
+      refresh-label="刷新神秘商人"
+      @refresh="load"
+    />
 
-    <div v-if="error || notice" class="mystery-message" :class="{ success: !!notice && !error }">
+    <div v-if="(error && mystery) || notice" class="shop-message" :class="{ 'is-success': !!notice && !error }" role="status">
       {{ error || notice }}
     </div>
 
-    <div v-if="!currentAccountId" class="mystery-state">
-      <div class="i-carbon-user-avatar" />
-      <strong>请先选择账号</strong>
+    <EmptyState v-if="!currentAccountId" title="请先选择账号" description="神秘商人按当前账号读取" icon="i-carbon-user-avatar" />
+    <div v-else-if="mysteryLoading && !mystery" class="shop-loading">
+      <span class="i-svg-spinners-90-ring-with-bg" />
     </div>
-    <div v-else-if="mysteryLoading && !mystery" class="mystery-state">
-      <div class="i-carbon-circle-dash animate-spin" />
-      <strong>正在寻找神秘商人</strong>
-    </div>
-    <div v-else-if="error && !mystery" class="mystery-state">
-      <div class="i-carbon-warning-alt" />
-      <strong>{{ error }}</strong>
-      <button type="button" @click="load">
-        重试
-      </button>
-    </div>
-    <div v-else-if="!mystery?.active || !mystery.npc" class="mystery-state">
-      <div class="i-carbon-store" />
-      <strong>神秘商人暂未出现</strong>
-    </div>
+    <EmptyState v-else-if="error && !mystery" tone="error" title="神秘商人读取失败" :description="error" icon="i-carbon-warning-alt">
+      <NButton secondary @click="load">
+        重新读取
+      </NButton>
+    </EmptyState>
+    <EmptyState v-else-if="!mystery?.active || !mystery.npc" title="神秘商人暂未来访" description="商人出现后会在这里显示本轮货品" icon="i-carbon-store" />
 
-    <section v-else class="merchant-scene" aria-label="神秘商人商品">
-      <section class="merchant-identity">
-        <div class="merchant-mark">
-          <div class="i-carbon-store" />
+    <article v-else class="merchant-card" aria-label="神秘商人商品">
+      <header class="merchant-card__head">
+        <span class="merchant-avatar" aria-hidden="true"><span class="i-carbon-store" /></span>
+        <div class="min-w-0">
+          <strong>本轮神秘货品</strong>
+          <small>{{ openedAt ? `${openedAt} 开始营业` : '限时营业' }} · 商人 #{{ mystery.npc.id }}</small>
         </div>
-        <div>
-          <span>商人编号 #{{ mystery.npc.id }}</span>
-          <h2>今日神秘货品</h2>
-          <p>{{ new Date(mystery.activeTime || 0).toLocaleString() }} 开始营业</p>
-        </div>
-      </section>
+        <span v-if="discountLabel" class="merchant-discount">{{ discountLabel }}</span>
+      </header>
 
-      <article class="mystery-offer">
-        <div class="offer-visual">
-          <CommerceItemImage :src="mystery.npc.reward.image" :alt="mystery.npc.reward.name" size="lg" />
-          <span v-if="discountLabel">{{ discountLabel }}</span>
+      <div class="merchant-offer">
+        <div class="merchant-offer__visual">
+          <CommerceItemImage :src="mystery.npc.reward.image" :alt="mystery.npc.reward.name" size="md" />
         </div>
-        <div class="offer-content">
-          <small>神秘商品 #{{ mystery.npc.reward.id }}</small>
-          <h2>{{ mystery.npc.reward.name }}</h2>
-          <dl>
-            <div><dt>商品数量</dt><dd>x{{ mystery.npc.reward.count }}</dd></div>
-            <div>
-              <dt>原价</dt><dd class="original">
-                {{ mystery.npc.originalPrice.toLocaleString() }}
-              </dd>
-            </div>
-          </dl>
-          <div class="offer-price">
+        <div class="merchant-offer__info">
+          <h3 :title="`${mystery.npc.reward.name} #${mystery.npc.reward.id}`">
+            <span class="merchant-offer__name">{{ mystery.npc.reward.name }}</span>
+            <span class="merchant-offer__qty">×{{ mystery.npc.reward.count.toLocaleString() }}</span>
+          </h3>
+          <p v-if="mystery.npc.unitPrice">
+            单价 {{ mystery.npc.unitPrice.toLocaleString() }}<del v-if="mystery.npc.unitOriginalPrice > mystery.npc.unitPrice">{{ mystery.npc.unitOriginalPrice.toLocaleString() }}</del>
+          </p>
+          <div class="merchant-price">
             <CommerceItemImage :src="mystery.npc.price.image" :alt="mystery.npc.price.name" size="sm" />
-            <strong>{{ mystery.npc.price.count.toLocaleString() }}</strong>
-            <span>余额 {{ mystery.npc.price.balance === null ? '--' : mystery.npc.price.balance.toLocaleString() }}</span>
+            <strong :title="mystery.npc.price.name">{{ mystery.npc.price.count.toLocaleString() }}</strong>
+            <del v-if="mystery.npc.originalPrice > mystery.npc.price.count">{{ mystery.npc.originalPrice.toLocaleString() }}</del>
           </div>
-          <button class="purchase-button" type="button" :disabled="!canPurchase || mysteryPurchasing" @click="purchase">
-            <div v-if="mysteryPurchasing" class="i-carbon-circle-dash animate-spin" />
-            <div v-else class="i-carbon-shopping-cart-plus" />
-            {{ mysteryPurchasing ? '购买中' : canPurchase ? '购买这批商品' : '暂不可购买' }}
-          </button>
         </div>
-      </article>
-    </section>
+        <div class="merchant-offer__buy">
+          <NButton type="primary" :loading="mysteryPurchasing" :disabled="!canPurchase || mysteryPurchasing" @click="purchase">
+            {{ buttonLabel }}
+          </NButton>
+        </div>
+      </div>
+
+      <p v-if="purchaseHint" class="merchant-hint" role="status">
+        <span class="i-carbon-information" aria-hidden="true" />{{ purchaseHint }}
+      </p>
+    </article>
 
     <Teleport to="body">
       <Transition name="merchant-dialog">
@@ -169,7 +186,7 @@ onUnmounted(() => {
               <button type="button" :disabled="mysteryPurchasing" @click="purchaseDialogOpen = false">
                 取消
               </button>
-              <button type="button" class="dialog-confirm" :disabled="mysteryPurchasing" @click="confirmPurchase">
+              <button type="button" class="dialog-confirm" :disabled="mysteryPurchasing || !canPurchase" @click="confirmPurchase">
                 <div v-if="mysteryPurchasing" class="i-carbon-circle-dash animate-spin" />
                 <div v-else class="i-carbon-shopping-cart-plus" />
                 {{ mysteryPurchasing ? '购买中' : '确认购买' }}
@@ -183,212 +200,232 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mystery-header {
+.mystery-panel {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 2px 0;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 24px;
 }
-.mystery-header p {
-  margin: 0 0 4px;
-  color: var(--ui-violet);
-  font-size: 12px;
-  font-weight: 600;
-}
-.mystery-header span {
-  display: block;
-  margin-top: 5px;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-.mystery-header button {
+
+.shop-loading {
   display: grid;
-  width: 38px;
-  height: 38px;
+  min-height: 240px;
   place-items: center;
-  border: 1px solid var(--ui-border);
-  border-radius: 10px;
-  color: var(--ui-violet);
-  background: var(--ui-surface);
-  cursor: pointer;
+  color: var(--ui-primary);
+  font-size: 28px;
 }
-.mystery-message {
-  margin-top: 14px;
+
+.shop-message {
   padding: 10px 12px;
-  border: 1px solid rgba(201, 95, 102, 0.2);
-  border-radius: 8px;
-  color: #9a4048;
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-danger);
   background: var(--ui-danger-soft);
   font-size: 13px;
 }
-.mystery-message.success {
-  border-color: rgba(67, 141, 99, 0.2);
-  color: #2e714b;
+
+.shop-message.is-success {
+  color: var(--ui-primary);
   background: var(--ui-primary-soft);
 }
-.merchant-scene {
-  padding: 26px 0;
-}
-.merchant-identity {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  margin-bottom: 16px;
-}
-.merchant-mark {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  border: 1px solid rgba(143, 121, 188, 0.18);
-  border-radius: 50%;
-  color: var(--ui-violet);
-  background: var(--ui-violet-soft);
-  font-size: 25px;
-}
-.merchant-identity span {
-  color: var(--ui-subtle);
-  font-size: 11px;
-}
-.merchant-identity h2 {
-  margin: 2px 0;
-  font-size: 18px;
-}
-.merchant-identity p {
-  margin: 0;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-.mystery-offer {
-  display: grid;
-  grid-template-columns: minmax(260px, 36%) 1fr;
-  min-height: 390px;
+
+/* 来访商人卡：顶部身份条带紫色点缀，下方是唯一一件货品。 */
+.merchant-card {
+  width: 100%;
+  max-width: 760px;
   overflow: hidden;
-  border: 1px solid var(--ui-border);
+  border: 1px solid color-mix(in srgb, var(--ui-violet) 22%, var(--ui-border));
   border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--ui-shadow-sm);
 }
-.offer-visual {
-  position: relative;
+
+.merchant-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ui-border);
+  background: linear-gradient(90deg, var(--ui-violet-soft), transparent 75%);
+}
+
+.merchant-card__head strong {
+  display: block;
+  color: var(--ui-ink);
+  font-size: 15px;
+}
+
+.merchant-card__head small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merchant-avatar {
+  width: 38px;
+  height: 38px;
   display: grid;
+  flex: none;
   place-items: center;
-  border-right: 1px solid var(--ui-border);
-  background: var(--ui-violet-soft);
+  border-radius: 12px;
+  color: var(--ui-violet);
+  background: var(--ui-surface-strong);
+  font-size: 20px;
 }
-.offer-visual::before {
-  position: absolute;
-  inset: 12%;
-  border: 1px solid rgba(143, 121, 188, 0.18);
-  border-radius: 50%;
-  content: '';
-}
-.offer-visual > span {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  padding: 5px 10px;
+
+.merchant-discount {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 10px;
   border-radius: 999px;
-  color: white;
+  color: #fff;
   background: var(--ui-danger);
   font-size: 12px;
   font-weight: 700;
+  line-height: 20px;
 }
-.offer-content {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(26px, 5vw, 56px);
-}
-.offer-content small {
-  color: var(--ui-subtle);
-}
-.offer-content h2 {
-  margin: 8px 0 4px;
-  font-size: clamp(24px, 3vw, 34px);
-  line-height: 1.2;
-}
-.offer-content dl {
+
+.merchant-offer {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 18px;
-  margin: 28px 0;
+  padding: 18px;
 }
-.offer-content dl > div {
-  padding: 12px 0;
-  border-block: 1px solid rgba(58, 86, 68, 0.1);
+
+.merchant-offer__visual {
+  position: relative;
 }
-.offer-content dt {
+
+.merchant-offer__visual :deep(.item-image) {
+  width: 84px;
+  height: 84px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--ui-surface-soft);
+}
+
+.merchant-offer__qty {
+  flex: none;
   color: var(--ui-muted);
-  font-size: 11px;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
-.offer-content dd {
-  margin: 5px 0 0;
-  font-size: 16px;
+
+.merchant-offer__info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.merchant-offer__info h3 {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 17px;
   font-weight: 700;
 }
-.offer-content dd.original {
-  color: var(--ui-subtle);
-  text-decoration: line-through;
+
+.merchant-offer__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.offer-price {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.offer-price strong {
-  color: var(--ui-warning);
-  font-size: 26px;
-}
-.offer-price span {
-  margin-left: auto;
+
+.merchant-offer__info p {
+  margin: 0;
   color: var(--ui-muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
-.purchase-button {
+
+.merchant-offer__info del,
+.merchant-price del {
+  margin-left: 6px;
+  color: var(--ui-subtle);
+  font-size: 12px;
+}
+
+.merchant-price {
   display: flex;
-  width: 100%;
-  height: 42px;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  border: 1px solid var(--ui-primary);
-  border-radius: 10px;
-  color: white;
-  background: var(--ui-primary);
-  font-weight: 700;
-  cursor: pointer;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--ui-warning);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
 }
-.purchase-button:disabled {
-  border-color: #bdc4be;
-  background: #bdc4be;
-  cursor: not-allowed;
+
+.merchant-price :deep(.item-image) {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
 }
-.mystery-state {
+
+.merchant-offer__buy :deep(.n-button) {
+  min-width: 96px;
+}
+
+.merchant-hint {
   display: flex;
-  min-height: 350px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 18px 14px;
   color: var(--ui-muted);
-  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
-.mystery-state > div {
-  color: var(--ui-violet);
-  font-size: 36px;
+
+.merchant-hint span {
+  flex: none;
+  margin-top: 3px;
 }
-.mystery-state button {
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--ui-primary);
-  border-radius: 9px;
-  color: white;
-  background: var(--ui-primary);
-  cursor: pointer;
+
+@media (max-width: 560px) {
+  .merchant-card__head {
+    padding: 12px 14px;
+  }
+
+  .merchant-offer {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .merchant-offer__visual :deep(.item-image) {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+  }
+
+  .merchant-offer__buy {
+    grid-column: 1 / -1;
+  }
+
+  .merchant-offer__buy :deep(.n-button) {
+    width: 100%;
+    height: 38px;
+  }
+
+  .merchant-hint {
+    padding: 0 14px 12px;
+  }
 }
+
 .purchase-overlay {
   position: fixed;
   z-index: 1000;
@@ -441,6 +478,10 @@ onUnmounted(() => {
   border: 1px solid var(--ui-border);
   border-radius: 8px;
   background: var(--ui-surface-soft);
+}
+.dialog-goods :deep(.item-image) {
+  width: 64px;
+  height: 64px;
 }
 .dialog-goods > div:last-child {
   display: flex;
@@ -520,18 +561,5 @@ onUnmounted(() => {
 .merchant-dialog-enter-from .purchase-dialog,
 .merchant-dialog-leave-to .purchase-dialog {
   transform: translateY(8px) scale(0.98);
-}
-@media (max-width: 720px) {
-  .mystery-offer {
-    grid-template-columns: 1fr;
-  }
-  .offer-visual {
-    min-height: 190px;
-    border-right: 0;
-    border-bottom: 1px solid var(--ui-border);
-  }
-  .offer-content {
-    padding: 24px;
-  }
 }
 </style>

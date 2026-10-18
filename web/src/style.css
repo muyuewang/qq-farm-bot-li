@@ -28,10 +28,10 @@ textarea * {
   color-scheme: light;
   --ui-bg: #f3f5ef;
   --ui-bg-soft: #eef2eb;
-  --ui-surface: rgba(255, 255, 255, 0.78);
+  --ui-surface: rgba(255, 255, 255, 0.86);
   --ui-surface-strong: rgba(255, 255, 255, 0.92);
   --ui-surface-soft: rgba(239, 245, 238, 0.8);
-  --ui-border: rgba(58, 86, 68, 0.13);
+  --ui-border: rgba(58, 86, 68, 0.1);
   --ui-border-strong: rgba(58, 86, 68, 0.2);
   --ui-ink: #243028;
   --ui-muted: #6d776f;
@@ -47,9 +47,13 @@ textarea * {
   --ui-violet-soft: #f0edf8;
   --ui-blue: #5c8fa8;
   --ui-blue-soft: #eaf2f5;
+  --ui-bg-glow: rgba(214, 236, 214, 0.75);
+  --ui-bg-glow-2: rgba(222, 236, 240, 0.6);
+  --chrome-bg: color-mix(in srgb, #f3f5ef 96%, transparent);
+  --chrome-blur: blur(18px) saturate(150%);
   --ui-radius-control: 10px;
-  --ui-radius-card: 8px;
-  --ui-shadow-sm: 0 3px 14px rgba(55, 75, 61, 0.06);
+  --ui-radius-card: 14px;
+  --ui-shadow-sm: 0 1px 2px rgba(45, 66, 52, 0.04), 0 6px 20px rgba(45, 66, 52, 0.05);
   --ui-shadow-md: 0 12px 32px rgba(55, 75, 61, 0.1);
   --ui-shadow-lg: 0 24px 64px rgba(55, 75, 61, 0.15);
 
@@ -60,7 +64,7 @@ textarea * {
   --theme-secondary: var(--ui-teal);
   --theme-primary-rgb: 67, 141, 99;
   --theme-radius-sm: 6px;
-  --theme-radius-md: 8px;
+  --theme-radius-md: 10px;
   --theme-radius-lg: var(--ui-radius-card);
   --theme-radius-xl: var(--ui-radius-card);
   --theme-shadow-sm: var(--ui-shadow-sm);
@@ -89,6 +93,71 @@ textarea * {
   --glass-highlight: rgba(255, 255, 255, 0.9);
   --glass-muted: var(--ui-muted);
   --glass-shadow: var(--ui-shadow-lg);
+}
+
+.dark {
+  color-scheme: dark;
+  --ui-bg: #141c18;
+  --ui-bg-soft: #1b2620;
+  --ui-surface: #202c25;
+  --ui-surface-strong: #28372e;
+  --ui-surface-soft: #25332b;
+  --ui-border: rgba(179, 204, 186, 0.18);
+  --ui-border-strong: rgba(179, 204, 186, 0.3);
+  --ui-ink: #e3ece5;
+  --ui-muted: #acbcb0;
+  --ui-subtle: #819487;
+  --ui-primary-soft: #233e2e;
+  --ui-warning-soft: #3c3020;
+  --ui-danger-soft: #3c2529;
+  --ui-violet-soft: #302b40;
+  --ui-blue-soft: #20343f;
+  --glass-panel: #1b2620;
+  --glass-card: var(--ui-surface);
+  --glass-elevated: #202c25;
+  --glass-input: #19251e;
+  --glass-highlight: rgba(179, 204, 186, 0.06);
+  --ui-bg-glow: rgba(67, 141, 99, 0.1);
+  --ui-bg-glow-2: rgba(92, 143, 168, 0.06);
+  --chrome-bg: color-mix(in srgb, #141c18 96%, transparent);
+}
+
+.dark :is(.n-input, .n-input-number, .n-base-selection) {
+  --n-text-color: var(--ui-ink) !important;
+  --n-text-color-disabled: var(--ui-subtle) !important;
+  --n-placeholder-color: var(--ui-subtle) !important;
+  --n-color-disabled: var(--ui-bg-soft) !important;
+}
+
+.dark .n-tabs {
+  --n-tab-text-color: var(--ui-muted) !important;
+  --n-tab-text-color-active: #7dc99a !important;
+  --n-tab-text-color-hover: #7dc99a !important;
+  --n-bar-color: #7dc99a !important;
+}
+
+.dark .n-card {
+  --n-title-text-color: var(--ui-ink) !important;
+  --n-text-color: var(--ui-ink) !important;
+}
+
+.dark .base-button.n-button--default-type {
+  --n-text-color: var(--ui-ink) !important;
+  --n-text-color-hover: var(--ui-ink) !important;
+  --n-text-color-pressed: var(--ui-ink) !important;
+  --n-text-color-focus: var(--ui-ink) !important;
+  --n-text-color-disabled: var(--ui-subtle) !important;
+}
+
+.dark .base-button.n-button--default-type.n-button--secondary {
+  --n-color: var(--ui-surface-strong) !important;
+  --n-color-hover: color-mix(in srgb, var(--ui-surface-strong) 80%, var(--ui-primary)) !important;
+  --n-color-pressed: var(--ui-primary-soft) !important;
+}
+
+.dark :is(.n-base-select-option, .n-base-select-menu, .n-time-picker-panel, .n-dialog) {
+  color: var(--ui-ink);
+  background-color: var(--glass-elevated);
 }
 
 ::-webkit-scrollbar-track {
@@ -136,14 +205,17 @@ body {
   font-family: Inter, "Microsoft YaHei", "PingFang SC", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0;
   color: var(--ui-ink);
-  background: var(--ui-bg);
+  background:
+    radial-gradient(1100px 520px at 0% 0%, var(--ui-bg-glow), transparent 70%),
+    radial-gradient(900px 480px at 100% 100%, var(--ui-bg-glow-2), transparent 70%),
+    var(--ui-bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 .app-shell {
   color: var(--ui-ink);
-  background: var(--ui-bg);
+  background: transparent;
 }
 
 .liquid-layout,
@@ -215,14 +287,6 @@ body {
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.cartoon-card:not(.land-card):hover {
-  border-color: color-mix(in srgb, var(--theme-primary) 34%, var(--glass-border)) !important;
-  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--theme-shadow-md) !important;
-}
-
-.cartoon-card:not(.land-card):active {
-  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--theme-shadow-sm) !important;
-}
 
 .farm-card,
 .farm-panel {
@@ -359,6 +423,44 @@ body {
   min-width: 0;
 }
 
+/* 页面操作区：标题由顶栏统一显示，页面内只放切换与操作。 */
+.page-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.page-toolbar__actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  /* 页面分区标签在手机上收紧间距，尽量一屏放下，超出时仍可横向滑动。 */
+  .n-tabs.n-tabs--line-type {
+    --n-tab-gap: 16px !important;
+    --n-tab-font-size: 14px !important;
+  }
+
+  .page-toolbar__actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .page-toolbar__actions > * {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
 .settings-page > :first-child h1 {
   margin: 0;
   color: var(--ui-ink);
@@ -490,6 +592,102 @@ select:focus-visible {
   font-family: inherit;
   font-weight: 600;
   letter-spacing: 0;
+}
+
+/* 滚动模型：一页只有一个滚动区。页头固定在滚动区外；页面级 Tab 吸顶；
+   面板工具栏在桌面端吸在 Tab 下方，手机端随内容滚走，把可视区留给列表。
+   页头、Tab、页面工具栏视为同一块顶部栏：静止时透明（露出页面底色），
+   内容开始滚动后统一换上毛玻璃底，底色横向铺满整行，只在整块栏的最下沿画一条细线。 */
+.page-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin-bottom: 16px !important;
+  isolation: isolate;
+}
+
+.page-tabs::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 calc(-1 * var(--page-pad, 0px));
+  content: '';
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.is-scrolled .page-tabs::before {
+  background: var(--chrome-bg);
+  box-shadow: 0 1px 0 var(--ui-border);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
+}
+
+@media (min-width: 1024px) {
+  .panel-sticky {
+    position: sticky;
+    top: var(--sticky-top, 0px);
+    z-index: 6;
+    background: var(--ui-surface-strong);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  /* 直接放在页面底色上的工具栏：并入顶部栏，细线移到它的下沿。 */
+  .panel-sticky--page {
+    z-index: 9;
+    margin-top: -16px;
+    padding-block: 10px;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    isolation: isolate;
+  }
+
+  .panel-sticky--page::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0 calc(-1 * var(--page-pad, 0px));
+    content: '';
+    transition:
+      background-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  .is-scrolled .panel-sticky--page::before {
+    background: var(--chrome-bg);
+    box-shadow: 0 1px 0 var(--ui-border);
+    -webkit-backdrop-filter: var(--chrome-blur);
+    backdrop-filter: var(--chrome-blur);
+  }
+
+  .is-scrolled .page-tabs:has(~ .panel-sticky--page)::before {
+    box-shadow: none;
+  }
+
+  /* 卡片内的工具栏：底色向两侧铺满卡片内边距（--panel-pad），吸顶时不露出下面的列表。 */
+  .panel-sticky--inset {
+    margin-top: -8px;
+    padding-block: 8px;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .panel-sticky--inset::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0 calc(-1 * var(--panel-pad, 20px));
+    background: color-mix(in srgb, var(--panel-sticky-bg, var(--ui-surface-strong)) 96%, transparent);
+    box-shadow: 0 1px 0 var(--ui-border);
+    content: '';
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+}
+
+.font-mono {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Microsoft YaHei', 'PingFang SC', monospace;
 }
 
 .font-body {

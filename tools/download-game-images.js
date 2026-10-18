@@ -396,12 +396,13 @@ function requireUniqueCandidate(candidates, manifestPath, expectedType) {
     return candidate;
 }
 
-function resolveImageCandidate(manifestPath, mode, pathIndex, manifests) {
+function resolveImageCandidate(manifestPath, mode, pathIndex, manifests, bundleName = '') {
+    const paths = bundleName ? pathIndex.byBundle.get(bundleName) : pathIndex.global;
     if (mode === 'icon') {
         if (!manifestPath.endsWith('/spriteFrame')) {
             throw Object.assign(new Error(`icon_res 必须以 /spriteFrame 结尾: ${manifestPath}`), { code: 'INVALID_ICON_PATH' });
         }
-        const sprite = requireUniqueCandidate(pathIndex.global.get(manifestPath), manifestPath, 'cc.SpriteFrame');
+        const sprite = requireUniqueCandidate(paths?.get(manifestPath), manifestPath, 'cc.SpriteFrame');
         const rootPath = manifestPath.slice(0, -'/spriteFrame'.length);
         const localCandidates = pathIndex.byBundle.get(sprite.bundle)?.get(rootPath);
         const root = requireUniqueCandidate(localCandidates, `${sprite.bundle}:${rootPath}`, 'cc.ImageAsset');
@@ -411,7 +412,7 @@ function resolveImageCandidate(manifestPath, mode, pathIndex, manifests) {
         }
         return { candidate: root, spriteFrame: sprite, manifestPath: rootPath };
     }
-    const candidate = requireUniqueCandidate(pathIndex.global.get(manifestPath), manifestPath, 'cc.ImageAsset');
+    const candidate = requireUniqueCandidate(paths?.get(manifestPath), manifestPath, 'cc.ImageAsset');
     return { candidate, spriteFrame: null, manifestPath };
 }
 
@@ -467,7 +468,7 @@ function resolveNative(candidate, manifests, settings) {
 function createMappingRecord(kind, outputId, sourceIndex, mapping, pathIndex, manifests, settings) {
     const record = { kind, outputId, sourceIndex, mapping, status: 'mapped' };
     try {
-        const resolved = resolveImageCandidate(mapping.manifestPath, mapping.mode, pathIndex, manifests);
+        const resolved = resolveImageCandidate(mapping.manifestPath, mapping.mode, pathIndex, manifests, mapping.bundleName);
         const native = resolveNative(resolved.candidate, manifests, settings);
         Object.assign(record, {
             manifestPath: resolved.manifestPath,
@@ -489,11 +490,13 @@ function mapAll(inputs, pathIndex, manifests, settings) {
     const records = [];
     inputs.itemInput.value.forEach((item, index) => {
         let mapping;
+        const bundleName = String(item.bundle_name || '').trim();
         if (typeof item.icon_res === 'string' && item.icon_res.trim()) {
             const iconPath = item.icon_res.endsWith('/spriteFrame') ? item.icon_res : `${item.icon_res}/spriteFrame`;
-            mapping = { mode: 'icon', field: 'icon_res', value: item.icon_res, manifestPath: iconPath };
+            mapping = { mode: 'icon', field: 'icon_res', value: item.icon_res, manifestPath: iconPath, bundleName };
         } else if (typeof item.asset_name === 'string' && item.asset_name.trim()) {
-            mapping = { mode: 'asset', field: 'asset_name', value: item.asset_name, manifestPath: `model/v4/${item.asset_name}_Seed` };
+            const manifestPath = bundleName ? `texture/${item.asset_name}` : `model/v4/${item.asset_name}_Seed`;
+            mapping = { mode: 'asset', field: 'asset_name', value: item.asset_name, manifestPath, bundleName };
         } else {
             records.push({
                 kind: 'ItemInfo', outputId: item.id, sourceIndex: index, status: 'failed',
@@ -822,6 +825,8 @@ module.exports = {
     readSettings,
     loadManifests,
     buildPathIndex,
+    prepareManifest,
+    mapAll,
     createMappingRecord,
     downloadImages,
     writeReportAtomically,

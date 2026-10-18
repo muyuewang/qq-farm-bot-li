@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import type { MallGoodsDto } from '@/stores/commerce'
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
+import CommerceShopBar from '@/components/commerce/CommerceShopBar.vue'
 import PurchaseDialog from '@/components/commerce/PurchaseDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useCommerceStore } from '@/stores/commerce'
 import { useToastStore } from '@/stores/toast'
@@ -25,6 +28,8 @@ const filter = ref<FilterKey>(route.query.category === 'pet-diary' ? 'activity' 
 const query = ref('')
 const clock = ref(Date.now())
 let timer: number | undefined
+
+const ACTIVITY_ITEM_IDS = new Set([1028, 1029, 1030, 80101, 80102, 80103, 90031, 90032, 90033, 90034, 90041, 29004, 101305, 101613, 6001, 6002, 26030, 90042])
 
 const filters: Array<{ key: FilterKey, label: string }> = [
   { key: 'all', label: '全部' },
@@ -50,20 +55,59 @@ const filteredGoods = computed(() => {
     if (filter.value === 'pet')
       return names.includes('狗粮')
     if (filter.value === 'activity')
-      return goods.isDiscounted || goods.rewards.some(item => [1028, 1029, 1030, 80101, 80102, 80103, 90031, 90032, 90033, 90034, 90041, 29004, 101305, 101613, 6001, 6002, 26030, 90042].includes(Number(item.id)))
+      return goods.isDiscounted || goods.rewards.some(item => ACTIVITY_ITEM_IDS.has(Number(item.id)))
     return true
   }).map(goods => ({ ...goods, action: getMallPurchaseAction(goods, slotType === 4 ? mall.value?.membership : null) }))
 })
 
-const refreshRemaining = computed(() => {
+function formatDuration(seconds: number) {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days > 0)
+    return `${days}天${hours}小时`
+  if (hours > 0)
+    return `${hours}小时${minutes}分`
+  return `${Math.max(1, minutes)}分钟`
+}
+
+const shopStatus = computed(() => {
   if (!mall.value)
     return ''
+  if (slotType === 4 && mall.value.membership) {
+    return mall.value.membership.isSvip
+      ? `SVIP 生效中 · 剩余 ${mall.value.membership.remainingDays} 天`
+      : '当前账号不是 SVIP，可浏览专属商品'
+  }
   const refreshAt = mall.value.serverTime + mall.value.refreshCountdown * 1000
   const seconds = Math.max(0, Math.floor((refreshAt - clock.value) / 1000))
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return `${hours}小时${minutes}分钟后刷新`
+  return `${formatDuration(seconds)}后刷新`
 })
+
+const currencies = computed(() => (mall.value?.currencies || []).map(currency => ({
+  id: currency.id,
+  name: currency.name,
+  image: currency.image,
+  amount: currency.balanceKnown ? currency.count : null,
+})))
+
+// 礼包内容完整清单，用于悬停提示与读屏；卡片上一行放不下时右侧淡出，完整内容在购买弹窗中查看。
+function rewardSummary(goods: MallGoodsDto) {
+  return goods.rewards.map(item => `${item.name} ×${item.count}`).join('\n')
+}
+
+// 只有一种奖励且与商品同名时，名称已经说明内容，只补数量。
+function isSingleReward(goods: MallGoodsDto) {
+  return goods.rewards.length === 1
+}
+
+function discountRemaining(goods: MallGoodsDto) {
+  if (!goods.discountEndTime)
+    return ''
+  const end = goods.discountEndTime > 1e12 ? goods.discountEndTime : goods.discountEndTime * 1000
+  const seconds = Math.floor((end - clock.value) / 1000)
+  return seconds > 0 ? `剩 ${formatDuration(seconds)}` : ''
+}
 
 function load() {
   commerceStore.fetchMall(String(currentAccountId.value || ''), slotType)
@@ -88,7 +132,11 @@ async function purchase(count: number) {
   }
 }
 
-watch(() => slotType, () => { selected.value = null; filter.value = 'all'; load() })
+watch(() => slotType, () => {
+  selected.value = null
+  filter.value = 'all'
+  load()
+})
 watch(currentAccountId, () => {
   selected.value = null
   load()
@@ -109,101 +157,109 @@ onUnmounted(() => {
 
 <template>
   <div class="mall-catalog">
-    <header class="mall-header">
-      <div>
-        <span v-if="mall">{{ refreshRemaining }}</span>
-      </div>
-      <div class="mall-header__actions">
-        <div v-for="currency in mall?.currencies || []" :key="currency.id" class="currency-balance">
-          <CommerceItemImage :src="currency.image" :alt="currency.name" size="sm" />
-          <span>{{ currency.name }}</span>
-          <strong>{{ currency.balanceKnown ? currency.count.toLocaleString() : '--' }}</strong>
-        </div>
-        <button type="button" title="刷新商城" :disabled="mallLoading" @click="load">
-          <div class="i-carbon-renew" :class="{ 'animate-spin': mallLoading }" />
-        </button>
-      </div>
-    </header>
+    <CommerceShopBar
+      :status="shopStatus"
+      :status-tone="slotType === 4 && mall?.membership?.isSvip ? 'violet' : 'muted'"
+      :currencies="currencies"
+      :loading="mallLoading"
+      :disabled="!currentAccountId"
+      refresh-label="刷新商城"
+      @refresh="load"
+    />
 
-    <div v-if="error || notice" class="mall-message" :class="{ success: !!notice && !error }">
+    <div v-if="(error && mall) || notice" class="shop-message" :class="{ 'is-success': !!notice && !error }" role="status">
       <span>{{ error || notice }}</span>
-      <button type="button" title="关闭消息" @click="commerceStore.clearMessages">
-        <div class="i-carbon-close" />
+      <button type="button" title="关闭消息" aria-label="关闭消息" @click="commerceStore.clearMessages">
+        <span class="i-carbon-close" />
       </button>
     </div>
 
-    <div v-if="slotType === 4 && mall?.membership" class="mall-message membership-status" role="status">
-      {{ mall.membership.isSvip ? 'SVIP 权益生效中 · 剩余 ' + mall.membership.remainingDays + ' 天' : '当前账号不是 SVIP，可浏览专属商品' }}
-    </div>
-    <section class="mall-toolbar" aria-label="商品筛选">
-      <div class="filter-tabs">
-        <button v-for="entry in filters" :key="entry.key" type="button" :class="{ active: filter === entry.key }" @click="filter = entry.key">
+    <section v-if="mall" class="mall-filters" aria-label="商品筛选">
+      <div class="mall-filters__chips" role="group" aria-label="商品分类">
+        <NButton
+          v-for="entry in filters"
+          :key="entry.key"
+          size="small"
+          :type="filter === entry.key ? 'primary' : 'default'"
+          :secondary="filter !== entry.key"
+          @click="filter = entry.key"
+        >
           {{ entry.label }}
-        </button>
+        </NButton>
       </div>
       <label class="mall-search">
-        <div class="i-carbon-search" />
-        <input v-model="query" type="search" placeholder="搜索商品">
+        <span class="i-carbon-search" aria-hidden="true" />
+        <input v-model="query" type="search" placeholder="搜索商品或内容" aria-label="搜索商品">
       </label>
     </section>
 
-    <div v-if="!currentAccountId" class="mall-state">
-      <div class="i-carbon-user-avatar" />
-      <strong>请先选择账号</strong>
+    <EmptyState v-if="!currentAccountId" title="请先选择账号" description="商城商品与余额按当前账号读取" icon="i-carbon-user-avatar" />
+    <div v-else-if="mallLoading && !mall" class="shop-loading">
+      <span class="i-svg-spinners-90-ring-with-bg" />
     </div>
-    <div v-else-if="mallLoading && !mall" class="mall-state">
-      <div class="i-carbon-circle-dash animate-spin" />
-      <strong>正在加载商城</strong>
-    </div>
-    <div v-else-if="!mall && error" class="mall-state">
-      <div class="i-carbon-warning-alt" />
-      <strong>{{ error }}</strong>
-      <button type="button" @click="load">
-        重试
-      </button>
-    </div>
-    <div v-else-if="filteredGoods.length === 0" class="mall-state">
-      <div class="i-carbon-search-locate" />
-      <strong>没有匹配的商品</strong>
-    </div>
+    <EmptyState v-else-if="!mall && error" tone="error" title="商城读取失败" :description="error" icon="i-carbon-warning-alt">
+      <NButton secondary @click="load">
+        重新读取
+      </NButton>
+    </EmptyState>
+    <EmptyState v-else-if="filteredGoods.length === 0" title="没有匹配的商品" description="换个分类或关键词试试" icon="i-carbon-search-locate" />
 
     <section v-else class="goods-grid" aria-live="polite">
-      <article v-for="goods in filteredGoods" :key="goods.id" class="goods-card" :class="{ unavailable: !goods.action.enabled }">
-        <div class="goods-visual">
-          <CommerceItemImage :src="goods.rewards[0]?.image" :alt="goods.rewards[0]?.name || goods.name" size="lg" />
-          <span v-if="goods.isFree" class="goods-badge free">免费</span>
-          <span v-else-if="goods.discountText" class="goods-badge discount">{{ goods.discountText }}</span>
+      <article
+        v-for="goods in filteredGoods"
+        :key="goods.id"
+        class="goods-card"
+        :class="{ 'is-unavailable': !goods.action.enabled }"
+      >
+        <div class="goods-card__visual">
+          <CommerceItemImage :src="goods.rewards[0]?.image" :alt="goods.rewards[0]?.name || goods.name" size="md" />
         </div>
-        <div class="goods-main">
-          <div class="goods-title">
-            <h2>{{ goods.name }}</h2>
-            <small>#{{ goods.id }}</small>
+
+        <div class="goods-card__main">
+          <div class="goods-card__title">
+            <h3 class="goods-card__name" :title="`${goods.name} #${goods.id}`">
+              {{ goods.name }}
+            </h3>
+            <span v-if="!goods.isFree && goods.discountText" class="goods-tag">{{ goods.discountText }}</span>
           </div>
-          <div class="reward-list">
-            <span v-for="reward in goods.rewards" :key="reward.id">
-              <CommerceItemImage :src="reward.image" :alt="reward.name" size="sm" />
-              {{ reward.name }} x{{ reward.count }}
+          <div v-if="isSingleReward(goods)" class="goods-card__single">
+            {{ goods.rewards[0]?.name }} <b>×{{ goods.rewards[0]?.count.toLocaleString() }}</b>
+          </div>
+          <div v-else class="goods-card__rewards" :title="rewardSummary(goods)" :aria-label="`礼包内容：${rewardSummary(goods).replace(/\n/g, '，')}`">
+            <span class="reward-total">{{ goods.rewards.length }}件</span>
+            <span class="goods-card__reward-track">
+              <span v-for="reward in goods.rewards" :key="reward.id" class="reward-chip">
+                <CommerceItemImage :src="reward.image" :alt="reward.name" size="sm" />
+                <b>×{{ reward.count.toLocaleString() }}</b>
+              </span>
             </span>
           </div>
-          <div v-if="goods.limit" class="limit-row">
-            <span>限购 {{ goods.limit.bought }}/{{ goods.limit.max }}</span>
-            <div><i :style="{ width: `${Math.min(100, goods.limit.max ? goods.limit.bought / goods.limit.max * 100 : 0)}%` }" /></div>
+          <div v-if="goods.limit || discountRemaining(goods)" class="goods-card__meta">
+            <span v-if="goods.limit">限购 {{ goods.limit.bought }}/{{ goods.limit.max }}</span>
+            <span v-if="discountRemaining(goods)" class="is-warn">{{ discountRemaining(goods) }}</span>
           </div>
         </div>
-        <footer>
+
+        <div class="goods-card__buy">
           <div class="goods-price">
-            <strong v-if="goods.isFree">免费</strong>
+            <strong v-if="goods.isFree" class="goods-price__free">免费</strong>
             <template v-else>
               <CommerceItemImage :src="goods.price.image" :alt="goods.price.name" size="sm" />
-              <strong>{{ goods.price.count.toLocaleString() }}</strong>
+              <strong :title="goods.price.name">{{ goods.price.count.toLocaleString() }}</strong>
               <del v-if="goods.originalPrice">{{ goods.originalPrice.toLocaleString() }}</del>
             </template>
           </div>
-          <button type="button" :title="goods.action.reason" :disabled="!goods.action.enabled || purchasingGoodsId !== null" @click="choose(goods)">
-            <div v-if="goods.action.enabled" class="i-carbon-shopping-cart-plus" />
+          <NButton
+            size="small"
+            :type="goods.action.enabled ? 'primary' : 'default'"
+            :secondary="!goods.action.enabled"
+            :title="goods.action.reason"
+            :disabled="!goods.action.enabled || purchasingGoodsId !== null"
+            @click="choose(goods)"
+          >
             {{ goods.action.label }}
-          </button>
-        </footer>
+          </NButton>
+        </div>
       </article>
     </section>
 
@@ -218,139 +274,58 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mall-header {
+.mall-catalog {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 16px 2px 0;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 24px;
 }
-.mall-header > div > span {
-  display: block;
-  margin-top: 5px;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-.mall-header__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.mall-header__actions > button {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid var(--ui-border);
-  border-radius: 10px;
-  color: var(--ui-primary);
-  background: var(--ui-surface);
-  cursor: pointer;
-}
-.currency-balance {
-  display: grid;
-  grid-template-columns: 36px auto auto;
-  gap: 8px;
-  align-items: center;
-  padding: 3px 9px 3px 3px;
-  border: 1px solid var(--ui-border);
-  border-radius: 10px;
-  background: var(--ui-surface);
-}
-.currency-balance :deep(.item-image) {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.currency-balance span {
-  color: var(--ui-muted);
-  font-size: 11px;
-}
-.currency-balance strong {
-  color: var(--ui-ink);
-  font-size: 13px;
-}
-.mall-message {
+
+.mall-filters {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid rgba(201, 95, 102, 0.2);
-  border-radius: 8px;
-  color: #9a4048;
-  background: var(--ui-danger-soft);
-  font-size: 13px;
 }
-.membership-status {
-  border-color: var(--ui-border);
-  color: var(--ui-muted);
-  background: var(--ui-surface-soft);
-}
-.mall-message.success {
-  border-color: rgba(67, 141, 99, 0.2);
-  color: #2e714b;
-  background: var(--ui-primary-soft);
-}
-.mall-message button {
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-.mall-toolbar {
+
+.mall-filters__chips {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 18px 0;
-}
-.filter-tabs {
-  display: flex;
+  min-width: 0;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  scrollbar-width: none;
 }
-.filter-tabs button {
-  height: 34px;
-  padding: 0 13px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: var(--ui-muted);
-  background: transparent;
-  white-space: nowrap;
-  cursor: pointer;
+
+.mall-filters__chips::-webkit-scrollbar {
+  display: none;
 }
-.filter-tabs button:hover {
-  background: var(--ui-surface-soft);
+
+.mall-filters__chips :deep(.n-button) {
+  flex: none;
 }
-.filter-tabs button.active {
-  border-color: rgba(67, 141, 99, 0.17);
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-  font-weight: 700;
-}
+
 .mall-search {
   display: flex;
-  width: min(270px, 38vw);
-  height: 38px;
+  width: min(260px, 36vw);
+  height: 34px;
+  flex: none;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
   border: 1px solid var(--ui-border);
-  border-radius: 10px;
-  color: var(--ui-muted);
-  background: var(--ui-surface);
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-subtle);
+  background: var(--glass-input);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
+
 .mall-search:focus-within {
-  border-color: rgba(67, 141, 99, 0.5);
-  box-shadow: 0 0 0 3px rgba(67, 141, 99, 0.1);
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-primary) 14%, transparent);
 }
+
 .mall-search input {
   min-width: 0;
   flex: 1;
@@ -358,237 +333,277 @@ onUnmounted(() => {
   outline: 0;
   color: var(--ui-ink);
   background: transparent;
+  font-size: 13px;
 }
+
+.shop-loading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: var(--ui-primary);
+  font-size: 28px;
+}
+
+/* 横向紧凑卡：图 | 名称与内容 | 价格与按钮。内容压成一行，所有卡片等高。 */
 .goods-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(218px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 12px;
-  padding-bottom: 24px;
 }
+
 .goods-card {
-  display: flex;
-  min-height: 290px;
-  flex-direction: column;
-  overflow: hidden;
+  display: grid;
+  min-width: 0;
+  min-height: 104px;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--ui-shadow-sm);
   transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
+
 .goods-card:hover {
-  border-color: rgba(67, 141, 99, 0.28);
-  box-shadow: var(--ui-shadow-md);
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--ui-primary) 30%, var(--ui-border));
 }
-.goods-card.unavailable {
+
+.goods-card.is-unavailable {
   opacity: 0.62;
 }
-.goods-visual {
+
+.goods-card__visual {
   position: relative;
-  display: grid;
-  min-height: 126px;
-  place-items: center;
-  border-bottom: 1px solid rgba(58, 86, 68, 0.08);
+}
+
+.goods-card__visual :deep(.item-image) {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 16px;
   background: var(--ui-surface-soft);
 }
-.goods-visual :deep(.item-image--lg) {
-  width: 92px;
-  height: 92px;
+
+.goods-card__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
 }
-.goods-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: white;
-  font-size: 10px;
+
+/* 折扣标签放在名称后面，不再压在商品图上。 */
+.goods-tag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  font-size: 11px;
   font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
 }
-.goods-badge.free {
-  background: var(--ui-primary);
-}
-.goods-badge.discount {
-  background: var(--ui-danger);
-}
-.goods-main {
+
+.goods-card__main {
   display: flex;
-  flex: 1;
+  min-width: 0;
   flex-direction: column;
-  padding: 13px 14px;
+  gap: 6px;
 }
-.goods-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.goods-title h2 {
+
+.goods-card__name {
+  min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 15px;
+  color: var(--ui-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.goods-title small,
-.limit-row {
-  color: var(--ui-subtle);
-  font-size: 10px;
-}
-.reward-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
-}
-.reward-list > span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+
+.goods-card__single {
+  overflow: hidden;
   color: var(--ui-muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.reward-list > span :deep(.item-image--sm),
-.goods-price :deep(.item-image--sm) {
-  width: 24px;
-  height: 24px;
+
+.goods-card__single b {
+  color: var(--ui-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.limit-row {
-  margin-top: auto;
-  padding-top: 10px;
+
+.goods-card__rewards {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  cursor: help;
 }
-.limit-row > div {
-  height: 4px;
-  margin-top: 5px;
+
+.reward-total {
+  flex: none;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 一行放不下的物品在右侧淡出，不会被截成半个。 */
+.goods-card__reward-track {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
   overflow: hidden;
-  border-radius: 999px;
-  background: #e8ede7;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
-.limit-row i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--ui-warning);
+
+.reward-chip {
+  height: 26px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 3px;
+  border-radius: 8px;
+  color: var(--ui-ink);
+  background: var(--ui-surface-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
-.goods-card footer {
+
+.reward-chip :deep(.item-image) {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+}
+
+.reward-chip b {
+  font-weight: 600;
+}
+
+.goods-card__meta {
+  display: flex;
+  gap: 10px;
+  color: var(--ui-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goods-card__meta .is-warn {
+  color: var(--ui-warning);
+}
+
+.goods-card__buy {
+  display: flex;
+  min-width: 84px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.goods-card__buy :deep(.n-button) {
+  min-width: 72px;
+}
+
+.goods-price {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-warning);
+  font-size: 14px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.goods-price :deep(.item-image) {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+}
+
+.goods-price del {
+  color: var(--ui-subtle);
+  font-size: 11px;
+}
+
+.goods-price__free {
+  color: var(--ui-primary);
+}
+
+.shop-message {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  border-top: 1px solid rgba(58, 86, 68, 0.09);
-}
-.goods-price del { color: var(--ui-subtle); font-size: 10px; font-weight: 400; }
-.goods-price {
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ui-warning);
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
   font-size: 13px;
 }
-.goods-card footer > button {
-  justify-content: center;
-  white-space: nowrap;
-  display: flex;
-  height: 34px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 11px;
-  border: 1px solid var(--ui-primary);
-  border-radius: 9px;
-  color: white;
-  background: var(--ui-primary);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.goods-card footer > button:disabled {
-  border-color: #bdc4be;
-  color: #f5f7f4;
-  background: #bdc4be;
-  cursor: not-allowed;
-}
-.mall-state {
-  display: flex;
-  min-height: 340px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 11px;
-  color: var(--ui-muted);
-  text-align: center;
-}
-.mall-state > div {
+
+.shop-message.is-success {
   color: var(--ui-primary);
-  font-size: 34px;
+  background: var(--ui-primary-soft);
 }
-.mall-state button {
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--ui-primary);
-  border-radius: 9px;
-  color: white;
-  background: var(--ui-primary);
-  cursor: pointer;
+
+.shop-message button {
+  display: grid;
+  place-items: center;
+  color: inherit;
 }
+
 @media (max-width: 720px) {
-  .mall-header {
-    align-items: flex-start;
+  .mall-filters {
     flex-direction: column;
-  }
-  .mall-header__actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-  .mall-toolbar {
     align-items: stretch;
-    flex-direction: column;
+    gap: 10px;
   }
+
   .mall-search {
     width: 100%;
   }
+
   .goods-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
+
   .goods-card {
-    min-height: 252px;
+    min-height: 96px;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 12px;
   }
-  .goods-visual {
-    min-height: 94px;
+
+  .goods-card__visual :deep(.item-image) {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
   }
-  .goods-visual :deep(.item-image--lg) {
-    width: 66px;
-    height: 66px;
-  }
-  .goods-main {
-    padding: 9px;
-  }
-  .goods-card footer {
-    flex-wrap: wrap;
+
+  .goods-card__buy {
+    min-width: 72px;
     gap: 6px;
-    padding: 8px 9px;
   }
-  .goods-card footer > button {
-    flex: 1;
-    height: 31px;
-    padding: 0 8px;
-    font-size: 11px;
+
+  .goods-card__buy :deep(.n-button) {
+    min-width: 64px;
+    height: 30px;
   }
-  .goods-price {
-    font-size: 11px;
-  }
-}
-@media (max-width: 360px) {
-  .goods-card footer { flex-wrap: wrap; }
-  .goods-card footer > button { width: 100%; }
 }
 </style>

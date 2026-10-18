@@ -371,20 +371,20 @@ function markMutantIconFailed(effect: { id?: number }) {
       </div>
     </div>
 
-    <!-- Land type and season info -->
-    <div class="mt-0.5 flex items-center gap-1.5 text-[10px]">
+    <!-- 土地类型、季数与详情入口合并为一行，不再单独占一行。 -->
+    <div class="land-meta mt-0.5 flex items-center gap-1.5 text-[10px]">
       <span class="rounded-full px-1.5 py-0.5 font-display" :class="landTypeBadgeClass(land.level)">
         {{ getLandTypeName(land.level) }}
       </span>
       <span class="text-gray-400">
         季 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
       </span>
+      <button v-if="showDetails" type="button" class="land-details-link" :aria-label="`查看第 ${land.id} 块土地详情`" @click.stop="emit('details', land)" @keydown.stop>
+        详情<span class="i-carbon-chevron-right" />
+      </button>
     </div>
 
     <!-- Status Badges (game-style) -->
-    <button v-if="showDetails" type="button" class="mt-1 rounded px-2 py-1 text-[11px] text-gray-600 underline underline-offset-3 decoration-dotted dark:text-gray-300 hover:text-green-700 focus-visible:outline" :aria-label="`查看第 ${land.id} 块土地详情`" @click.stop="emit('details', land)" @keydown.stop>
-      土地详情
-    </button>
     <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
       <span
         v-if="purpleCrystalResonancePercent > 0"
@@ -1043,9 +1043,57 @@ function markMutantIconFailed(effect: { id?: number }) {
   background: linear-gradient(135deg, rgba(88, 49, 121, 0.58), rgba(33, 82, 102, 0.52));
 }
 
+.land-details-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 0 1px 2px;
+  border-radius: 4px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.land-details-link:hover {
+  color: var(--ui-primary);
+}
+
+.land-details-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-primary) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* 手机端：收紧留白与图片，操作按钮加高到便于点击的尺寸。 */
+@media (max-width: 640px) {
+  .land-card {
+    min-height: 0;
+    padding: 8px 8px 10px;
+  }
+
+  .land-card:hover {
+    transform: none;
+  }
+
+  .plant-container {
+    width: 40px;
+    height: 40px;
+    margin-top: 14px;
+  }
+
+  .farming-action-wrap,
+  .fertilizer-actions {
+    margin-top: 6px;
+  }
+
+  .farming-action,
+  .fertilizer-action {
+    min-height: 32px;
+    font-size: 12px;
+  }
+}
+
 .fertilizer-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1080,14 +1128,15 @@ function markMutantIconFailed(effect: { id?: number }) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   min-height: 26px;
-  padding: 0 6px;
+  padding: 0 3px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
