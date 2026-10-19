@@ -7,6 +7,7 @@ const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-c
 const {
     globalConfig,
     normalizeAccountConfig,
+    normalizeAutomationValue,
     cloneAccountConfig,
     normalizeFertilizerLandTypes,
     normalizeKnownFriendGids,
@@ -126,16 +127,10 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
     if (cfg.automation && typeof cfg.automation === 'object') {
         for (const [k, v] of Object.entries(cfg.automation)) {
             if ((next.automation as any)[k] === undefined) continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
-                (next.automation as any)[k] = allowed.includes(v as string) ? v : (next.automation as any)[k];
-            } else if (k === 'fertilizer_land_types') {
-                (next.automation as any)[k] = normalizeFertilizerLandTypes(v, next.automation.fertilizer_land_types);
-            } else if (k === 'fertilizer_smart_seconds') {
-                (next.automation as any)[k] = Math.max(30, Math.min(3600, Number(v) || 300));
-            } else {
-                (next.automation as any)[k] = !!v;
-            }
+            // 归一规则全在 shared-state.normalizeAutomationValue 里，两处写入路径共用一份：
+            // 这里以前自己写了个 `!!v` 的兜底，把雇佣班次/特长这类数字选法折成 true，
+            // 下次读回来就落回默认档（2026-10-19 用户报「选 24 小时刷新就变回去」）。
+            (next.automation as any)[k] = normalizeAutomationValue(k, v, (next.automation as any)[k]);
         }
     }
 

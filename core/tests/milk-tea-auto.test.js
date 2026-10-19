@@ -11,7 +11,11 @@ const {
     ALLOWED_AUTOMATION_KEYS,
     DEFAULT_ACCOUNT_CONFIG,
     normalizeAccountConfig,
+    globalConfig,
 } = require('../dist/models/store/shared-state');
+const {
+    applyConfigSnapshot,
+} = require('../dist/models/store/account-config');
 
 const DAY_MS = 24 * 3600;
 
@@ -295,6 +299,33 @@ test('雇佣的三个选法配置能存进白名单，默认是最短档＋不�
     assert.equal(broken.milk_tea_hire_duration_id, 1);
     assert.equal(broken.milk_tea_hire_talent_id, 0);
     assert.equal(broken.milk_tea_hire_allow_robots, true);
+});
+
+test('设置页保存不会把班次/特长折成布尔值（applyConfigSnapshot 与读档共用同一份归一）', () => {
+    // 2026-10-19 的 bug：保存路径自己写了一份 automation 合并，只特判化肥那三个键，其余一律 !!v，
+    // 于是「雇佣班次选 24 小时」存成 true，下次读回来落回默认的 4 小时档；特长同理。
+    const accountId = '__milk_tea_hire_choice_save_test__';
+    try {
+        const saved = applyConfigSnapshot({
+            automation: { milk_tea_hire_duration_id: 3, milk_tea_hire_talent_id: 9002, milk_tea_hire_allow_robots: false, milk_tea_boost: false },
+        }, { accountId, persist: false }).automation;
+        assert.equal(saved.milk_tea_hire_duration_id, 3, '24 小时档要原样存住');
+        assert.equal(saved.milk_tea_hire_talent_id, 9002, '特长 id 要原样存住');
+        assert.equal(saved.milk_tea_hire_allow_robots, false);
+        assert.equal(saved.milk_tea_boost, false, '布尔开关照旧走 !!v');
+
+        // 下一轮只改别的键时，已经存住的档位不该被重置回默认。
+        const partial = applyConfigSnapshot({ automation: { milk_tea_craft: false } }, { accountId, persist: false }).automation;
+        assert.equal(partial.milk_tea_hire_duration_id, 3);
+        assert.equal(partial.milk_tea_hire_talent_id, 9002);
+
+        // 非法档位在保存这一步夹回上一次合法值，不会把服务端不认的档发出去。
+        const broken = applyConfigSnapshot({ automation: { milk_tea_hire_duration_id: 9, milk_tea_hire_talent_id: 9999 } }, { accountId, persist: false }).automation;
+        assert.equal(broken.milk_tea_hire_duration_id, 3);
+        assert.equal(broken.milk_tea_hire_talent_id, 9002);
+    } finally {
+        delete globalConfig.accountConfigs[accountId];
+    }
 });
 
 test('每个开关只在打开时执行自己那一项', async () => {
