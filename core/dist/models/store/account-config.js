@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const sharedState = require('./shared-state');
 const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-cache');
-const { globalConfig, normalizeAccountConfig, cloneAccountConfig, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
+const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
 function cloneBagSeedLandTypes(input) {
     const cloned = {};
     for (const [seedId, types] of Object.entries(input || {})) {
@@ -101,19 +101,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
         for (const [k, v] of Object.entries(cfg.automation)) {
             if (next.automation[k] === undefined)
                 continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
-                next.automation[k] = allowed.includes(v) ? v : next.automation[k];
-            }
-            else if (k === 'fertilizer_land_types') {
-                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation.fertilizer_land_types);
-            }
-            else if (k === 'fertilizer_smart_seconds') {
-                next.automation[k] = Math.max(30, Math.min(3600, Number(v) || 300));
-            }
-            else {
-                next.automation[k] = !!v;
-            }
+            // 归一规则全在 shared-state.normalizeAutomationValue 里，两处写入路径共用一份：
+            // 这里以前自己写了个 `!!v` 的兜底，把雇佣班次/特长这类数字选法折成 true，
+            // 下次读回来就落回默认档（2026-10-19 用户报「选 24 小时刷新就变回去」）。
+            next.automation[k] = normalizeAutomationValue(k, v, next.automation[k]);
         }
     }
     if (cfg.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(cfg.plantingStrategy)) {

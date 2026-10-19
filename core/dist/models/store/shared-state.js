@@ -334,6 +334,34 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         autoAcceptHarvestStealSteal: normalizeAutoAcceptHarvestStealSteal(base.autoAcceptHarvestStealSteal, DEFAULT_ACCOUNT_CONFIG.autoAcceptHarvestStealSteal),
     };
 }
+/**
+ * 单个 automation 键的归一。两处写入路径（`normalizeAccountConfig` 读账号存档、
+ * `applyConfigSnapshot` 保存设置页）必须共用这一份，否则选法配置会被另一处 `!!v` 布尔化：
+ * 2026-10-19 的 bug 就是雇佣班次/特长在保存时被折成 true，再读回来落回默认档。
+ * `current` 是该键归一前的现值，非法值一律回到它而不是硬编码默认。
+ */
+function normalizeAutomationValue(key, value, current) {
+    if (key === 'fertilizer') {
+        const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
+        return allowed.includes(value) ? value : current;
+    }
+    if (key === 'fertilizer_land_types') {
+        return normalizeFertilizerLandTypes(value, current);
+    }
+    if (key === 'fertilizer_smart_seconds') {
+        return Math.max(30, Math.min(3600, Number(value) || 300));
+    }
+    if (key === 'milk_tea_hire_duration_id') {
+        // 班次档数只认官方那三档，别的值一律回到现值：宁可不按用户的意思花奶茶券，也不能报一个服务端不认的档。
+        const durationId = Number.parseInt(String(value), 10);
+        return [1, 2, 3].includes(durationId) ? durationId : current;
+    }
+    if (key === 'milk_tea_hire_talent_id') {
+        const talentId = Number.parseInt(String(value), 10);
+        return [0, 9001, 9002, 9003, 9004].includes(talentId) ? talentId : current;
+    }
+    return !!value;
+}
 function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     const src = (input && typeof input === 'object') ? input : {};
     const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
@@ -341,28 +369,7 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
         for (const [k, v] of Object.entries(src.automation)) {
             if (!ALLOWED_AUTOMATION_KEYS.has(k))
                 continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
-                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
-            }
-            else if (k === 'fertilizer_land_types') {
-                cfg.automation.fertilizer_land_types = normalizeFertilizerLandTypes(v, cfg.automation.fertilizer_land_types);
-            }
-            else if (k === 'fertilizer_smart_seconds') {
-                cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 300));
-            }
-            else if (k === 'milk_tea_hire_duration_id') {
-                // 班次档数只认官方那三档，别的值一律回到最短一档：宁可不按用户的意思花奶茶券，也不能报一个服务端不认的档。
-                const durationId = Number.parseInt(String(v), 10);
-                cfg.automation.milk_tea_hire_duration_id = [1, 2, 3].includes(durationId) ? durationId : 1;
-            }
-            else if (k === 'milk_tea_hire_talent_id') {
-                const talentId = Number.parseInt(String(v), 10);
-                cfg.automation.milk_tea_hire_talent_id = [0, 9001, 9002, 9003, 9004].includes(talentId) ? talentId : 0;
-            }
-            else {
-                cfg.automation[k] = !!v;
-            }
+            cfg.automation[k] = normalizeAutomationValue(k, v, cfg.automation[k]);
         }
     }
     if (src.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(src.plantingStrategy)) {
@@ -607,6 +614,7 @@ module.exports = {
     normalizeAutoAcceptHarvestStealHarvest,
     normalizeAutoAcceptHarvestStealSteal,
     normalizeAccountConfig,
+    normalizeAutomationValue,
     cloneAccountConfig,
     resolveAccountId,
     loadGlobalConfig,
