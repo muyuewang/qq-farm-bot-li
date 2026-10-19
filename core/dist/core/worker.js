@@ -485,6 +485,7 @@ async function runSolarCalendarTick() {
         await solarCalendarAutomation.runSolarCalendarAutomation({
             claimEvents: automation.solar_calendar_claim_events === true,
             claimSeasons: automation.solar_calendar_claim_seasons === true,
+            answerQuiz: automation.solar_calendar_answer_quiz === true,
         });
     }
     catch (e) {
