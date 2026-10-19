@@ -369,7 +369,7 @@ const milkTeaHireTalentOptions = [
                 节令日历
               </h4>
               <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                只领不花：两项都在服务端判定「可以领」时才发请求，默认开
+                三项都在服务端判定「这一步可做」时才发请求，默认开
               </p>
             </div>
           </div>
@@ -381,12 +381,15 @@ const milkTeaHireTalentOptions = [
             <div class="automation-setting-item">
               <BaseSwitch v-model="settings.automation.solar_calendar_claim_seasons" label="自动领取季度奖励" />
             </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.solar_calendar_answer_quiz" label="自动节令答题（仅官方标注过答案的）" />
+            </div>
           </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            半小时检查一次，两项排队执行、项间隔 800ms，一轮最多领 5 个节令、3 个季度，剩下的下一轮接着领；不在开放窗口、或者这一项已经领过，只按天记一行跳过日志，不发写请求。
+            半小时检查一次，三步排队执行、项间隔 800ms，一轮最多领 5 个节令、答 3 题、领 3 个季度，剩下的下一轮接着做；不在开放窗口、或者这一步已经做过，只按天记一行跳过日志，不发写请求。答题排在季度领取之前，这样同一轮里季度就能达标。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            答题不自动化：官方活动配置里只有题目和选项文本，没有正确答案索引，而答错要锁到第二天。要在「节令日历」页面自己选答案。季度奖励的达标进度同样由服务端判定，达标了才领。
+            答题只提交官方活动配置里标注过 <code>answer_index</code> 的节令（2026-10-19 起：重阳选「A.敬老节」、霜降选「C.最后一个」）。没有标注就一行跳过、绝不动手写请求，因为答错要锁到第二天——那种题请在「节令日历」页面自己点，页面上已经把「正确答案」标出来了。标注的答案若出现在服务端给的错项记录里，也当标注不可信、跳过。
           </p>
         </section>
 

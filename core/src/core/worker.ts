@@ -522,6 +522,7 @@ async function runSolarCalendarTick(): Promise<void> {
         await solarCalendarAutomation.runSolarCalendarAutomation({
             claimEvents: automation.solar_calendar_claim_events === true,
             claimSeasons: automation.solar_calendar_claim_seasons === true,
+            answerQuiz: automation.solar_calendar_answer_quiz === true,
         });
     } catch (e: any) {
         log('活动', `节令日历自动任务失败: ${e.message}`, { module: 'activity', event: '节令日历自动', result: 'error' });

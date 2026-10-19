@@ -47,6 +47,7 @@ export interface AutomationConfig {
   milk_tea_hire_allow_robots?: boolean
   solar_calendar_claim_events?: boolean
   solar_calendar_claim_seasons?: boolean
+  solar_calendar_answer_quiz?: boolean
 }
 
 export interface IntervalsConfig {

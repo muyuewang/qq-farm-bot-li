@@ -41,19 +41,20 @@ LoginReply 仍存在已有协议未覆盖的字段，其重新编码不等于原
 
 ## 自动化（本地新增）
 
-上游只给手动操作，本地在 `core/src/services/solar-calendar-auto.ts` 里加了定时任务，半小时一轮（登录 90s 后首跑），走 `runExclusiveAutomationTask('solar_calendar', ...)` 全局互斥，不会和奶茶、神秘商人重叠。两个开关默认全开（用户 2026-10-16 确认只要自动领免费的）：
+上游只给手动操作，本地在 `core/src/services/solar-calendar-auto.ts` 里加了定时任务，半小时一轮（登录 90s 后首跑），走 `runExclusiveAutomationTask('solar_calendar', ...)` 全局互斥，不会和奶茶、神秘商人重叠。三个开关默认全开（2026-10-16 确认自动领免费的；2026-10-19 确认答题在有官方标注时自动提交、没标注就跳过）：
 
 | 配置键 | 动作 | 上游写操作 | 会不会花东西 |
 | --- | --- | --- | --- |
 | `solar_calendar_claim_events` | 领开放中节令的直达奖励 | `ClaimSolarTermsV2` | 不花 |
 | `solar_calendar_claim_seasons` | 领已达标的季度奖励 | `ClaimSolarSeason` | 不花 |
+| `solar_calendar_answer_quiz` | 答官方标注过正确答案的节令题 | `AnswerSolarTerms` | 不花（答对拿题目奖励） |
 
-判断依据只用服务端返回的状态：`events[].canClaim`（在开放窗口里且 `direct_claimed` 为假）才领节令，`seasons[].canClaim`（`reward_claimable`、没领过、且回包带了奖励）才领季度。没有可领的、活动不在窗口里，都只记一行按天去重的跳过日志，不发写请求。
+判断依据只用服务端返回的状态：`events[].canClaim`（在开放窗口里且 `direct_claimed` 为假）才领节令，`seasons[].canClaim`（`reward_claimable`、没领过、且回包带了奖励）才领季度，`events[].canAnswer`（在窗口里、有题目、没答对领过、今天没答错）才答题。没有可做的、活动不在窗口里，都只记一行按天去重的跳过日志，不发写请求。
 
-两项在一轮里串行执行，步骤间隔 800ms（`SOLAR_CALENDAR_TASK_SPACER_MS`），步骤内连续两笔领取间隔 400ms，一轮最多同时只有一个请求在飞。一轮最多领 5 个节令、3 个季度，剩下的下一轮接着领。每一步先做一次读请求拿可领清单，之后每笔写入都用回包里的 `updated_event`／`updated_season` 折回来的新日历接着判断——拿旧清单继续领会把已经领过的再领一次；写入成功但日历刷新失败（`refreshRequired`）时本轮立即收住，不基于旧数据继续。某项写失败只记错误日志，不牵连同一轮里的另一项，也不会自己重试（回包不完整时 `operateSolarCalendar` 已保证不重发，多领一次退不回来）。
+三步在一轮里串行执行，顺序是领节令 → 答题 → 领季度（答题排在前面，同一轮里季度就能达标），步骤间隔 800ms（`SOLAR_CALENDAR_TASK_SPACER_MS`），步骤内连续两笔写入间隔 400ms，一轮最多同时只有一个请求在飞。一轮最多领 5 个节令、答 3 题、领 3 个季度，剩下的下一轮接着做。每一步先做一次读请求拿清单，之后每笔写入都用回包里的 `updated_event`／`updated_season` 折回来的新日历接着判断——拿旧清单继续领会把已经做过的再做一次；写入成功但日历刷新失败（`refreshRequired`）时本轮立即收住，不基于旧数据继续。某项写失败只记错误日志，不牵连同一轮里的其它步骤，也不会自己重试（回包不完整时 `operateSolarCalendar` 已保证不重发，多领一次退不回来）。
 
-答题 `AnswerSolarTerms` 不建开关：官方活动配置 `solar-calendar.json` 只有 `question` 与 `answer` 的选项文本，没有正确答案索引，而答错会锁到第二天（`quiz_wrong_today`）。没有可自动化的固定选法时，挂一个空转开关比不挂更坏——这一项留在「节令日历」页面由用户自己选。
+答题为什么现在可以自动化：上游 `57cddb38`（2026-10-19）开始给 `core/src/activity-data/solar-calendar.json` 补 `answer_index`，目前标了重阳＝0（A.敬老节）、霜降＝2（C.最后一个），`solar-calendar.ts:34` 校验下标是合法整数、且在选项数量范围内之后暴露成 `answerIndex`，页面 `SolarCalendar.vue:278-283` 也直接把「正确答案」标出来。自动化只在这个 `answerIndex` 存在时提交，写请求带 `{ id, optionIndex: answerIndex, expectedQuestion: 题目原文 }`，`solar-calendar.ts:66-72` 会重新读服务端状态再核一遍题目有没有变、选项是否越界或已在错项记录里。以下四种情况一律跳过、不发写请求：这一轮没有带题目的节令；有题目但官方没标注答案（答错锁到第二天，猜不在范围内，留给人工点页面）；`canAnswer` 为假（已答对领过、今天已答错、不在窗口）；标注的答案出现在服务端 `wrongOptions` 里（说明标注和实服判定已经对不上，标注不可信）。真发出去被判 `correct: false` 时记一条 error 日志，提醒这个标注别再信，同样不重试、不换答案。
 
-默认值在 `DEFAULT_ACCOUNT_CONFIG.automation` 里（`core/src/models/store/shared-state.ts`），前端设置页的三处兜底块与 `AutomationSettingsForm.vue` 同步。两个 key 是布尔开关，走 `normalizeAccountConfig` 的通用 `!!v` 归一，不需要特判；已经把它们存成 false 的账号不会被翻回来。
+默认值在 `DEFAULT_ACCOUNT_CONFIG.automation` 里（`core/src/models/store/shared-state.ts`），前端设置页的三处兜底块与 `AutomationSettingsForm.vue` 同步。三个 key 都是布尔开关，走 `normalizeAccountConfig` 的通用 `!!v` 归一，不需要特判；已经把它们存成 false 的账号不会被翻回来。
 
-尚未实服验证过领取成功：2026-10-16 重阳（10/18 开）与霜降都还没进开放窗口，两个开关目前只会记跳过日志，到点才第一次真发写请求。
+尚未在这里确认过实服成功：2026-10-16 写这一节时重阳（10/18 开）与霜降都还没进开放窗口，三个开关只会记跳过日志。现在（2026-10-19）重阳已在窗口内、且官方标了答案，第一次真实的领取与答题结果要去 `core/data/combined.log` 里看 `event: 节令日历自动` 的行裁决。

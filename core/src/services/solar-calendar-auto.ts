@@ -1,27 +1,31 @@
 export {};
 
-// 两个开关都落在上游 solar-calendar.ts 里已按官方编码器核对过的写操作：
-// 节令直达奖励 ClaimSolarTermsV2、季度奖励 ClaimSolarSeason。两者都不花任何东西，
-// 只在服务端自己说 canClaim（在开放窗口里、还没领过）时才发写请求。
-// 答题 AnswerSolarTerms 故意不建开关：官方活动配置里只有题目和选项文本，没有正确答案索引，
-// 而答错会锁到第二天——没有可自动化的固定选法时，挂一个什么都不做的开关比不挂更坏
-// （2026-10-16 用户确认只要自动领免费的）。
+// 三个开关都落在上游 solar-calendar.ts 里已按官方编码器核对过的写操作：
+// 节令直达奖励 ClaimSolarTermsV2、季度奖励 ClaimSolarSeason、节令答题 AnswerSolarTerms。
+// 领取都不花任何东西，只在服务端自己说 canClaim（在开放窗口里、还没领过）时才发写请求。
+// 答题只在官方 solar-calendar.json 标了 answer_index 的节令上提交（2026-10-19 上游 57cddb38
+// 开始给重阳、霜降标注答案）：答错会锁到第二天，所以没有标注就等于没有可自动化的固定选法，
+// 一轮只记一行跳过说明、留给人工点页面（页面上游已把「正确答案」标出来了）。
 // 节奏和奶茶一致：默认全开、一轮串行、项间隔 800ms，整个活动自动化再串进
 // automation-lock 的同一把锁，不会和神秘商人、奶茶挤在一起发请求。
 const SOLAR_CALENDAR_AUTOMATION_KEYS = [
     'solar_calendar_claim_events',
     'solar_calendar_claim_seasons',
+    'solar_calendar_answer_quiz',
 ] as const;
 
 const SOLAR_CALENDAR_CHECK_INTERVAL_MS = 30 * 60 * 1000;
-// 两个领取步骤之间隔这么久：连着发会把活动页的读和写挤在同一根连接上。
+// 相邻步骤之间隔这么久：连着发会把活动页的读和写挤在同一根连接上。
 const SOLAR_CALENDAR_TASK_SPACER_MS = 800;
-// 同一步里连续两笔领取之间隔得短一些，但仍不占满连接。
+// 同一步里连续两笔写入之间隔得短一些，但仍不占满连接。
 const SOLAR_CALENDAR_CLAIM_SPACER_MS = 400;
 // 一轮最多领 5 个节令、3 个季度：日历同时开放中的节令一般只有一两个，
 // 夹住是为了万一官方把多个窗口叠在一起时，一轮也不会发一串写请求。
 const EVENT_CLAIMS_PER_TICK = 5;
 const SEASON_CLAIMS_PER_TICK = 3;
+// 一轮最多答 3 题：日历同一时间开放中的节令一般只有一两个，夹住是为了
+// 官方把多个窗口叠在一起时，一轮也不会连着发一串有去无回的答题写请求。
+const ANSWERS_PER_TICK = 3;
 
 function isSolarCalendarAutomationEnabled(automation: any = {}): boolean {
     return SOLAR_CALENDAR_AUTOMATION_KEYS.some(key => automation[key] === true);
@@ -110,7 +114,58 @@ function createSolarCalendarAutomation(deps: {
         }
     }
 
-    async function runSolarCalendarAutomation(flags: { claimEvents: boolean; claimSeasons: boolean }): Promise<void> {
+    /**
+     * 答题的唯一入口：只提交官方标注过正确答案的节令。
+     * 一层层筛下去，每一层都留一行能看懂的跳过说明，猜答案这件事不在自动化范围内。
+     */
+    async function answerQuizzes(): Promise<void> {
+        const calendar = await getSolarCalendar();
+        const action = 'answer_quiz';
+        const withQuestion = (calendar?.events || []).filter((v: any) => v.question);
+        if (!withQuestion.length) {
+            skip(action, '服务端这轮没给出带题目的节令');
+            return;
+        }
+        const annotated = withQuestion.filter((v: any) => Number.isInteger(v.answerIndex) && v.answerIndex >= 0);
+        if (!annotated.length) {
+            skip(action, `${withQuestion.map((v: any) => v.name).join('、')} 的官方配置还没标注正确答案，留给你在页面上手动答`);
+            return;
+        }
+        const answerable = annotated.filter((v: any) => v.canAnswer);
+        if (!answerable.length) {
+            skip(action, `${annotated.map((v: any) => v.name).join('、')} 今天不该答（已答对领过、今天已答错、或不在开放窗口）`);
+            return;
+        }
+
+        let state = calendar;
+        for (const entry of answerable.slice(0, ANSWERS_PER_TICK)) {
+            const fresh = (state?.events || []).find((v: any) => Number(v.id) === Number(entry.id)) || entry;
+            const index = Number(fresh.answerIndex);
+            if ((fresh.wrongOptions || []).includes(index)) {
+                // 服务端说这个选项以前答错，而官方标注又指向它：说明标注不可信，宁可不答。
+                skip(action, `${fresh.name} 的官方标注答案（第 ${index + 1} 项）在服务端的错项记录里，标注不可信，这一题留给人工`);
+                continue;
+            }
+            const optionText = (fresh.options || [])[index] || `第 ${index + 1} 项`;
+            const result = await perform(
+                `节令答题（${fresh.name}·选「${optionText}」）`,
+                () => operateSolarCalendar('answer', { id: Number(fresh.id), optionIndex: index, expectedQuestion: fresh.question }),
+                action,
+            );
+            if (!result) continue;
+            if (result.correct === false) {
+                log('活动', `节令答题被判错（${fresh.name}·选「${optionText}」）：官方标注与服务端判定不一致，这一题的标注别再信`, { module: 'activity', event: '节令日历自动', result: 'error', action });
+            }
+            if (result.calendar) state = result.calendar;
+            else {
+                log('活动', '节令日历刷新失败，本轮剩余答题留到下一轮', { module: 'activity', event: '节令日历自动', result: 'skip', action });
+                return;
+            }
+            await sleep(SOLAR_CALENDAR_CLAIM_SPACER_MS);
+        }
+    }
+
+    async function runSolarCalendarAutomation(flags: { claimEvents: boolean; claimSeasons: boolean; answerQuiz: boolean }): Promise<void> {
         const steps: { action: string; run: () => Promise<void> }[] = [];
         if (flags.claimEvents) {
             steps.push({
@@ -120,6 +175,10 @@ function createSolarCalendarAutomation(deps: {
                     (state: any) => state?.events || [],
                     EVENT_CLAIMS_PER_TICK),
             });
+        }
+        if (flags.answerQuiz) {
+            // 排在季度领取之前：季度奖励靠节令点亮，先把题答完再领季度，同一轮就能达标。
+            steps.push({ action: 'answer_quiz', run: answerQuizzes });
         }
         if (flags.claimSeasons) {
             steps.push({
