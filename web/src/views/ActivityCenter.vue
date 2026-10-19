@@ -306,7 +306,7 @@ onUnmounted(() => {
 
 .activity-entry--ended {
   border-color: rgba(89, 102, 97, 0.18);
-  background: rgba(245, 247, 246, 0.58);
+  background: color-mix(in srgb, var(--ui-surface-soft) 70%, transparent);
 }
 
 .activity-entry:disabled {
@@ -352,7 +352,7 @@ onUnmounted(() => {
 
 .activity-entry--upcoming .activity-entry__icon,
 .activity-entry--upcoming .activity-entry__status {
-  color: #93651e;
+  color: var(--ui-warning);
   background: var(--ui-warning-soft);
 }
 

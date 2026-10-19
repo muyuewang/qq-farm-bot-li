@@ -433,7 +433,7 @@ async function copyToken() {
               @click="toggleUserDropdown"
             >
               <div class="flex items-center gap-3 overflow-hidden">
-                <div class="farm-avatar-ring relative h-9 w-9 shrink-0 overflow-hidden rounded-full shadow-md" style="background: var(--ui-primary); padding: 2px;">
+                <div class="farm-avatar-ring relative h-9 w-9 shrink-0 overflow-hidden rounded-full shadow-md" style="background: var(--ui-primary-fill); padding: 2px;">
                   <div class="admin-avatar h-full w-full flex items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
                     <img
                       v-if="userAvatar && userAvatar !== failedUserAvatar"

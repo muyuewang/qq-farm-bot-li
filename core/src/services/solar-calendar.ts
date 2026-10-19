@@ -22,13 +22,16 @@ function eventDto(value: any, now: number) {
     const startTime = toNum(value.open_start_time);
     const endTime = toNum(value.open_end_time);
     const open = toNum(value.window_status) === 2 && now >= startTime && now <= endTime;
+    const options = entry?.answer ? entry.answer.split(';') : [];
+    const answerIndex = entry?.answer_index;
     let rules: string[] = [];
     try { rules = JSON.parse(entry?.help || '{}').tips?.txt?.map((text: string) => text.replace(/<br\s*(?:\/\s*)?>/gi, '\n').replace(/<[^>]+>/g, '')) || []; } catch { /* Missing official text stays empty. */ }
     return {
         id, name: entry?.name || `节令 ${id}`, description: entry?.description || '', startTime, endTime, status: toNum(value.window_status),
         directClaimed: !!value.direct_claimed, quizClaimed: !!value.quiz_claimed, quizWrongToday: !!value.quiz_wrong_today,
         wrongOptions: (value.wrong_options || []).map(toNum),
-        question: entry?.question || '', options: entry?.answer ? entry.answer.split(';') : [], errorTips: entry?.error_tips || '', rules,
+        question: entry?.question || '', options, errorTips: entry?.error_tips || '', rules,
+        answerIndex: entry?.question && typeof answerIndex === 'number' && Number.isInteger(answerIndex) && answerIndex >= 0 && answerIndex < options.length ? answerIndex : null,
         rewards: rewards(value.rewards), questionRewards: rewards(value.question_rewards),
         canClaim: open && !value.direct_claimed,
         canAnswer: open && !!entry?.question && !value.quiz_claimed && !value.quiz_wrong_today,

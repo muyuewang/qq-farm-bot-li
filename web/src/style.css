@@ -38,6 +38,10 @@ textarea * {
   --ui-subtle: #929b94;
   --ui-primary: #438d63;
   --ui-primary-soft: #e4f1e7;
+  /* 主色作为填充（上面放白字）时使用；深色模式下比文字用的主色更深。 */
+  --ui-primary-fill: var(--ui-primary);
+  --ui-warning-fill: var(--ui-warning);
+  --ui-danger-fill: var(--ui-danger);
   --ui-teal: #5ba495;
   --ui-warning: #c58b3f;
   --ui-warning-soft: #fbf2e3;
@@ -97,29 +101,44 @@ textarea * {
 
 .dark {
   color-scheme: dark;
-  --ui-bg: #141c18;
-  --ui-bg-soft: #1b2620;
-  --ui-surface: #202c25;
-  --ui-surface-strong: #28372e;
-  --ui-surface-soft: #25332b;
-  --ui-border: rgba(179, 204, 186, 0.18);
-  --ui-border-strong: rgba(179, 204, 186, 0.3);
-  --ui-ink: #e3ece5;
-  --ui-muted: #acbcb0;
-  --ui-subtle: #819487;
-  --ui-primary-soft: #233e2e;
-  --ui-warning-soft: #3c3020;
-  --ui-danger-soft: #3c2529;
-  --ui-violet-soft: #302b40;
-  --ui-blue-soft: #20343f;
-  --glass-panel: #1b2620;
+  /* 中性偏冷的深灰底，绿色只作为品牌点缀；层级靠明度区分，不靠饱和度。 */
+  --ui-bg: #111418;
+  --ui-bg-soft: #15191e;
+  --ui-surface: #1a1f25;
+  --ui-surface-strong: #20262d;
+  --ui-surface-soft: #242a32;
+  --ui-border: rgba(255, 255, 255, 0.07);
+  --ui-border-strong: rgba(255, 255, 255, 0.12);
+  --ui-ink: #e4e8ec;
+  --ui-muted: #a3acb6;
+  --ui-subtle: #78818c;
+  /* 主色与状态色提亮、降饱和，深底上可读；淡色背景改为半透明叠加，避免发闷。 */
+  --ui-primary: #5bbd88;
+  --ui-primary-soft: rgba(91, 189, 136, 0.14);
+  --ui-primary-fill: #3f9c6b;
+  --ui-warning-fill: #b9813a;
+  --ui-danger-fill: #c4545c;
+  --ui-teal: #6cc2b2;
+  --ui-warning: #e2ab5f;
+  --ui-warning-soft: rgba(226, 171, 95, 0.14);
+  --ui-danger: #ee858b;
+  --ui-danger-soft: rgba(238, 133, 139, 0.14);
+  --ui-violet: #b7a2ea;
+  --ui-violet-soft: rgba(183, 162, 234, 0.14);
+  --ui-blue: #82b6d6;
+  --ui-blue-soft: rgba(130, 182, 214, 0.14);
+  --ui-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --ui-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
+  --ui-shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.48);
+  --theme-primary-rgb: 91, 189, 136;
+  --glass-panel: #15191e;
   --glass-card: var(--ui-surface);
-  --glass-elevated: #202c25;
-  --glass-input: #19251e;
-  --glass-highlight: rgba(179, 204, 186, 0.06);
-  --ui-bg-glow: rgba(67, 141, 99, 0.1);
-  --ui-bg-glow-2: rgba(92, 143, 168, 0.06);
-  --chrome-bg: color-mix(in srgb, #141c18 96%, transparent);
+  --glass-elevated: #20262d;
+  --glass-input: #161a20;
+  --glass-highlight: rgba(255, 255, 255, 0.03);
+  --ui-bg-glow: rgba(91, 189, 136, 0.045);
+  --ui-bg-glow-2: rgba(130, 182, 214, 0.035);
+  --chrome-bg: color-mix(in srgb, #111418 94%, transparent);
 }
 
 .dark :is(.n-input, .n-input-number, .n-base-selection) {
@@ -131,9 +150,9 @@ textarea * {
 
 .dark .n-tabs {
   --n-tab-text-color: var(--ui-muted) !important;
-  --n-tab-text-color-active: #7dc99a !important;
-  --n-tab-text-color-hover: #7dc99a !important;
-  --n-bar-color: #7dc99a !important;
+  --n-tab-text-color-active: var(--ui-primary) !important;
+  --n-tab-text-color-hover: var(--ui-primary) !important;
+  --n-bar-color: var(--ui-primary) !important;
 }
 
 .dark .n-card {
@@ -793,4 +812,246 @@ select:focus-visible {
   .n-dropdown-menu {
     background: var(--glass-elevated) !important;
   }
+}
+
+/* 深色兜底：只写了浅色主题工具类（如 bg-purple-100、text-green-700）的元素，
+   在深色下映射到对应的半透明淡色与提亮后的状态色。已写 dark: 变体的元素不受影响。 */
+.dark .bg-green-50:not([class*="dark:bg-"]),
+.dark .bg-green-100:not([class*="dark:bg-"]),
+.dark .bg-emerald-50:not([class*="dark:bg-"]),
+.dark .bg-emerald-100:not([class*="dark:bg-"]),
+.dark .bg-lime-50:not([class*="dark:bg-"]),
+.dark .bg-lime-100:not([class*="dark:bg-"]),
+.dark .bg-teal-50:not([class*="dark:bg-"]),
+.dark .bg-teal-100:not([class*="dark:bg-"]) {
+  background-color: var(--ui-primary-soft) !important;
+}
+
+.dark .text-green-600:not([class*="dark:text-"]),
+.dark .text-green-700:not([class*="dark:text-"]),
+.dark .text-green-800:not([class*="dark:text-"]),
+.dark .text-green-900:not([class*="dark:text-"]),
+.dark .text-emerald-600:not([class*="dark:text-"]),
+.dark .text-emerald-700:not([class*="dark:text-"]),
+.dark .text-emerald-800:not([class*="dark:text-"]),
+.dark .text-emerald-900:not([class*="dark:text-"]),
+.dark .text-lime-600:not([class*="dark:text-"]),
+.dark .text-lime-700:not([class*="dark:text-"]),
+.dark .text-lime-800:not([class*="dark:text-"]),
+.dark .text-lime-900:not([class*="dark:text-"]),
+.dark .text-teal-600:not([class*="dark:text-"]),
+.dark .text-teal-700:not([class*="dark:text-"]),
+.dark .text-teal-800:not([class*="dark:text-"]),
+.dark .text-teal-900:not([class*="dark:text-"]) {
+  color: var(--ui-primary) !important;
+}
+
+.dark .border-green-100:not([class*="dark:border-"]),
+.dark .border-green-200:not([class*="dark:border-"]),
+.dark .border-green-300:not([class*="dark:border-"]),
+.dark .border-emerald-100:not([class*="dark:border-"]),
+.dark .border-emerald-200:not([class*="dark:border-"]),
+.dark .border-emerald-300:not([class*="dark:border-"]),
+.dark .border-lime-100:not([class*="dark:border-"]),
+.dark .border-lime-200:not([class*="dark:border-"]),
+.dark .border-lime-300:not([class*="dark:border-"]),
+.dark .border-teal-100:not([class*="dark:border-"]),
+.dark .border-teal-200:not([class*="dark:border-"]),
+.dark .border-teal-300:not([class*="dark:border-"]) {
+  border-color: color-mix(in srgb, var(--ui-primary) 32%, transparent) !important;
+}
+
+.dark .bg-amber-50:not([class*="dark:bg-"]),
+.dark .bg-amber-100:not([class*="dark:bg-"]),
+.dark .bg-yellow-50:not([class*="dark:bg-"]),
+.dark .bg-yellow-100:not([class*="dark:bg-"]),
+.dark .bg-orange-50:not([class*="dark:bg-"]),
+.dark .bg-orange-100:not([class*="dark:bg-"]) {
+  background-color: var(--ui-warning-soft) !important;
+}
+
+.dark .text-amber-600:not([class*="dark:text-"]),
+.dark .text-amber-700:not([class*="dark:text-"]),
+.dark .text-amber-800:not([class*="dark:text-"]),
+.dark .text-amber-900:not([class*="dark:text-"]),
+.dark .text-yellow-600:not([class*="dark:text-"]),
+.dark .text-yellow-700:not([class*="dark:text-"]),
+.dark .text-yellow-800:not([class*="dark:text-"]),
+.dark .text-yellow-900:not([class*="dark:text-"]),
+.dark .text-orange-600:not([class*="dark:text-"]),
+.dark .text-orange-700:not([class*="dark:text-"]),
+.dark .text-orange-800:not([class*="dark:text-"]),
+.dark .text-orange-900:not([class*="dark:text-"]) {
+  color: var(--ui-warning) !important;
+}
+
+.dark .border-amber-100:not([class*="dark:border-"]),
+.dark .border-amber-200:not([class*="dark:border-"]),
+.dark .border-amber-300:not([class*="dark:border-"]),
+.dark .border-yellow-100:not([class*="dark:border-"]),
+.dark .border-yellow-200:not([class*="dark:border-"]),
+.dark .border-yellow-300:not([class*="dark:border-"]),
+.dark .border-orange-100:not([class*="dark:border-"]),
+.dark .border-orange-200:not([class*="dark:border-"]),
+.dark .border-orange-300:not([class*="dark:border-"]) {
+  border-color: color-mix(in srgb, var(--ui-warning) 32%, transparent) !important;
+}
+
+.dark .bg-red-50:not([class*="dark:bg-"]),
+.dark .bg-red-100:not([class*="dark:bg-"]),
+.dark .bg-rose-50:not([class*="dark:bg-"]),
+.dark .bg-rose-100:not([class*="dark:bg-"]),
+.dark .bg-pink-50:not([class*="dark:bg-"]),
+.dark .bg-pink-100:not([class*="dark:bg-"]) {
+  background-color: var(--ui-danger-soft) !important;
+}
+
+.dark .text-red-600:not([class*="dark:text-"]),
+.dark .text-red-700:not([class*="dark:text-"]),
+.dark .text-red-800:not([class*="dark:text-"]),
+.dark .text-red-900:not([class*="dark:text-"]),
+.dark .text-rose-600:not([class*="dark:text-"]),
+.dark .text-rose-700:not([class*="dark:text-"]),
+.dark .text-rose-800:not([class*="dark:text-"]),
+.dark .text-rose-900:not([class*="dark:text-"]),
+.dark .text-pink-600:not([class*="dark:text-"]),
+.dark .text-pink-700:not([class*="dark:text-"]),
+.dark .text-pink-800:not([class*="dark:text-"]),
+.dark .text-pink-900:not([class*="dark:text-"]) {
+  color: var(--ui-danger) !important;
+}
+
+.dark .border-red-100:not([class*="dark:border-"]),
+.dark .border-red-200:not([class*="dark:border-"]),
+.dark .border-red-300:not([class*="dark:border-"]),
+.dark .border-rose-100:not([class*="dark:border-"]),
+.dark .border-rose-200:not([class*="dark:border-"]),
+.dark .border-rose-300:not([class*="dark:border-"]),
+.dark .border-pink-100:not([class*="dark:border-"]),
+.dark .border-pink-200:not([class*="dark:border-"]),
+.dark .border-pink-300:not([class*="dark:border-"]) {
+  border-color: color-mix(in srgb, var(--ui-danger) 32%, transparent) !important;
+}
+
+.dark .bg-purple-50:not([class*="dark:bg-"]),
+.dark .bg-purple-100:not([class*="dark:bg-"]),
+.dark .bg-violet-50:not([class*="dark:bg-"]),
+.dark .bg-violet-100:not([class*="dark:bg-"]),
+.dark .bg-indigo-50:not([class*="dark:bg-"]),
+.dark .bg-indigo-100:not([class*="dark:bg-"]),
+.dark .bg-fuchsia-50:not([class*="dark:bg-"]),
+.dark .bg-fuchsia-100:not([class*="dark:bg-"]) {
+  background-color: var(--ui-violet-soft) !important;
+}
+
+.dark .text-purple-600:not([class*="dark:text-"]),
+.dark .text-purple-700:not([class*="dark:text-"]),
+.dark .text-purple-800:not([class*="dark:text-"]),
+.dark .text-purple-900:not([class*="dark:text-"]),
+.dark .text-violet-600:not([class*="dark:text-"]),
+.dark .text-violet-700:not([class*="dark:text-"]),
+.dark .text-violet-800:not([class*="dark:text-"]),
+.dark .text-violet-900:not([class*="dark:text-"]),
+.dark .text-indigo-600:not([class*="dark:text-"]),
+.dark .text-indigo-700:not([class*="dark:text-"]),
+.dark .text-indigo-800:not([class*="dark:text-"]),
+.dark .text-indigo-900:not([class*="dark:text-"]),
+.dark .text-fuchsia-600:not([class*="dark:text-"]),
+.dark .text-fuchsia-700:not([class*="dark:text-"]),
+.dark .text-fuchsia-800:not([class*="dark:text-"]),
+.dark .text-fuchsia-900:not([class*="dark:text-"]) {
+  color: var(--ui-violet) !important;
+}
+
+.dark .border-purple-100:not([class*="dark:border-"]),
+.dark .border-purple-200:not([class*="dark:border-"]),
+.dark .border-purple-300:not([class*="dark:border-"]),
+.dark .border-violet-100:not([class*="dark:border-"]),
+.dark .border-violet-200:not([class*="dark:border-"]),
+.dark .border-violet-300:not([class*="dark:border-"]),
+.dark .border-indigo-100:not([class*="dark:border-"]),
+.dark .border-indigo-200:not([class*="dark:border-"]),
+.dark .border-indigo-300:not([class*="dark:border-"]),
+.dark .border-fuchsia-100:not([class*="dark:border-"]),
+.dark .border-fuchsia-200:not([class*="dark:border-"]),
+.dark .border-fuchsia-300:not([class*="dark:border-"]) {
+  border-color: color-mix(in srgb, var(--ui-violet) 32%, transparent) !important;
+}
+
+.dark .bg-blue-50:not([class*="dark:bg-"]),
+.dark .bg-blue-100:not([class*="dark:bg-"]),
+.dark .bg-sky-50:not([class*="dark:bg-"]),
+.dark .bg-sky-100:not([class*="dark:bg-"]),
+.dark .bg-cyan-50:not([class*="dark:bg-"]),
+.dark .bg-cyan-100:not([class*="dark:bg-"]) {
+  background-color: var(--ui-blue-soft) !important;
+}
+
+.dark .text-blue-600:not([class*="dark:text-"]),
+.dark .text-blue-700:not([class*="dark:text-"]),
+.dark .text-blue-800:not([class*="dark:text-"]),
+.dark .text-blue-900:not([class*="dark:text-"]),
+.dark .text-sky-600:not([class*="dark:text-"]),
+.dark .text-sky-700:not([class*="dark:text-"]),
+.dark .text-sky-800:not([class*="dark:text-"]),
+.dark .text-sky-900:not([class*="dark:text-"]),
+.dark .text-cyan-600:not([class*="dark:text-"]),
+.dark .text-cyan-700:not([class*="dark:text-"]),
+.dark .text-cyan-800:not([class*="dark:text-"]),
+.dark .text-cyan-900:not([class*="dark:text-"]) {
+  color: var(--ui-blue) !important;
+}
+
+.dark .border-blue-100:not([class*="dark:border-"]),
+.dark .border-blue-200:not([class*="dark:border-"]),
+.dark .border-blue-300:not([class*="dark:border-"]),
+.dark .border-sky-100:not([class*="dark:border-"]),
+.dark .border-sky-200:not([class*="dark:border-"]),
+.dark .border-sky-300:not([class*="dark:border-"]),
+.dark .border-cyan-100:not([class*="dark:border-"]),
+.dark .border-cyan-200:not([class*="dark:border-"]),
+.dark .border-cyan-300:not([class*="dark:border-"]) {
+  border-color: color-mix(in srgb, var(--ui-blue) 32%, transparent) !important;
+}
+
+.dark .bg-gray-50:not([class*="dark:bg-"]),
+.dark .bg-gray-100:not([class*="dark:bg-"]),
+.dark .bg-gray-200:not([class*="dark:bg-"]),
+.dark .bg-slate-50:not([class*="dark:bg-"]),
+.dark .bg-slate-100:not([class*="dark:bg-"]),
+.dark .bg-slate-200:not([class*="dark:bg-"]),
+.dark .bg-zinc-50:not([class*="dark:bg-"]),
+.dark .bg-zinc-100:not([class*="dark:bg-"]),
+.dark .bg-zinc-200:not([class*="dark:bg-"]),
+.dark .bg-neutral-50:not([class*="dark:bg-"]),
+.dark .bg-neutral-100:not([class*="dark:bg-"]),
+.dark .bg-neutral-200:not([class*="dark:bg-"]),
+.dark .bg-stone-50:not([class*="dark:bg-"]),
+.dark .bg-stone-100:not([class*="dark:bg-"]),
+.dark .bg-stone-200:not([class*="dark:bg-"]) {
+  background-color: var(--ui-surface-soft) !important;
+}
+
+/* Tailwind 的 dark:bg-gray-* 偏蓝，统一映射到中性深色层级，和其他卡片同一色系。 */
+.dark .dark\:bg-gray-900,
+.dark .dark\:bg-gray-900\/30,
+.dark .dark\:bg-gray-900\/50,
+.dark .dark\:bg-gray-900\/60 {
+  background-color: var(--ui-bg-soft) !important;
+}
+
+.dark .dark\:bg-gray-800,
+.dark .dark\:bg-gray-800\/60 {
+  background-color: var(--ui-surface) !important;
+}
+
+.dark .dark\:bg-gray-700,
+.dark .dark\:bg-gray-700\/30,
+.dark .dark\:bg-gray-700\/50,
+.dark .dark\:bg-slate-700 {
+  background-color: var(--ui-surface-soft) !important;
+}
+
+.dark .dark\:bg-gray-600 {
+  background-color: color-mix(in srgb, var(--ui-surface-soft) 70%, #ffffff 8%) !important;
 }

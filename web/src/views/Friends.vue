@@ -1644,7 +1644,7 @@ async function handleBatchAddKnownFriendGids() {
   font-weight: 600;
 }
 
-:global(.dark) .f-tag--weed {
+.dark .f-tag--weed {
   color: #e2c36d;
 }
 

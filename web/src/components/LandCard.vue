@@ -901,58 +901,6 @@ function markMutantIconFailed(effect: { id?: number }) {
   }
 }
 
-/* ===== Dark mode soil adjustments ===== */
-@media all {
-  :global(.dark) .soil-level-0 {
-    background: linear-gradient(180deg, #3a3530 0%, #2e2820 100%);
-    border-color: #555;
-  }
-  :global(.dark) .soil-level-1 {
-    background:
-      radial-gradient(ellipse at 20% 80%, rgba(200, 160, 60, 0.12) 0%, transparent 50%),
-      linear-gradient(180deg, #5a4a20 0%, #4a3a18 100%);
-    border-color: #7a6a30;
-  }
-  :global(.dark) .soil-level-2 {
-    background:
-      radial-gradient(ellipse at 30% 70%, rgba(180, 80, 40, 0.12) 0%, transparent 50%),
-      linear-gradient(180deg, #5a2818 0%, #4a1810 100%);
-    border-color: #7a3828;
-  }
-  :global(.dark) .soil-level-3 {
-    background:
-      radial-gradient(ellipse at 25% 75%, rgba(40, 40, 40, 0.3) 0%, transparent 50%),
-      linear-gradient(180deg, #2a2018 0%, #1a1008 100%);
-    border-color: #4a3f35;
-    color: #d8d0c8;
-  }
-  :global(.dark) .soil-level-4 {
-    background:
-      radial-gradient(ellipse at 30% 60%, rgba(255, 215, 0, 0.15) 0%, transparent 50%),
-      linear-gradient(180deg, #5a4810 0%, #4a3808 100%);
-    border-color: #8a7820;
-  }
-  :global(.dark) .soil-level-5 {
-    background:
-      radial-gradient(ellipse at 25% 65%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
-      radial-gradient(ellipse at 70% 30%, rgba(255, 215, 0, 0.12) 0%, transparent 45%),
-      linear-gradient(180deg, #3a1850 0%, #2a1040 100%);
-    border-color: #7c3aed;
-    color: #e0d0f0;
-  }
-
-  :global(.dark) .land-locked {
-    background: linear-gradient(180deg, #2a2a2a 0%, #222 100%);
-  }
-  :global(.dark) .land-dead {
-    background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
-  }
-
-  :global(.dark) .farm-progress {
-    background: linear-gradient(180deg, #3a3530 0%, #2e2820 100%);
-  }
-}
-
 /* Pale land surfaces keep every level recognizable without the old heavy texture. */
 .land-card {
   min-height: 176px;
@@ -1017,6 +965,7 @@ function markMutantIconFailed(effect: { id?: number }) {
   box-shadow: none;
 }
 .farm-progress::before,
+.farm-progress::after,
 .farm-progress-fill::after {
   display: none;
 }
@@ -1037,7 +986,7 @@ function markMutantIconFailed(effect: { id?: number }) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
-:global(.dark) .badge-purple-crystal {
+.dark .badge-purple-crystal {
   color: #e9d5ff;
   border-color: rgba(196, 151, 255, 0.34);
   background: linear-gradient(135deg, rgba(88, 49, 121, 0.58), rgba(33, 82, 102, 0.52));
@@ -1118,7 +1067,7 @@ function markMutantIconFailed(effect: { id?: number }) {
   opacity: 0.55;
 }
 
-:global(.dark) .farming-action {
+.dark .farming-action {
   color: #bbf7d0;
   border-color: rgba(169, 212, 176, 0.38);
   background: rgba(20, 80, 50, 0.35);
@@ -1157,15 +1106,90 @@ function markMutantIconFailed(effect: { id?: number }) {
   opacity: 0.55;
 }
 
-:global(.dark) .fertilizer-action--normal {
+.dark .fertilizer-action--normal {
   color: #fde68a;
   background: rgba(120, 90, 20, 0.35);
   border-color: rgba(234, 210, 138, 0.4);
 }
 
-:global(.dark) .fertilizer-action--organic {
+.dark .fertilizer-action--organic {
   color: #bbf7d0;
   background: rgba(20, 80, 50, 0.35);
   border-color: rgba(181, 220, 184, 0.35);
+}
+/* ===== 深色土地 =====
+   注意：scoped 样式里 :global(.dark) .x 会被编译成 .dark{}（丢掉 .x），必须写成 .dark .x。
+   深灰卡面 + 等级色的顶部渐变和描边区分土地等级；带上 .land-card 以压过上方的浅色土地规则。 */
+.dark .land-card {
+  --land-tint: #9aa3ad;
+  border-color: color-mix(in srgb, var(--land-tint) 30%, transparent);
+  color: var(--ui-ink);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--land-tint) 13%, #1d2228) 0%, #1a1f25 62%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.dark .land-card.soil-level-1 {
+  --land-tint: #c9a867;
+}
+.dark .land-card.soil-level-2 {
+  --land-tint: #e08a6e;
+}
+.dark .land-card.soil-level-3 {
+  --land-tint: #8d939b;
+}
+.dark .land-card.soil-level-4 {
+  --land-tint: #e6c35a;
+}
+.dark .land-card.soil-level-5 {
+  --land-tint: #b892f0;
+}
+.dark .land-card.land-locked {
+  --land-tint: #6b737d;
+  opacity: 0.72;
+}
+.dark .land-card.land-dead {
+  --land-tint: #6b737d;
+  color: var(--ui-muted);
+}
+.dark .land-card.land-harvestable {
+  border-color: color-mix(in srgb, var(--ui-primary) 55%, transparent);
+  box-shadow:
+    inset 0 3px 0 var(--ui-primary),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.dark .land-card.land-stealable {
+  border-color: color-mix(in srgb, var(--ui-violet) 55%, transparent);
+  box-shadow:
+    inset 0 3px 0 var(--ui-violet),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.dark .land-card:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.dark .land-card .farm-progress {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark .land-card .farm-progress-fill {
+  filter: saturate(0.8) brightness(0.92);
+}
+.dark .land-card .selection-cue__mark {
+  background: #20262d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.dark .land-card .selection-cue--selected .selection-cue__mark {
+  color: #fff;
+  border-color: var(--ui-primary-fill);
+  background: var(--ui-primary-fill);
+}
+.dark .land-card .selection-cue--disabled .selection-cue__mark,
+.dark .land-card .selection-cue--disabled .selection-cue__label {
+  color: var(--ui-subtle);
+  border-color: var(--ui-border-strong);
+  background: #20262d;
+}
+.dark .land-card .selection-cue__label {
+  color: var(--ui-primary);
+  border-color: color-mix(in srgb, var(--ui-primary) 30%, transparent);
+  background: #20262d;
+  box-shadow: none;
 }
 </style>

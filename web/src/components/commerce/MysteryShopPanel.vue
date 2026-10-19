@@ -284,7 +284,7 @@ onUnmounted(() => {
   padding: 2px 10px;
   border-radius: 999px;
   color: #fff;
-  background: var(--ui-danger);
+  background: var(--ui-danger-fill);
   font-size: 12px;
   font-weight: 700;
   line-height: 20px;
@@ -539,7 +539,7 @@ onUnmounted(() => {
   gap: 7px;
   border-color: var(--ui-primary);
   color: white;
-  background: var(--ui-primary);
+  background: var(--ui-primary-fill);
 }
 .dialog-actions button:disabled,
 .dialog-close:disabled {

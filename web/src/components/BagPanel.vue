@@ -1039,7 +1039,7 @@ useIntervalFn(loadBag, 60000)
   place-items: center;
   border-radius: 999px;
   color: #fff;
-  background: var(--ui-warning);
+  background: var(--ui-warning-fill);
   box-shadow: 0 0 0 2px var(--ui-surface-strong);
   font-size: 12px;
 }
@@ -1194,7 +1194,7 @@ useIntervalFn(loadBag, 60000)
 
 .bag-check.is-checked {
   border-color: var(--ui-primary);
-  background: var(--ui-primary);
+  background: var(--ui-primary-fill);
 }
 
 .bag-ineligible {

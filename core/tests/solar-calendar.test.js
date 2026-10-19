@@ -40,7 +40,7 @@ function harness() {
     const id = require.resolve('../dist/services/solar-calendar'); delete require.cache[id];
     return { service: require(id), event, season, writes, failRefresh: () => { failRefresh = true; } };
 }
-test('calendar uses server status and official text without exposing an answer key', async () => {
+test('calendar uses server status and the official answer index', async () => {
     const h = harness();
     const state = await h.service.getSolarCalendar();
     assert.equal(state.events[0].name, '重阳');
@@ -48,7 +48,16 @@ test('calendar uses server status and official text without exposing an answer k
     assert.deepEqual(state.events[0].options, ['A.敬老节', 'B.儿童节', 'C.母亲节', 'D.教师节']);
     assert.equal(state.events[0].canClaim, true);
     assert.equal(state.events[0].canAnswer, true);
-    assert.equal(state.events[0].answer_index, undefined);
+    assert.equal(state.events[0].answerIndex, 0);
+    h.event.id = 402;
+    const frost = (await h.service.getSolarCalendar()).events[0];
+    assert.equal(frost.answerIndex, 2);
+    assert.equal(frost.options[frost.answerIndex], 'C.最后一个');
+    h.event.id = 101;
+    assert.equal((await h.service.getSolarCalendar()).events[0].answerIndex, null);
+    h.event.id = 999;
+    assert.equal((await h.service.getSolarCalendar()).events[0].answerIndex, null);
+    h.event.id = 401;
     for (const status of [0, 1, 3]) {
         h.event.window_status = status;
         await assert.rejects(h.service.operateSolarCalendar('claim', { id: 401 }));
@@ -57,6 +66,23 @@ test('calendar uses server status and official text without exposing an answer k
     h.event.open_end_time = 1;
     await assert.rejects(h.service.operateSolarCalendar('answer', { id: 401, optionIndex: 0 }));
     assert.equal(h.writes.length, 0);
+});
+
+test('calendar omits answer hints when the configured index is missing or invalid', async () => {
+    const config = require('../dist/activity-data/solar-calendar.json');
+    const entry = config.events.find(v => v.id === 401);
+    const original = entry.answer_index;
+    try {
+        const h = harness();
+        for (const value of [undefined, null, -1, 4, 0.5, '0']) {
+            entry.answer_index = value;
+            const event = (await h.service.getSolarCalendar()).events[0];
+            assert.equal(event.answerIndex, null);
+            assert.equal(event.canAnswer, true);
+        }
+    } finally {
+        entry.answer_index = original;
+    }
 });
 test('calendar serializes claims and retains the actual reward if refresh fails', async () => {
     const h = harness(); h.failRefresh();
