@@ -5,10 +5,21 @@ const { buildLandDetail, buildLandMap } = require('./land-analysis');
 const { toNum, getServerTimeSec, log } = require('../../utils/utils');
 const { recordOperation } = require('../stats');
 let pending = false;
-async function fertilizeAllOwnLands(fertilizerType) {
+/**
+ * 未传入 landIds 时对全部可施肥作物施肥；传入时只处理所选地块。
+ * 选中合种副地视为选中其主地，同一株作物只发送一次。
+ */
+async function fertilizeAllOwnLands(fertilizerType, landIdsInput) {
     if (fertilizerType !== 'normal' && fertilizerType !== 'organic') {
         throw new Error('化肥类型必须是 normal 或 organic');
     }
+    const selectedIds = Array.isArray(landIdsInput)
+        ? [...new Set(landIdsInput.map((id) => toNum(id)).filter((id) => id > 0))]
+        : null;
+    if (selectedIds && selectedIds.length === 0)
+        throw new Error('请先选择要施肥的土地');
+    if (selectedIds && selectedIds.length > 64)
+        throw new Error('一次最多选择 64 块土地');
     if (pending)
         throw new Error('一键施肥正在进行，请稍后再试');
     pending = true;
@@ -19,7 +30,12 @@ async function fertilizeAllOwnLands(fertilizerType) {
             throw new Error('无法读取最新土地，请刷新后重试');
         const landsMap = buildLandMap(snapshot.lands);
         const nowSec = getServerTimeSec();
-        const targets = [...new Set(snapshot.lands.map((land) => (buildLandDetail(land, { landsMap, nowSec }))).filter((land) => (land.unlocked && !land.occupiedByMaster && land.status === 'growing'
+        const details = snapshot.lands.map((land) => buildLandDetail(land, { landsMap, nowSec }));
+        const selectedRoots = selectedIds ? new Set(selectedIds.map((id) => {
+            const detail = details.find((land) => toNum(land.id) === id);
+            return detail?.occupiedByMaster && toNum(detail.masterLandId) > 0 ? toNum(detail.masterLandId) : id;
+        })) : null;
+        const targets = [...new Set(details.filter((land) => (!selectedRoots || selectedRoots.has(toNum(land.id)))).filter((land) => (land.unlocked && !land.occupiedByMaster && land.status === 'growing'
                 && land.matureInSec > 0 && toNum(land.id) > 0)).map((land) => toNum(land.id)))];
         const base = { fertilizerType, requestedCount: targets.length, successCount: 0, skippedCount: 0,
             fertilizerConsumedSec: 0, fertilizerRemainingSec: null, updatedLands: [] };
