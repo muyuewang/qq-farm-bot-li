@@ -2,8 +2,8 @@ syntax = "proto3";
 package gamepb.userpb;
 import "userpb.proto";
 
-// QQ 1.15 separates player login from farm scene login. Keep legacy Login for
-// the independently versioned WeChat client.
+// QQ and WeChat 1.15 separate player login from farm scene login.
+// Historical client profiles retain the separate legacy Login messages.
 message PlayerLoginRequest {
     int64 sharer_id = 1;
     string sharer_open_id = 2;

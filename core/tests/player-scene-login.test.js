@@ -52,40 +52,49 @@ async function harness(platform) {
     return { steps, run, replace: api.replace, finish: data => sceneResolve({ body: types.PlayerSceneLoginReply.encode(data).finish() }) };
 }
 
-test('QQ enters the farm scene before starting automation; WX retains legacy login', async () => {
+test('QQ and WeChat enter the farm scene before starting automation', async () => {
     const saved = CONFIG.platform;
     try {
-        const h = await harness('qq');
-        assert.deepEqual(h.steps, ['PlayerLogin', 'bind', 'ace', 'heartbeat', 'settings', 'PlayerSceneLogin']);
-        h.finish({ global_scene_id: 1, farm_scene_ext_data: Buffer.from([8, 1]) });
-        await h.run;
-        assert.equal(h.steps.at(-1), 'ready');
-        const wx = await harness('wx'); await wx.run;
-        assert.equal(wx.steps[0], 'Login');
-        assert.equal(wx.steps.includes('PlayerSceneLogin'), false);
-        assert.equal(wx.steps.at(-1), 'ready');
+        for (const platform of ['qq', 'wx', 'wechat']) {
+            const h = await harness(platform);
+            assert.deepEqual(h.steps, ['PlayerLogin', 'bind', 'ace', 'heartbeat', 'settings', 'PlayerSceneLogin']);
+            assert.equal(h.steps.includes('ready'), false);
+            h.finish({ global_scene_id: 1, farm_scene_ext_data: Buffer.from([8, 1]) });
+            await h.run;
+            assert.equal(h.steps.at(-1), 'ready');
+        }
     } finally { CONFIG.platform = saved; }
 });
 
-test('incomplete or stale QQ scene replies cannot start farming', async () => {
+test('incomplete or stale QQ and WeChat scene replies cannot start farming', async () => {
     const saved = CONFIG.platform;
     try {
-        const broken = await harness('qq'); broken.finish({ global_scene_id: 1 }); await broken.run;
-        assert.deepEqual(broken.steps.slice(-2), ['failed', 'terminate']);
-        assert.equal(broken.steps.includes('ready'), false);
-        const stale = await harness('qq'); stale.replace(); stale.finish({ global_scene_id: 1, farm_scene_ext_data: Buffer.from([8, 1]) }); await stale.run;
-        assert.equal(stale.steps.includes('ready'), false);
+        for (const platform of ['qq', 'wx']) {
+            const broken = await harness(platform);
+            broken.finish({ global_scene_id: 1 });
+            await broken.run;
+            assert.deepEqual(broken.steps.slice(-2), ['failed', 'terminate']);
+            assert.equal(broken.steps.includes('ready'), false);
+            const stale = await harness(platform);
+            stale.replace();
+            stale.finish({ global_scene_id: 1, farm_scene_ext_data: Buffer.from([8, 1]) });
+            await stale.run;
+            assert.equal(stale.steps.includes('ready'), false);
+        }
     } finally { CONFIG.platform = saved; }
 });
 
-test('an explicitly selected historical QQ client retains single-stage login', async () => {
-    const saved = { platform: CONFIG.platform, clientVersion: CONFIG.clientVersion };
+test('explicit historical QQ and WeChat clients retain single-stage login', async () => {
+    const saved = { platform: CONFIG.platform, clientVersion: CONFIG.clientVersion, wxClientVersion: CONFIG.wxClientVersion };
     try {
         CONFIG.clientVersion = '1.14.2.15_20260922';
-        const old = await harness('qq');
-        await old.run;
-        assert.equal(old.steps[0], 'Login');
-        assert.equal(old.steps.includes('PlayerSceneLogin'), false);
-        assert.equal(old.steps.at(-1), 'ready');
+        CONFIG.wxClientVersion = '1.14.2.13_20260922';
+        for (const platform of ['qq', 'wx']) {
+            const old = await harness(platform);
+            await old.run;
+            assert.equal(old.steps[0], 'Login');
+            assert.equal(old.steps.includes('PlayerSceneLogin'), false);
+            assert.equal(old.steps.at(-1), 'ready');
+        }
     } finally { Object.assign(CONFIG, saved); }
 });

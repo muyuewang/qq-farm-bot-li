@@ -601,10 +601,13 @@ function loadGlobalConfig(): void {
                     clientVersion: deviceClientVersion,
                     clientVersionUpdatedAt: deviceClientVersionUpdatedAt,
                 } = resolveClientVersion(savedVersion, savedVersionUpdatedAt);
+                const wxVersion = resolveClientVersion(data.systemConfig.wxClientVersion, data.systemConfig.wxClientVersionUpdatedAt, 'wx');
                 const normalizedSystemConfig = {
                     serverUrl: String(data.systemConfig.serverUrl || '').trim(),
                     clientVersion: deviceClientVersion,
                     clientVersionUpdatedAt: deviceClientVersionUpdatedAt,
+                    wxClientVersion: wxVersion.clientVersion,
+                    wxClientVersionUpdatedAt: wxVersion.clientVersionUpdatedAt,
                     platform: String(data.systemConfig.platform || 'qq').trim(),
                     os: deviceOs,
                     timeZone: normalizeTimeZone(data.systemConfig.timeZone || DEFAULT_TIME_ZONE),
@@ -621,6 +624,8 @@ function loadGlobalConfig(): void {
                 systemConfigMigrated = savedTopVersion !== deviceClientVersion
                     || savedDeviceVersion !== deviceClientVersion
                     || Number(data.systemConfig.clientVersionUpdatedAt) !== deviceClientVersionUpdatedAt
+                    || data.systemConfig.wxClientVersion !== wxVersion.clientVersion
+                    || Number(data.systemConfig.wxClientVersionUpdatedAt) !== wxVersion.clientVersionUpdatedAt
                     || data.systemConfig.timeZone !== normalizedSystemConfig.timeZone;
                 globalConfig.systemConfig = normalizedSystemConfig;
             }

@@ -560,6 +560,12 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     if (!loginReady && snapshot && snapshot.systemServerUrl !== undefined) {
         updateRuntimeConfig({ serverUrl: String(snapshot.systemServerUrl || '') });
     }
+    if (!loginReady && snapshot?.systemDeviceInfo) {
+        updateRuntimeConfig({ deviceInfo: snapshot.systemDeviceInfo });
+    }
+    if (!loginReady && snapshot?.systemWxClientVersion !== undefined) {
+        updateRuntimeConfig({ wxClientVersion: String(snapshot.systemWxClientVersion || '') });
+    }
     if (!loginReady && snapshot && snapshot.systemClientVersion !== undefined) {
         updateRuntimeConfig({ clientVersion: String(snapshot.systemClientVersion || '') });
     }
@@ -645,10 +651,12 @@ async function startBot(config: any): Promise<void> {
     shutdownStarted = false;
     runtimeGeneration += 1;
 
-    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion } = config;
+    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion, systemWxClientVersion, systemDeviceInfo } = config;
 
     if (systemTimeZone !== undefined) updateRuntimeConfig({ timeZone: systemTimeZone });
     if (systemServerUrl !== undefined) updateRuntimeConfig({ serverUrl: String(systemServerUrl || '') });
+    if (systemDeviceInfo) updateRuntimeConfig({ deviceInfo: systemDeviceInfo });
+    if (systemWxClientVersion !== undefined) updateRuntimeConfig({ wxClientVersion: String(systemWxClientVersion || '') });
     if (systemClientVersion !== undefined) updateRuntimeConfig({ clientVersion: String(systemClientVersion || '') });
     CONFIG.platform = platform || 'qq';
     // 注意：间隔配置由 applyIntervalsToRuntime 统一处理，不要在这里覆盖

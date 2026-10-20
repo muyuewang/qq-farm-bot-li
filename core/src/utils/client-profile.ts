@@ -1,19 +1,20 @@
 export {};
-const { CONFIG, DEFAULT_CLIENT_VERSION } = require('../config/config');
+const { CONFIG, DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION } = require('../config/config');
 
 function isWechatPlatform(platform: unknown = CONFIG.platform): boolean {
     return ['wx', 'wechat'].includes(String(platform || '').trim().toLowerCase());
 }
 
-// QQ 和微信共用同一个客户端版本号，不再按平台区分。
+// Keep each platform's version independent, including explicit overrides.
 function getClientVersion(): string {
+    if (isWechatPlatform()) return String(CONFIG.wxClientVersion || '').trim() || DEFAULT_WX_CLIENT_VERSION;
     return String(CONFIG.clientVersion || '').trim() || DEFAULT_CLIENT_VERSION;
 }
 
-function getLoginDeviceInfo(): Record<string, any> {
+function getLoginDeviceInfo(clientVersion = getClientVersion()): Record<string, any> {
     const device = CONFIG.deviceInfo || {};
     const info: Record<string, any> = {
-        client_version: getClientVersion(),
+        client_version: clientVersion,
         sys_software: device.sysSoftware || 'Windows',
     };
     if (isWechatPlatform()) {

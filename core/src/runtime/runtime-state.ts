@@ -64,6 +64,8 @@ function createRuntimeState(options: RuntimeStateOptions) {
             systemTimeZone: getRuntimeConfig().timeZone,
             systemServerUrl: getRuntimeConfig().serverUrl,
             systemClientVersion: getRuntimeConfig().clientVersion,
+            systemWxClientVersion: getRuntimeConfig().wxClientVersion,
+            systemDeviceInfo: getRuntimeConfig().deviceInfo,
             __revision: configRevision,
         };
     }

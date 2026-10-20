@@ -4,21 +4,27 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const test = require('node:test');
-const { CONFIG, DEFAULT_CLIENT_VERSION } = require('../dist/config/config');
+const { CONFIG, DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION } = require('../dist/config/config');
 const { loadProto, types } = require('../dist/utils/proto');
 const { getClientVersion } = require('../dist/utils/client-profile');
 const { sanitizeMeta } = require('../dist/services/logger');
 
-test('client version stays unified across QQ and WeChat platforms', () => {
-    const saved = { platform: CONFIG.platform, clientVersion: CONFIG.clientVersion };
+test('QQ and WeChat versions can be configured independently', () => {
+    const saved = { platform: CONFIG.platform, clientVersion: CONFIG.clientVersion, wxClientVersion: CONFIG.wxClientVersion };
     try {
         CONFIG.clientVersion = '';
+        CONFIG.wxClientVersion = '';
+        assert.equal(DEFAULT_WX_CLIENT_VERSION, '1.15.0.2_20261001');
         for (const platform of ['qq', 'wx', 'wechat']) {
             CONFIG.platform = platform;
             assert.equal(getClientVersion(), DEFAULT_CLIENT_VERSION);
         }
         CONFIG.clientVersion = 'custom-version';
         CONFIG.platform = 'wx';
+        assert.equal(getClientVersion(), DEFAULT_WX_CLIENT_VERSION);
+        CONFIG.wxClientVersion = 'wx-custom';
+        assert.equal(getClientVersion(), 'wx-custom');
+        CONFIG.platform = 'qq';
         assert.equal(getClientVersion(), 'custom-version');
     } finally {
         Object.assign(CONFIG, saved);
@@ -33,9 +39,12 @@ test('decoded WeChat login uses configured device fields and does not invent a l
         CONFIG.platform = 'wx';
         CONFIG.clientVersion = DEFAULT_CLIENT_VERSION;
         CONFIG.deviceInfo = { sysSoftware: 'Windows test', network: 'wifi', memory: '8192', deviceId: 'test-device' };
-        const decode = () => types.LoginRequest.toObject(types.LoginRequest.decode(buildLoginBody()), { longs: String });
+        const decode = () => types.PlayerLoginRequest.toObject(types.PlayerLoginRequest.decode(buildLoginBody()), { longs: String });
         const wx = decode();
         assert.deepEqual(wx.device_info, { client_version: DEFAULT_CLIENT_VERSION, sys_software: 'Windows test', network: 'wifi', memory: '8192', device_id: 'test-device' });
+        assert.equal(wx.share_key, '');
+        assert.equal(wx.game_scene_id, 1);
+        assert.deepEqual(Object.keys(wx.report_data).sort(), ['minigame_channel', 'minigame_platid']);
         assert.equal(wx.report_data.minigame_channel, 'other');
         assert.equal(wx.report_data.minigame_platid, 2);
         assert.equal(Object.hasOwn(wx, 'scene_id'), false);
@@ -208,6 +217,7 @@ test('session summaries retain heartbeat outcomes and isolate a late completion 
     }
     const overrides = {
         ws: Socket,
+        'node:perf_hooks': { performance: { now: () => now } },
         '../services/scheduler': { createScheduler: () => ({
             setIntervalTask: (key, _ms, fn) => tasks.set(key, fn),
             clear: key => tasks.delete(key), clearAll: () => tasks.clear(),
@@ -223,7 +233,7 @@ test('session summaries retain heartbeat outcomes and isolate a late completion 
     vm.runInNewContext(`${fs.readFileSync(filename, 'utf8')}
         module.exports.activate = () => {
             currentConnection.phase = 'online';
-            currentConnection.onlineAt = Date.now();
+            currentConnection.onlineMono = performance.now();
             userState.gid = 1;
             startHeartbeat(currentConnection);
         };
@@ -286,7 +296,7 @@ test('kickout and close snapshots preserve diagnostics before cleanup', async ()
         module.exports.inspectNotify = handleNotify;
         module.exports.installConnection = () => {
             ws = { readyState: 1, close() {} };
-            currentConnection = { id: 1, socket: ws, phase: 'online', intentionalClose: false, finalized: false, loginInitialized: true, startedAt: Date.now() - 1000 };
+            currentConnection = { id: 1, socket: ws, phase: 'online', intentionalClose: false, finalized: false, loginInitialized: true, startedMono: performance.now() - 1000 };
         };
         module.exports.disconnect = () => finalizeConnection(currentConnection, { source: 'ws_close', code: 1006 });
     `, sandbox, { filename });

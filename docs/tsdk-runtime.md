@@ -1,6 +1,6 @@
 # TSDK Node.js 运行约定
 
-微信账号现使用独立的 `tsdk-wx.wasm`（`v3.9.0.1790237209`）；下述 QQ 向量与宿主参数仅适用于 QQ。平台选择及已知 ACEVM 限制见 [微信连接诊断](wechat-connection.md)。
+微信账号现使用独立的 `tsdk-wx.wasm`（`v3.9.0.1792070005`，SHA-256 `1a9416db8b328e8957a079c583ffc5fc7e48d6af8c45aa40d9969dd68157beca`）；下述 QQ 向量与宿主参数仅适用于 QQ。平台选择及已知 ACEVM 限制见 [微信连接诊断](wechat-connection.md)。实际加载的资源路径与哈希分别记录为 diagnostics 的 `wasmPath` 和 `wasmSha256`。
 
 ## 版本与来源
 

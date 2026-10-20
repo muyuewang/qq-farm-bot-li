@@ -91,7 +91,7 @@ test('QQ host inputs reproduce the complete audited credential byte vector', asy
 
 test('WeChat loads its audited WASM and reports unsupported host calls without user data', async () => {
     const build = TSDK_BUILDS.wx;
-    assert.equal(build.version, 'v3.9.0.1790237209');
+    assert.equal(build.version, 'v3.9.0.1792070005');
     assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '../src/utils', build.file))).digest('hex'), build.sha256);
     const originalGet = https.get;
     const originalRequest = https.request;
@@ -104,6 +104,8 @@ test('WeChat loads its audited WASM and reports unsupported host calls without u
         await runtime.init();
         runtime.bindUser('synthetic-wx-openid');
         assert.equal(runtime.getDiagnostics().version, build.version);
+        assert.equal(runtime.getDiagnostics().wasmSha256, build.sha256);
+        assert.equal(path.basename(runtime.getDiagnostics().wasmPath), 'tsdk-wx.wasm');
         const plaintext = Buffer.from('synthetic-wechat-protocol-vector');
         const ciphertext = runtime.transform(plaintext);
         assert.notDeepEqual(ciphertext, plaintext);
@@ -194,6 +196,8 @@ test('compiled pkg layout resolves platform WASM assets from src', async () => {
             try {
                 await runtime.init();
                 assert.equal(runtime.getDiagnostics().version, TSDK_BUILDS[platform].version);
+                assert.equal(runtime.getDiagnostics().wasmSha256, TSDK_BUILDS[platform].sha256);
+                assert.equal(path.basename(runtime.getDiagnostics().wasmPath), TSDK_BUILDS[platform].file);
             } finally { runtime.destroy(); }
         }
     } finally {

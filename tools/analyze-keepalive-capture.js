@@ -128,6 +128,35 @@ function topLevelFieldIds(buffer) {
     return [...fields].sort((a, b) => a - b);
 }
 
+function decodeLoginProfile(root, method, body) {
+    const typeName = method === 'PlayerLogin' ? 'PlayerLoginRequest' : 'LoginRequest';
+    const decoded = root.lookupType(`gamepb.userpb.${typeName}`).decode(body);
+    const device = decoded.device_info || {};
+    return {
+        method,
+        version: String(device.client_version || ''),
+        sysSoftware: String(device.sys_software || ''),
+        network: String(device.network || ''),
+        memory: numberValue(device.memory),
+        hasDeviceId: !!device.device_id,
+        sceneId: Object.hasOwn(decoded, 'scene_id') ? decoded.scene_id : null,
+        channel: String(decoded.report_data?.minigame_channel || ''),
+        platid: numberValue(decoded.report_data?.minigame_platid),
+        gameSceneId: Object.hasOwn(decoded, 'game_scene_id') ? numberValue(decoded.game_scene_id) : null,
+        wireFieldIds: topLevelFieldIds(body),
+    };
+}
+
+function compareConnectionVersions(handshakeVersion, loginVersions, heartbeatVersions) {
+    const login = [...new Set(loginVersions)];
+    const heartbeat = [...new Set(heartbeatVersions)];
+    const complete = !!handshakeVersion && login.some(Boolean) && heartbeat.some(Boolean);
+    return {
+        handshake: handshakeVersion || null, login, heartbeat, complete,
+        consistent: complete ? new Set([handshakeVersion, ...login, ...heartbeat]).size === 1 : null,
+    };
+}
+
 async function main() {
     requireCaptureDirectory();
     const cryptoWasm = loadCryptoWasmForAudit();
@@ -140,7 +169,6 @@ async function main() {
     );
 
     const gate = root.lookupType('gatepb.Message');
-    const loginRequest = root.lookupType('gamepb.userpb.LoginRequest');
     const heartbeatRequest = root.lookupType('gamepb.userpb.HeartbeatRequest');
     const manifest = readJsonLines(path.join(captureDir, 'manifest.jsonl'));
     const fileEntries = new Map(manifest.map(entry => [
@@ -159,6 +187,7 @@ async function main() {
     const firstTokenByConnection = new Map();
     const notableTokens = [];
     const loginVersions = new Set();
+    const loginProfiles = [];
     const heartbeatVersions = new Set();
     const heartbeatField3 = new Set();
     const heartbeatWireFields = new Set();
@@ -166,13 +195,36 @@ async function main() {
     let requestCount = 0;
     let loginCount = 0;
     let heartbeatCount = 0;
+    const captureFiles = fs.readdirSync(captureDir).filter(item => /^\d+-(send|recv)\.bin$/.test(item)).sort();
+    const responses = {};
+    const gatewayErrors = [];
+    const notifications = {};
+    let undecodableFrames = 0;
 
-    for (const name of fs.readdirSync(captureDir).filter(item => /^\d+-send\.bin$/.test(item)).sort()) {
+    for (const name of captureFiles) {
         let message;
         try {
             message = gate.decode(fs.readFileSync(path.join(captureDir, name)));
         } catch {
+            undecodableFrames += 1;
             continue;
+        }
+        const messageType = numberValue(message.meta?.message_type);
+        if (numberValue(message.meta?.error_code)) {
+            gatewayErrors.push({ file: name, method: message.meta?.method_name, errorCode: numberValue(message.meta.error_code) });
+        }
+        if (messageType === 2) {
+            const rpc = `${message.meta?.service_name}.${message.meta?.method_name}`;
+            responses[rpc] = (responses[rpc] || 0) + 1;
+        }
+        if (messageType === 3) {
+            try {
+                const event = root.lookupType('gatepb.EventMessage').decode(message.body);
+                const name = String(event.message_type || '');
+                notifications[name] = (notifications[name] || 0) + 1;
+            } catch {
+                undecodableFrames += 1;
+            }
         }
         if (numberValue(message.meta?.message_type) !== 1) continue;
         requestCount += 1;
@@ -186,6 +238,8 @@ async function main() {
                 heartbeats: 0,
                 heartbeatIntervalsMs: [],
                 lastHeartbeatAt: 0,
+                loginVersions: [],
+                heartbeatVersions: [],
             });
         }
         const connection = perConnection.get(connectionId);
@@ -214,19 +268,22 @@ async function main() {
                 shape,
             });
         }
-        if (service !== 'gamepb.userpb.UserService' || (method !== 'Login' && method !== 'Heartbeat')) continue;
+        if (service !== 'gamepb.userpb.UserService' || !['Login', 'PlayerLogin', 'Heartbeat'].includes(method)) continue;
         let body = Buffer.from(message.body || []);
         if (body.length) body = await cryptoWasm.decryptBuffer(body);
 
-        if (method === 'Login') {
-            const decoded = loginRequest.decode(body);
-            loginVersions.add(String(decoded.device_info?.client_version || ''));
+        if (method === 'Login' || method === 'PlayerLogin') {
+            const profile = decodeLoginProfile(root, method, body);
+            loginProfiles.push({ connectionId, file: name, ...profile });
+            loginVersions.add(profile.version);
+            connection.loginVersions.push(profile.version);
             loginCount += 1;
             connection.logins += 1;
         } else {
             const decoded = heartbeatRequest.decode(body);
             for (const field of topLevelFieldIds(body)) heartbeatWireFields.add(field);
             heartbeatVersions.add(String(decoded.client_version || ''));
+            connection.heartbeatVersions.push(String(decoded.client_version || ''));
             heartbeatField3.add(numberValue(decoded.field_3));
             heartbeatCount += 1;
             connection.heartbeats += 1;
@@ -238,13 +295,33 @@ async function main() {
         }
     }
 
-    for (const connection of perConnection.values()) delete connection.lastHeartbeatAt;
+    for (const connection of perConnection.values()) {
+        connection.versions = compareConnectionVersions(
+            connections.find(item => item.connectionId === connection.connectionId)?.version,
+            connection.loginVersions,
+            connection.heartbeatVersions,
+        );
+        delete connection.loginVersions;
+        delete connection.heartbeatVersions;
+        delete connection.lastHeartbeatAt;
+    }
     const firstTokenFingerprints = [...firstTokenByConnection.entries()]
         .sort((a, b) => a[0] - b[0])
         .map(([connectionId, token]) => ({ connectionId, fingerprint: fingerprint(token), shape: tokenShape(token) }));
 
     const result = {
+        analyzedAt: new Date().toISOString(),
         captureFormat: JSON.parse(fs.readFileSync(path.join(captureDir, 'session.json'), 'utf8')).format_version,
+        snapshot: {
+            frames: captureFiles.length,
+            lastFile: captureFiles.at(-1) || null,
+            firstFrameAt: Number(fileEntries.get(captureFiles[0])?.timestamp_ms) || null,
+            lastFrameAt: Number(fileEntries.get(captureFiles.at(-1))?.timestamp_ms) || null,
+            undecodableFrames,
+        },
+        responses,
+        gatewayErrors,
+        notifications,
         handshakes: connections,
         handshakeComparison: compareHandshakeUrls(rawHandshakeUrls),
         requests: {
@@ -257,6 +334,7 @@ async function main() {
             login: [...loginVersions].sort(),
             heartbeat: [...heartbeatVersions].sort(),
         },
+        loginProfiles,
         heartbeat: {
             field3Values: [...heartbeatField3].sort((a, b) => a - b),
             wireFieldIds: [...heartbeatWireFields].sort((a, b) => a - b),
@@ -283,4 +361,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { compareHandshakeUrls, redactHandshakeCode };
+module.exports = { compareHandshakeUrls, redactHandshakeCode, decodeLoginProfile, compareConnectionVersions };

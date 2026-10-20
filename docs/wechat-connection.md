@@ -1,13 +1,33 @@
 # 微信连接适配与掉线诊断
 
+## 2026-10-20 微信 1.15 复核
+
+Windows 微信实机的 `platform=wx` 握手、PlayerLoginRequest、HeartbeatRequest 均为 `1.15.0.2_20261001`。微信已采用 `PlayerLogin → PlayerSceneLogin(global_scene_id=1)`；确认农场场景回包完整后才启动自动化。1.14 等历史版本仍使用旧 Login。
+
+QQ 与微信现在分别保存版本：原 `clientVersion` / `clientVersionUpdatedAt` 仅用于 QQ，新增 `wxClientVersion` / `wxClientVersionUpdatedAt` 用于微信。两者目前恰好同为 `1.15.0.2_20261001`，独立维护默认值、更新时间和自定义覆盖。旧配置迁移时不会把 QQ 自定义值复制给微信；旧面板未提交微信字段时保留已保存的微信值。
+
+系统设置提供两个版本输入框。每个账号按自身平台启动 Worker，并独立选择 App ID、设备字段、登录渠道和 WASM；系统的默认平台不会覆盖已登记账号的平台。配置快照传递两个版本及设备设置。连接创建时固定本次版本，握手、登录及心跳复用该值；保存或重置连接设置不再重启在线账号，新的连接参数在取得新 Code 登录时生效。
+
+微信 TSDK 独立更新为 `v3.9.0.1792070005`，大小 161,133 bytes，SHA-256 为 `1a9416db8b328e8957a079c583ffc5fc7e48d6af8c45aa40d9969dd68157beca`。来源为本次微信缓存包内的 `tsdk/tsdk.wasm`，不是 QQ 的 `v3.9.0.1792070537`。磁盘资源加载后记录实际 WASM 路径及 SHA-256，便于核对 Docker、编译版和 pkg 是否加载正确资源。
+
+约 4 分钟官方样本内，Heartbeat 9/9、AntiData 19/19，其中 1 次 AntiData 非空，无 Kickout 或非零网关错误码。新微信 WASM 初始化及 48 条非空请求体解密后重新加密的字节比较通过。样本只用于协议与资源核对，不是机器人长时间在线保证。
+
+微信渠道仍为 `other`，QQ 为 `other-qq`。新登录体包含 `share_key=""`、`game_scene_id=1`；历史 Login 的字段存在性保持原样。微信本次入口 scene_id 为 1005，但它随入口变化，单独 Code 没有启动上下文时继续省略。不得套用 QQ 的 1234567，也不得硬编码某台设备的内存和标识。
+
+微信官方宿主从微信 API 获取 `model;platform;system;brand;`、`wx.env.USER_DATA_PATH` 和 enableDebug；Node 宿主仍有设备、目录等替代实现，本次不冒充已获得这些实际值，不改用 QQ 固定参数。非空 AntiData 在新 WASM 的离线回放仍触发未实现的 ACEVM 调用；返回 0 表示任务执行失败。仅升级版本、登录流程和 WASM 不代表补齐 ACEVM 或修复所有掉线原因。
+
+QQ/微信网络层的心跳无入站时长、请求等待与会话时长使用单调时钟，避免系统校时误判；WebSocket 握手增加 20 秒超时。心跳频率、连续失败阈值和一次性 Code 不重放规则保持不变。
+
+## 2026-09-25 历史样本
+
 Windows 微信真实样本（2026-09-25）确认：客户端为 `1.14.2.13_20260922`，TSDK 为 `v3.9.0.1790237209`，登录渠道为 `other`。约 12 分钟内有 28 组心跳与 43 组 AntiData 往返，没有 Kickout；这不是超过三小时的稳定性结论。
 
 ## 平台适配
 
-- 账号为 wx/wechat 且使用内置 QQ 默认版本时，握手、Login 和 Heartbeat 统一选择微信版本；自定义版本继续生效。QQ 保持原有版本与完整初始化凭据向量。
+- 账号为 wx/wechat 时，握手、登录和 Heartbeat 统一选择独立的微信版本；QQ 使用自己的版本。两端各自的自定义覆盖不互相影响，QQ 完整初始化凭据向量保持不变。
 - 微信 Login 使用渠道 `other`，从设备配置读取 network、memory 和 device_id。没有小游戏启动上下文时省略 scene_id，不套用本次样本的入口值。
 - 微信独立加载 `core/src/utils/tsdk-wx.wasm`，QQ 继续加载 `tsdk.wasm`。两者分别校验 SHA-256，容器与 pkg 资源清单均包含微信 WASM。
-- 微信 WASM SHA-256：`4bf6aa0ede9677fe82186c1a76f8df8a14ccd6d14b6ff1280230923189f4e972`；QQ 当前构建与校验值见 [TSDK 运行约定](tsdk-runtime.md)。
+- 微信当前 WASM SHA-256 见本页 2026-10-20 复核；QQ 当前构建与校验值见 [TSDK 运行约定](tsdk-runtime.md)。
 - ACE 请求按运行实例隔离：停止后到达的旧响应不再进入新实例，也不重置新实例的请求状态。5 秒处理周期、25 秒心跳及各分支调度策略保持原有设计。
 
 ## 已知能力边界

@@ -171,6 +171,8 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 systemTimeZone: initialConfigSnapshot.systemTimeZone,
                 systemServerUrl: initialConfigSnapshot.systemServerUrl,
                 systemClientVersion: initialConfigSnapshot.systemClientVersion,
+                systemWxClientVersion: initialConfigSnapshot.systemWxClientVersion,
+                systemDeviceInfo: initialConfigSnapshot.systemDeviceInfo,
             },
         });
         child.send({ type: 'config_sync', config: initialConfigSnapshot });
