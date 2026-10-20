@@ -96,3 +96,28 @@ test('duplicate bulk actions are rejected and an ambiguous timeout is never retr
     assert.equal(calls.batches.length, 1);
     assert.equal(calls.stats.length, 0);
 });
+
+test('selected-land fertilizing only sends the chosen roots and maps a slave to its master', async () => {
+    const { run, calls } = harness();
+    const result = await run('normal', [2, 4, 3]);
+    assert.equal(JSON.stringify(calls.batches), JSON.stringify([{ ids: [2], id: 1011 }]));
+    assert.equal(result.requestedCount, 1);
+});
+
+test('selecting a joint-planted slave fertilizes its master once', async () => {
+    const lands = [
+        { id: 1, unlocked: true, status: 'growing', matureInSec: 60 },
+        { id: 2, unlocked: true, status: 'growing', matureInSec: 60, occupiedByMaster: true, masterLandId: 1 },
+        { id: 3, unlocked: true, status: 'growing', matureInSec: 60 },
+    ];
+    const { run, calls } = harness({ lands });
+    await run('organic', [2, 1]);
+    assert.equal(JSON.stringify(calls.batches), JSON.stringify([{ ids: [1], id: 1012 }]));
+});
+
+test('an empty selection is rejected before any request', async () => {
+    const { run, calls } = harness();
+    await assert.rejects(run('normal', []), /请先选择/);
+    assert.equal(calls.reads, 0);
+    assert.equal(calls.batches.length, 0);
+});

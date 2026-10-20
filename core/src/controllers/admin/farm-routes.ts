@@ -558,7 +558,9 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             return res.status(400).json({ ok: false, error: '化肥类型必须是 normal 或 organic' });
         }
         try {
-            const data = await ctx.provider.fertilizeAllOwnLands(id, req.body.fertilizerType);
+            // landIds 可选：只给勾选的土地施肥。
+            const landIds = Array.isArray(req.body?.landIds) ? req.body.landIds : undefined;
+            const data = await ctx.provider.fertilizeAllOwnLands(id, req.body.fertilizerType, landIds);
             res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);

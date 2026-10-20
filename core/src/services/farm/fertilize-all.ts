@@ -7,10 +7,19 @@ const { recordOperation } = require('../stats');
 
 let pending = false;
 
-async function fertilizeAllOwnLands(fertilizerType: unknown): Promise<any> {
+/**
+ * 未传入 landIds 时对全部可施肥作物施肥；传入时只处理所选地块。
+ * 选中合种副地视为选中其主地，同一株作物只发送一次。
+ */
+async function fertilizeAllOwnLands(fertilizerType: unknown, landIdsInput?: unknown): Promise<any> {
     if (fertilizerType !== 'normal' && fertilizerType !== 'organic') {
         throw new Error('化肥类型必须是 normal 或 organic');
     }
+    const selectedIds: number[] | null = Array.isArray(landIdsInput)
+        ? [...new Set<number>((landIdsInput as unknown[]).map((id: unknown) => toNum(id)).filter((id: number) => id > 0))]
+        : null;
+    if (selectedIds && selectedIds.length === 0) throw new Error('请先选择要施肥的土地');
+    if (selectedIds && selectedIds.length > 64) throw new Error('一次最多选择 64 块土地');
     if (pending) throw new Error('一键施肥正在进行，请稍后再试');
     pending = true;
     try {
@@ -19,8 +28,13 @@ async function fertilizeAllOwnLands(fertilizerType: unknown): Promise<any> {
         if (!Array.isArray(snapshot?.lands)) throw new Error('无法读取最新土地，请刷新后重试');
         const landsMap = buildLandMap(snapshot.lands);
         const nowSec = getServerTimeSec();
-        const targets: number[] = [...new Set<number>(snapshot.lands.map((land: any) => (
-            buildLandDetail(land, { landsMap, nowSec })
+        const details = snapshot.lands.map((land: any) => buildLandDetail(land, { landsMap, nowSec }));
+        const selectedRoots = selectedIds ? new Set<number>(selectedIds.map((id) => {
+            const detail = details.find((land: any) => toNum(land.id) === id);
+            return detail?.occupiedByMaster && toNum(detail.masterLandId) > 0 ? toNum(detail.masterLandId) : id;
+        })) : null;
+        const targets: number[] = [...new Set<number>(details.filter((land: any) => (
+            !selectedRoots || selectedRoots.has(toNum(land.id))
         )).filter((land: any) => (
             land.unlocked && !land.occupiedByMaster && land.status === 'growing'
             && land.matureInSec > 0 && toNum(land.id) > 0

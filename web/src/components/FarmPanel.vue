@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import type { FertilizerType } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
-import { useIntervalFn } from '@vueuse/core'
+import { useIntervalFn, useResizeObserver } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
 import { NPopover } from 'naive-ui/es/popover'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getApiErrorMessage } from '@/api'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import LandCard from '@/components/LandCard.vue'
+import LandCard from '@/components/FarmLandCard.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -63,7 +62,6 @@ const currentAccountRunning = computed(() => (
 ))
 
 const operating = ref(false)
-const fertilizingLandId = ref<number | null>(null)
 const fertilizerConfirmVisible = ref(false)
 const bulkFertilizerType = ref<FertilizerType>('normal')
 const bulkFertilizerOptions = [{ label: '普通化肥', value: 'normal' }, { label: '有机化肥', value: 'organic' }]
@@ -72,11 +70,9 @@ let fertilizerUiSequence = 0
 watch(currentAccountId, () => {
   fertilizerUiSequence++
   fertilizerConfirmVisible.value = false
-  fertilizingLandId.value = null
 })
 const farmingLandId = ref<number | null>(null)
 const manualRefreshing = ref(false)
-const refreshIconClass = 'i-carbon-renew'
 const confirmVisible = ref(false)
 const confirmConfig = ref({
   title: '',
@@ -85,16 +81,34 @@ const confirmConfig = ref({
 })
 
 const selectedInteractionItemId = ref('')
-const selectedInteractionLandIds = ref<Record<string, string[]>>({})
 const lastInteractionResults = ref<Record<string, FriendInteractionResultDto[]>>({})
 const interactionConfirmVisible = ref(false)
 const interactionConfirmMessage = ref('')
+
+// ---- 选择土地：勾选后批量施肥、务农或使用道具 ----
+const selecting = ref(!!route.query.interactionItem)
+const selectedIds = ref<string[]>([])
+const batchPending = ref(false)
+type BatchAction = FertilizerType | 'farming' | 'item'
+const batchAction = ref<BatchAction>(route.query.interactionItem ? 'item' : 'normal')
 
 const selectedInteractionItem = computed<FriendInteractionItemDto | null>(() => (
   interactionItems.value.find(item => String(item.itemId) === selectedInteractionItemId.value) || null
 ))
 
 const showManualFertilizerButtons = computed(() => settings.value.automation?.show_manual_fertilizer !== false)
+const selectionBusy = computed(() => batchPending.value || fertilizePending.value || interactionUsePending.value || operating.value)
+const selectionLimit = computed(() => batchAction.value === 'item' ? Math.max(0, Math.floor(Number(selectedInteractionItem.value?.count) || 0)) : Infinity)
+const selectionOptions = computed<Array<{ value: BatchAction, label: string, icon: string }>>(() => [
+  ...(showManualFertilizerButtons.value
+    ? [
+        { value: 'normal' as const, label: '普通肥', icon: 'i-carbon-chemistry' },
+        { value: 'organic' as const, label: '有机肥', icon: 'i-carbon-sprout' },
+      ]
+    : []),
+  { value: 'farming', label: '务农', icon: 'i-carbon-clean' },
+  { value: 'item', label: '道具', icon: 'i-carbon-game-console' },
+])
 
 const cleanableFarmSocialEvents = computed(() => (
   (Array.isArray(socialEvents.value) ? socialEvents.value : []).filter((event: any) => event?.cleanable)
@@ -168,14 +182,9 @@ const operations = [
   { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', buttonType: 'default' },
   { type: 'all', label: '一键全收', icon: 'i-carbon-flash', buttonType: 'primary' },
 ] as const
-const secondaryOperations = operations.filter(op => op.type !== 'all')
 
 function interactionSelectionKey(itemId: unknown = selectedInteractionItemId.value) {
   return String(itemId || '')
-}
-
-function selectedInteractionIds(itemId: unknown = selectedInteractionItemId.value) {
-  return selectedInteractionLandIds.value[interactionSelectionKey(itemId)] || []
 }
 
 function usedInteractionIdSet(itemId: unknown = selectedInteractionItemId.value) {
@@ -190,80 +199,178 @@ function hasConfirmedInteractionEffect(land: any, itemId: unknown = selectedInte
     .some((effect: any) => effect?.confirmed && String(effect?.itemId || '') === normalizedItemId)
 }
 
-// 与好友页保持同一口径：只有仍在生长期的作物才允许提交道具使用。
-function isInteractionLandCandidate(land: any) {
-  return !!selectedInteractionItem.value
-    && !interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
+/** 合种副地代表其主地：勾选、显示都落在主地上。 */
+function rootIdOf(land: any) {
+  const master = Number(land?.masterLandId) || 0
+  return String(land?.occupiedByMaster && master > 0 ? master : land?.id || '')
 }
 
-function isInteractionLandSelected(land: any) {
-  return selectedInteractionIds().includes(String(land?.id || ''))
+function landByRootId(id: string) {
+  return (lands.value || []).find(land => String(land.id) === id)
 }
 
-function isInteractionLandDisabled(land: any) {
+function canSelectLand(land: any) {
+  const root = land?.occupiedByMaster ? landByRootId(rootIdOf(land)) : land
+  if (!isValidFarmingLand(root))
+    return false
+  if (batchAction.value === 'normal')
+    return isFertilizeCandidate(root)
+  if (batchAction.value === 'organic')
+    return isFertilizeCandidate(root) && canOrganicFertilize(root)
+  if (batchAction.value === 'farming')
+    return isLandFarmingCandidate(root)
   const item = selectedInteractionItem.value
-  return !item
-    || item.count < 1
-    || interactionUsePending.value
-    || !isInteractionLandCandidate(land)
-    || hasConfirmedInteractionEffect(land, item.itemId)
-    || usedInteractionIdSet(item.itemId).has(String(land?.id || ''))
+  return !!item && item.count > 0 && !interactionItemTargetReason(item.itemId, root)
+    && !hasConfirmedInteractionEffect(root, item.itemId) && !usedInteractionIdSet(item.itemId).has(String(root.id))
 }
 
-function interactionLandSelectionLabel(land: any) {
-  const landId = String(land?.id || '')
-  if (hasConfirmedInteractionEffect(land))
-    return '已生效'
-  if (usedInteractionIdSet().has(landId))
-    return '本次已用'
-  return selectedInteractionItem.value
-    ? interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
-    : ''
+function selectReason(land: any) {
+  if (canSelectLand(land))
+    return ''
+  if (!land?.unlocked)
+    return '未解锁'
+  if (!String(land?.plantName || '').trim())
+    return '空地无需操作'
+  const root = landByRootId(rootIdOf(land))
+  if (!root)
+    return '合种主地状态待同步'
+  if (batchAction.value === 'normal' || batchAction.value === 'organic')
+    return isFertilizeCandidate(root) ? '有机化肥次数已用完' : '当前作物无需施肥'
+  if (batchAction.value === 'farming')
+    return '当前无需务农'
+  return selectedInteractionItem.value ? '当前作物不可使用此道具，或已经使用过' : '请先选择道具'
 }
 
-function setSelectedInteractionIds(ids: string[], itemId: unknown = selectedInteractionItemId.value) {
-  selectedInteractionLandIds.value = {
-    ...selectedInteractionLandIds.value,
-    [interactionSelectionKey(itemId)]: [...new Set(ids.map(String))].sort((left, right) => Number(left) - Number(right)),
-  }
+function isLandSelected(land: any) {
+  return selectedIds.value.includes(rootIdOf(land))
 }
 
-function toggleInteractionLand(land: any) {
-  const item = selectedInteractionItem.value
-  if (!item || isInteractionLandDisabled(land))
+function toggleLand(land: any) {
+  if (!canSelectLand(land) || selectionBusy.value)
     return
-  const landId = String(land?.id || '')
-  const next = new Set(selectedInteractionIds(item.itemId))
-  if (next.has(landId)) {
-    next.delete(landId)
+  const id = rootIdOf(land)
+  if (!selectedIds.value.includes(id) && selectedIds.value.length >= selectionLimit.value) {
+    toast.info(`道具库存为 ${selectionLimit.value} 个，最多选择 ${selectionLimit.value} 株作物`)
+    return
   }
-  else {
-    if (next.size >= item.count) {
-      toast.info(`当前只有 ${item.count} 个${item.name}`)
-      return
-    }
-    next.add(landId)
-  }
-  setSelectedInteractionIds([...next], item.itemId)
+  selectedIds.value = selectedIds.value.includes(id)
+    ? selectedIds.value.filter(item => item !== id)
+    : [...selectedIds.value, id].sort((a, b) => Number(a) - Number(b))
 }
 
-function selectAllInteractionLands() {
-  const item = selectedInteractionItem.value
-  if (!item)
+function selectAllLands() {
+  if (selectionBusy.value)
     return
+  selectedIds.value = [...new Set((lands.value || []).filter(land => !land.occupiedByMaster && canSelectLand(land)).map(land => String(land.id)))]
+    .sort((a, b) => Number(a) - Number(b))
+    .slice(0, selectionLimit.value)
+}
+
+function exitSelecting() {
+  if (selectionBusy.value)
+    return
+  selecting.value = false
+  selectedIds.value = []
+}
+
+function enterSelecting() {
+  if (selectionBusy.value)
+    return
+  selecting.value = true
+}
+
+function chooseBatchAction(action: BatchAction) {
+  if (selectionBusy.value)
+    return
+  batchAction.value = action
+}
+
+const selectedLands = computed(() => selectedIds.value.map(landByRootId).filter(Boolean) as any[])
+const normalTargets = computed(() => selectedLands.value.filter(isFertilizeCandidate))
+const organicTargets = computed(() => normalTargets.value.filter(canOrganicFertilize))
+const farmingTargets = computed(() => selectedLands.value.filter(isLandFarmingCandidate))
+// 道具：只取所选土地中对当前道具有效、未使用过的，按编号取前“库存”个。
+const itemTargets = computed(() => {
+  const item = selectedInteractionItem.value
+  if (!item || item.count < 1)
+    return [] as any[]
   const used = usedInteractionIdSet(item.itemId)
-  const candidates = (lands.value || [])
-    .filter(land => isInteractionLandCandidate(land) && !hasConfirmedInteractionEffect(land, item.itemId) && !used.has(String(land.id)))
-    .sort((left, right) => Number(left.id) - Number(right.id))
+  return selectedLands.value
+    .filter(land => !interactionItemTargetReason(item.itemId, land) && !hasConfirmedInteractionEffect(land, item.itemId) && !used.has(String(land.id)))
     .slice(0, item.count)
-    .map(land => String(land.id))
-  setSelectedInteractionIds(candidates, item.itemId)
+})
+
+const availableSelectionCount = computed(() => lands.value.filter(land => !land.occupiedByMaster && canSelectLand(land)).length)
+const selectedPlotCount = computed(() => lands.value.filter(isLandSelected).length)
+const activeTargets = computed(() => ({ normal: normalTargets.value, organic: organicTargets.value, farming: farmingTargets.value, item: itemTargets.value })[batchAction.value])
+const applyLabel = computed(() => ({ normal: '施用普通化肥', organic: '施用有机化肥', farming: '开始务农', item: '使用道具' })[batchAction.value])
+
+watch([lands, batchAction, selectedInteractionItem, selectionBusy, showManualFertilizerButtons], () => {
+  if (selectionBusy.value)
+    return
+  if (!selectionOptions.value.some(option => option.value === batchAction.value))
+    batchAction.value = selectionOptions.value[0]!.value
+  selectedIds.value = selectedIds.value.filter(id => canSelectLand(landByRootId(id))).slice(0, selectionLimit.value)
+}, { deep: true })
+
+async function applySelection() {
+  if (selectionBusy.value || !currentAccountConnected.value || !activeTargets.value.length)
+    return
+  if (batchAction.value === 'normal' || batchAction.value === 'organic')
+    await fertilizeSelected(batchAction.value)
+  else if (batchAction.value === 'farming')
+    await farmSelected()
+  else
+    requestUseInteractionItem()
+}
+
+function selectedInteractionIds() {
+  return itemTargets.value.map(land => String(land.id))
 }
 
 function interactionFailures() {
   const results = lastInteractionResults.value[interactionSelectionKey()] || []
   return results.filter(result => !result.ok)
 }
+
+const summaryItems = computed(() => [
+  { key: 'harvestable', label: '可收', icon: 'i-carbon-wheat text-amber-600 dark:text-amber-400', value: Number(summary.value?.harvestable) || 0 },
+  { key: 'growing', label: '生长', icon: 'i-carbon-sprout text-green-600 dark:text-green-400', value: Number(summary.value?.growing) || 0 },
+  { key: 'empty', label: '空闲', icon: 'text-gray-500', path: 'M12 4 22 9 12 14 2 9 12 4ZM2 14l10 5 10-5', value: Number(summary.value?.empty) || 0 },
+  { key: 'dead', label: '枯萎', icon: 'text-red-600 dark:text-red-400', path: 'M12 21V11c0-4-2-6-5-6M7 5c-3 0-4 2-4 5 3 0 5-1 5-4M12 15c0-3 2-5 5-5m0 0c3 0 4 2 4 5-3 0-5-1-5-4M8 21h8', value: Number(summary.value?.dead) || 0 },
+])
+
+// 列数取土地数量的因数，让每一行都排满：24 块地可排成 8×3、6×4、4×6 等。
+// 在卡片宽度落在合适区间的因数里取最大的；没有合适的因数（比如质数块数）时按宽度自然换行。
+const gridEl = ref<HTMLElement | null>(null)
+const gridWidth = ref(0)
+let gridResizeFrame = 0
+useResizeObserver(gridEl, ([entry]) => {
+  window.cancelAnimationFrame(gridResizeFrame)
+  if (!entry || entry.contentRect.width === gridWidth.value)
+    return
+  // 列数会改变网格高度，放到下一帧更新，避免在尺寸观察回调中再次触发布局通知。
+  gridResizeFrame = window.requestAnimationFrame(() => {
+    gridWidth.value = entry.contentRect.width
+    gridResizeFrame = 0
+  })
+})
+const GRID_GAP = 12
+const CARD_MIN = 128
+const CARD_MAX = 230
+const gridColumns = computed(() => {
+  const width = gridWidth.value
+  const count = (lands.value || []).length
+  if (!width || !count)
+    return 2
+  const fits = (cols: number) => (width - GRID_GAP * (cols - 1)) / cols
+  const maxCols = Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN + GRID_GAP)))
+  for (let cols = Math.min(maxCols, count); cols >= 2; cols--) {
+    if (count % cols === 0 && fits(cols) <= CARD_MAX)
+      return cols
+  }
+  return maxCols
+})
 
 function isFertilizeCandidate(land: any) {
   return !!land?.unlocked
@@ -272,14 +379,9 @@ function isFertilizeCandidate(land: any) {
     && Number(land?.matureInSec) > 0
 }
 
-function canNormalFertilize(land: any) {
-  return Number(land?.leftInorcFertTimes) > 0
-}
-
-function normalFertilizerLabel(land: any) {
-  if (!canNormalFertilize(land))
-    return '本季已施过普通化肥'
-  return ''
+function canOrganicFertilize(land: any) {
+  const left = land?.leftInorcFertTimes
+  return left == null || Number(left) > 0
 }
 
 function formatFertilizerRemaining(sec: number) {
@@ -289,33 +391,26 @@ function formatFertilizerRemaining(sec: number) {
   return `剩余 ${(remaining / 3600).toFixed(1)}h`
 }
 
-async function handleFertilize(land: any, fertilizerType: FertilizerType) {
-  if (!currentAccountId.value || fertilizePending.value || !isFertilizeCandidate(land))
+async function fertilizeSelected(fertilizerType: FertilizerType) {
+  const targets = fertilizerType === 'organic' ? organicTargets.value : normalTargets.value
+  if (!currentAccountId.value || fertilizePending.value || batchPending.value || !targets.length)
     return
-  if (fertilizerType === 'normal' && !canNormalFertilize(land)) {
-    toast.info('本季已施过普通化肥')
-    return
-  }
-
   const typeName = fertilizerType === 'organic' ? '有机化肥' : '普通化肥'
-  const landId = Number(land.id)
   const sequence = ++fertilizerUiSequence
-  fertilizingLandId.value = landId
-  try {
-    const result = await farmStore.fertilizeLand(currentAccountId.value, landId, fertilizerType)
-    if (sequence !== fertilizerUiSequence)
-      return
-    if (!result) {
-      toast.error(fertilizeError.value || `${typeName}使用失败`)
-      return
-    }
-    const remainingText = formatFertilizerRemaining(Number(result.fertilizerRemainingSec || 0))
-    toast.success(remainingText ? `已施${typeName}，${remainingText}` : `已施${typeName}`)
+  const result = await farmStore.fertilizeAll(currentAccountId.value, fertilizerType, targets.map(land => Number(land.id)))
+  if (sequence !== fertilizerUiSequence)
+    return
+  if (!result) {
+    toast.error(fertilizeError.value || `${typeName}使用失败，请刷新土地确认最新状态`)
+    return
   }
-  finally {
-    if (sequence === fertilizerUiSequence && fertilizingLandId.value === landId)
-      fertilizingLandId.value = null
+  if (!result.successCount) {
+    toast.info('所选土地当前都无需施肥')
+    return
   }
+  const skipped = result.skippedCount ? `，${result.skippedCount} 株未施肥` : ''
+  const remaining = formatFertilizerRemaining(Number(result.fertilizerRemainingSec || 0))
+  toast.success(`已为 ${result.successCount} 株作物施${typeName}${skipped}${remaining ? `，${remaining}` : ''}`)
 }
 
 async function handleFertilizeAll() {
@@ -344,34 +439,49 @@ async function handleFertilizeAll() {
   toast.success(`已为 ${result.successCount} 株作物施肥${skipped}${remaining ? `，${remaining}` : ''}`)
 }
 
-async function handleFarmLand(land: any) {
-  if (!currentAccountId.value || farmingLandId.value !== null || operating.value || !isLandFarmingCandidate(land))
+/** 逐块务农，前一块结束再处理下一块；任一失败不影响其余地块。 */
+async function farmSelected() {
+  const targets = farmingTargets.value.map(land => Number(land.id)).filter(Boolean)
+  if (!currentAccountId.value || batchPending.value || operating.value || !targets.length)
     return
-  const landId = Number(land?.id) || 0
-  if (!landId)
-    return
-  farmingLandId.value = landId
+  const accountId = currentAccountId.value
+  batchPending.value = true
+  let done = 0
+  let idle = 0
+  let failed = 0
   try {
-    const result = await farmStore.operate(currentAccountId.value, 'clear', landId)
-    if (result?.hadWork)
-      toast.success(`第 ${landId} 块土地务农完成`)
-    else
-      toast.info(`第 ${landId} 块土地当前无需务农`)
-  }
-  catch (cause: any) {
-    toast.error(getApiErrorMessage(cause, '单点务农失败'))
+    for (const landId of targets) {
+      farmingLandId.value = landId
+      try {
+        const result = await farmStore.operate(accountId, 'clear', landId)
+        if (result?.hadWork)
+          done++
+        else
+          idle++
+      }
+      catch {
+        failed++
+      }
+      if (currentAccountId.value !== accountId)
+        return
+    }
   }
   finally {
-    if (farmingLandId.value === landId)
-      farmingLandId.value = null
+    farmingLandId.value = null
+    batchPending.value = false
   }
+  const parts = [done && `${done} 块务农完成`, idle && `${idle} 块无需处理`, failed && `${failed} 块失败`].filter(Boolean).join('，')
+  if (failed)
+    toast.warning(parts)
+  else
+    toast.success(parts || '所选土地无需务农')
 }
 
 function requestUseInteractionItem() {
   const item = selectedInteractionItem.value
-  if (!currentAccountId.value || !item || selectedInteractionIds(item.itemId).length === 0)
+  if (!currentAccountId.value || !item || selectedInteractionIds().length === 0)
     return
-  const count = selectedInteractionIds(item.itemId).length
+  const count = selectedInteractionIds().length
   const saleConditionWarning = item.saleConditionSatisfiedCount > 0
     ? `该道具库存中有 ${item.saleConditionSatisfiedCount} 个已满足游戏配置的出售条件，可能已过活动或有效期，`
     : ''
@@ -385,7 +495,7 @@ async function executeUseInteractionItem() {
   interactionConfirmVisible.value = false
   if (!accountId || !item)
     return
-  const landIds = selectedInteractionIds(item.itemId)
+  const landIds = selectedInteractionIds()
   if (landIds.length === 0)
     return
 
@@ -398,8 +508,8 @@ async function executeUseInteractionItem() {
     ...lastInteractionResults.value,
     [interactionSelectionKey(item.itemId)]: result.results || [],
   }
-  const used = new Set(result.usedLandIds || [])
-  setSelectedInteractionIds(landIds.filter(landId => !used.has(landId)), item.itemId)
+  const used = new Set((result.usedLandIds || []).map(String))
+  selectedIds.value = selectedIds.value.filter(landId => !used.has(landId))
   const successCount = Number(result.successCount || 0)
   const failureCount = Number(result.failureCount || 0)
   if (successCount > 0 && failureCount === 0)
@@ -442,10 +552,10 @@ async function refreshFarm() {
 
 watch(currentAccountId, () => {
   farmStore.resetLandState()
-  fertilizingLandId.value = null
   farmingLandId.value = null
   selectedInteractionItemId.value = ''
-  selectedInteractionLandIds.value = {}
+  selecting.value = false
+  selectedIds.value = []
   lastInteractionResults.value = {}
 })
 
@@ -487,6 +597,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.cancelAnimationFrame(gridResizeFrame)
   pause()
   pauseRefresh()
 })
@@ -496,16 +607,16 @@ onUnmounted(() => {
   <div class="personal-panel">
     <div class="personal-panel__card cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800 !p-0">
       <!-- Header with Title and Actions -->
-      <div class="farm-head panel-sticky flex shrink-0 flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5">
+      <div class="farm-head panel-sticky flex shrink-0 flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5" :class="{ 'is-selecting': selecting }">
         <div class="farm-heading flex items-center justify-between gap-3">
           <h3 class="flex items-center gap-2 text-lg font-bold">
             <span class="i-carbon-sprout text-green-600" /> 土地详情
           </h3>
           <div class="farm-mobile-actions">
-            <NButton size="small" type="primary" class="farm-mobile-all" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate('all')">
-              一键全收
+            <NButton size="small" :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">
+              {{ selecting ? '退出选择' : '批量操作' }}
             </NButton>
-            <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
+            <NPopover v-if="!selecting" trigger="click" placement="bottom-end" :show-arrow="false">
               <template #trigger>
                 <NButton size="small" circle quaternary title="土地概况与操作" aria-label="土地概况与操作">
                   <template #icon>
@@ -521,13 +632,13 @@ onUnmounted(() => {
                   <span>枯萎 {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
                 </div>
                 <div v-if="loaded && !error && career" class="flex flex-col gap-2 border-t border-gray-100 pt-3 text-xs dark:border-gray-700">
-                  <CareerHarvestSteal :career="career" />
+                  <CareerHarvestSteal :career="career" compact />
                 </div>
                 <div class="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
                   <NButton size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)" @click="fertilizerConfirmVisible = true">
                     一键施肥
                   </NButton>
-                  <NButton v-for="op in secondaryOperations" :key="op.type" size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate(op.type)">
+                  <NButton v-for="op in operations" :key="op.type" size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate(op.type)">
                     {{ op.label }}
                   </NButton>
                 </div>
@@ -538,17 +649,23 @@ onUnmounted(() => {
             circle
             quaternary
             title="刷新土地"
+            aria-label="刷新土地"
             :loading="manualRefreshing"
-            :disabled="!currentAccountId || !currentAccountRunning"
+            :disabled="selectionBusy || !currentAccountId || !currentAccountRunning"
             @click="refreshFarm"
           >
             <template #icon>
-              <span :class="refreshIconClass" />
+              <span class="i-carbon-renew" />
             </template>
           </NButton>
         </div>
-        <div class="farm-actions">
+        <div class="farm-actions" :class="{ 'is-selecting': selecting }">
+          <NButton :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">
+            <span class="i-carbon-checkbox-checked" />
+            {{ selecting ? '退出选择' : '批量操作' }}
+          </NButton>
           <NButton
+            v-if="!selecting"
             :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)"
             @click="fertilizerConfirmVisible = true"
           >
@@ -556,7 +673,7 @@ onUnmounted(() => {
             一键施肥
           </NButton>
           <NButton
-            v-for="op in operations"
+            v-for="op in (selecting ? [] : operations)"
             :key="op.type"
             :type="op.buttonType"
             :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning"
@@ -568,36 +685,29 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Summary -->
-      <div class="farm-summary flex shrink-0 flex-wrap gap-x-4 gap-y-2 border-b border-gray-100 px-4 py-3 text-xs dark:border-gray-700 sm:px-5 sm:text-sm">
-        <div class="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-          <div class="i-carbon-wheat" />
-          <span class="font-body font-semibold">可收: {{ loaded && !error ? (summary?.harvestable || 0) : '--' }}</span>
-        </div>
-        <div class="flex items-center gap-1.5 text-green-700 dark:text-green-300">
-          <div class="i-carbon-sprout" />
-          <span class="font-body font-semibold">生长: {{ loaded && !error ? (summary?.growing || 0) : '--' }}</span>
-        </div>
-        <div class="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
-          <div class="i-carbon-square-outline" />
-          <span class="font-body font-semibold">空闲: {{ loaded && !error ? (summary?.empty || 0) : '--' }}</span>
-        </div>
-        <div class="flex items-center gap-1.5 text-red-700 dark:text-red-300">
-          <div class="i-carbon-misuse-outline" />
-          <span class="font-body font-semibold">枯萎: {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
+      <!-- Summary：左侧是当前土地状态，右侧是生涯数据；颜色只留给图标 -->
+      <div class="farm-summary shrink-0 border-b border-gray-100 px-4 py-3 dark:border-gray-700 sm:px-5">
+        <div class="farm-summary__states">
+          <span v-for="item in summaryItems" :key="item.key" class="farm-state" :class="{ 'is-zero': item.value === 0 }">
+            <svg v-if="item.path" :class="item.icon" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="item.path" />
+            </svg>
+            <span v-else :class="item.icon" aria-hidden="true" />
+            {{ item.label }}<b>{{ loaded && !error ? item.value : '--' }}</b>
+          </span>
         </div>
         <template v-if="loaded && !error && career">
-          <div class="hidden sm:contents">
-            <CareerHarvestSteal :career="career" />
+          <div class="farm-summary__career">
+            <CareerHarvestSteal :career="career" compact />
           </div>
-          <NPopover trigger="click" placement="bottom-start" :show-arrow="false">
+          <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
             <template #trigger>
-              <button type="button" class="flex items-center gap-1.5 text-gray-500 sm:hidden" aria-label="查看生涯统计">
-                <span class="i-carbon-chart-relationship" />生涯统计
+              <button type="button" class="farm-summary__career-toggle" aria-label="查看生涯统计">
+                <span class="i-carbon-chart-relationship" />生涯
               </button>
             </template>
             <div class="flex flex-col gap-2 text-sm">
-              <CareerHarvestSteal :career="career" />
+              <CareerHarvestSteal :career="career" compact />
             </div>
           </NPopover>
         </template>
@@ -634,118 +744,65 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="personal-panel__card">
-          <div v-if="interactionItemsLoading || interactionItemsError || interactionItems.length > 0" class="farm-tools mb-3 flex shrink-0 flex-wrap items-center gap-2">
-            <NPopover trigger="click" placement="bottom-start" :show-arrow="false">
-              <template #trigger>
-                <NButton size="small" secondary :title="selectedInteractionItem?.name || '互动道具'" :loading="interactionItemsLoading" :type="interactionItemsError ? 'error' : 'default'">
-                  <template #icon>
-                    <span class="i-carbon-game-console" />
-                  </template>
-                  <span class="farm-tool-name">{{ interactionItemsError ? '道具读取失败' : selectedInteractionItem?.name || '互动道具' }}</span>
-                  <span class="farm-tool-short">{{ interactionItemsError ? '读取失败' : '道具' }}</span>
-                  <span class="i-carbon-chevron-down ml-2" />
-                </NButton>
-              </template>
-              <div class="farm-tool-picker custom-scrollbar">
-                <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
-                  <span class="i-svg-spinners-90-ring-with-bg" />
-                  正在读取可用的互动道具
-                </div>
-                <div v-else-if="interactionItemsError" class="flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-300">
-                  <span>{{ interactionItemsError }}</span>
-                  <NButton size="small" secondary type="error" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">
-                    重新读取
-                  </NButton>
-                </div>
-                <template v-else>
-                  <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                    <div class="min-w-0 flex-1">
-                      <div class="mb-2 flex items-center gap-2 text-sm text-amber-950 font-bold dark:text-amber-100">
-                        <span class="i-carbon-game-console" />
-                        可对自己农场使用的道具
-                        <span class="text-xs text-amber-700 font-normal dark:text-amber-300">种草、黄金虫、足球等仅可放置到好友农场，清理由农场主完成</span>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button
-                          v-for="item in interactionItems"
-                          :key="item.itemId"
-                          type="button"
-                          class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-left transition dark:bg-gray-900"
-                          :class="selectedInteractionItemId === item.itemId
-                            ? 'border-amber-500 ring-2 ring-amber-200 dark:ring-amber-800'
-                            : 'border-amber-200 hover:border-amber-400 dark:border-amber-800'"
-                          :aria-pressed="selectedInteractionItemId === item.itemId"
-                          @click="selectedInteractionItemId = item.itemId"
-                        >
-                          <img :src="item.image" alt="" class="h-8 w-8 object-contain">
-                          <span>
-                            <span class="block text-sm text-gray-800 font-semibold dark:text-gray-100">{{ item.name }}</span>
-                            <span class="block text-xs text-amber-700 dark:text-amber-300">库存 {{ item.count }}</span>
-                          </span>
-                        </button>
-                      </div>
-                      <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
-                        {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
-                        <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
-                          其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
-                        </div>
-                        <div class="mt-1 text-gray-600 dark:text-gray-300">
-                          仅可选择生长期作物。
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="interactionFailures().length > 0" class="mt-3 rounded-lg bg-white/75 px-3 py-2 text-xs text-red-700 dark:bg-gray-900/60 dark:text-red-300">
-                    <div class="mb-1 font-semibold">
-                      未成功的地块
-                    </div>
-                    <div v-for="result in interactionFailures()" :key="`${result.landId}:${result.message}`">
-                      第 {{ result.landId }} 块：{{ result.message }}
-                    </div>
-                  </div>
-                </template>
+          <div v-if="selecting" class="farm-selection-setup">
+            <div class="farm-selection-row">
+              <div class="farm-mode-switch" role="group" aria-label="批量操作类型">
+                <button v-for="option in selectionOptions" :key="option.value" type="button" :aria-pressed="batchAction === option.value" :disabled="selectionBusy" @click="chooseBatchAction(option.value)">
+                  <span :class="option.icon" aria-hidden="true" />{{ option.label }}
+                </button>
               </div>
-            </NPopover>
-            <NButton size="small" secondary title="全选可用土地" :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands()">
-              全选
-            </NButton>
-            <NButton size="small" secondary class="farm-tool-clear" title="清空所选土地" aria-label="清空所选土地" :disabled="selectedInteractionIds().length === 0 || interactionUsePending" @click="setSelectedInteractionIds([])">
-              <span class="farm-tool-name">清空</span><span class="farm-tool-short i-carbon-close" />
-            </NButton>
-            <NButton type="warning" size="small" title="按土地编号依次使用道具" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds().length === 0" @click="requestUseInteractionItem()">
-              使用 {{ selectedInteractionIds().length }} 个
-            </NButton>
+              <div class="farm-selectbar" role="toolbar" aria-label="所选土地操作">
+                <div class="farm-selectbar__info" aria-live="polite">
+                  <span>已选 <b>{{ selectedIds.length }}</b> 株<span v-if="selectedPlotCount > selectedIds.length" class="farm-selectbar__coverage"> · {{ selectedPlotCount }} 块地</span></span>
+                  <span class="farm-selectbar__links">
+                    <button type="button" :disabled="selectionBusy || !availableSelectionCount" @click="selectAllLands">全选</button>
+                    <button type="button" :disabled="selectionBusy || !selectedIds.length" @click="selectedIds = []">清空</button>
+                  </span>
+                </div>
+                <NButton type="primary" :disabled="selectionBusy || !currentAccountConnected || !activeTargets.length" :loading="selectionBusy" @click="applySelection">
+                  {{ applyLabel }}<span v-if="activeTargets.length" class="farm-selectbar__total">{{ activeTargets.length }}{{ batchAction === 'item' ? '个' : '株' }}</span>
+                </NButton>
+              </div>
+            </div>
+            <div v-if="batchAction === 'item'" class="farm-item-picker">
+              <BaseSelect v-model="selectedInteractionItemId" :options="interactionItems.map(item => ({ label: `${item.name}（库存 ${item.count}）`, value: item.itemId }))" :disabled="selectionBusy || interactionItemsLoading" placeholder="选择道具" aria-label="选择道具" />
+              <span v-if="interactionItemsLoading" class="text-xs text-gray-500">正在读取道具…</span>
+              <span v-else-if="interactionItemsError" class="farm-item-error">{{ interactionItemsError }}<button type="button" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">重试</button></span>
+              <span v-else-if="!interactionItems.length" class="text-xs text-gray-500">背包暂无可用道具</span>
+              <p v-else-if="selectedInteractionItem?.description">
+                {{ selectedInteractionItem.description }}
+              </p>
+              <p v-if="selectedInteractionItem && selectedInteractionItem.saleConditionSatisfiedCount > 0" class="farm-item-error">
+                部分道具可能已过活动或有效期，使用时可能失败。
+              </p>
+              <details v-if="interactionFailures().length" class="farm-item-error">
+                <summary>{{ interactionFailures().length }} 块土地未成功使用</summary>
+                <p v-for="result in interactionFailures()" :key="result.landId">
+                  #{{ result.landId }}：{{ result.message }}
+                </p>
+              </details>
+            </div>
           </div>
 
           <div class="personal-panel__scroll custom-scrollbar" role="region" aria-label="土地列表" tabindex="0">
             <div v-if="cleanableFarmSocialEvents.length > 0" class="mb-4 flex flex-wrap items-center justify-between gap-2 border border-emerald-200 rounded-xl bg-emerald-50/85 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
               <span class="flex items-center gap-2">
                 <span class="i-carbon-pedestrian-child" />
-                好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农或点击下方标记地块的“务农”清理。
+                好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农，或选择土地后务农清理。
               </span>
             </div>
-            <div class="grid grid-cols-2 gap-2.5 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3 sm:gap-4">
+            <div ref="gridEl" class="farm-grid" :class="{ 'is-selecting': selecting }" :style="{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }">
               <LandCard
                 v-for="land in lands"
                 :key="land.id"
                 :land="land"
-                show-details
-                :selectable="!!selectedInteractionItem"
-                :selected="isInteractionLandSelected(land)"
-                :selection-disabled="isInteractionLandDisabled(land)"
-                :selection-label="interactionLandSelectionLabel(land)"
-                :show-fertilizer-actions="showManualFertilizerButtons && isFertilizeCandidate(land)"
-                :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
-                :normal-fertilizer-disabled="fertilizePending || !canNormalFertilize(land)"
-                :normal-fertilizer-label="normalFertilizerLabel(land)"
-                :organic-fertilizer-disabled="fertilizePending"
-                :show-farming-action="isLandFarmingCandidate(land)"
-                :farming-pending="farmingLandId === land.id"
-                :farming-disabled="farmingLandId !== null || operating"
-                @details="detailLandId = $event.id"
-                @select="toggleInteractionLand(land)"
-                @fertilize="handleFertilize"
-                @farm="handleFarmLand"
+                openable
+                :selectable="selecting"
+                :selected="isLandSelected(land)"
+                :selection-disabled="!canSelectLand(land)"
+                :selection-label="selectReason(land)"
+                @open="detailLandId = $event.id"
+                @select="toggleLand(land)"
               />
             </div>
           </div>
@@ -789,11 +846,250 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.farm-tool-picker {
-  width: min(560px, calc(100vw - 56px));
-  max-height: min(420px, 55dvh);
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
+.farm-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.farm-grid.is-selecting {
+  padding-bottom: 8px;
+}
+
+.farm-selection-setup {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.farm-selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.farm-mode-switch {
+  display: grid;
+  width: min(320px, 100%);
+  min-width: 0;
+  flex: 0 1 320px;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-soft);
+}
+
+.farm-mode-switch button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
+  border-radius: 9px;
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.farm-mode-switch button[aria-pressed='true'] {
+  color: var(--ui-primary);
+  background: var(--ui-surface-strong);
+  box-shadow: 0 1px 4px rgba(32, 58, 43, 0.08);
+  font-weight: 650;
+}
+
+.farm-mode-switch button:focus-visible,
+.farm-selectbar__links button:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+.farm-item-picker {
+  display: grid;
+  max-width: 420px;
+  gap: 8px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.farm-item-picker p {
+  margin: 0;
+}
+
+.farm-item-error {
+  color: var(--ui-warning);
+}
+
+.farm-item-error button {
+  margin-left: 8px;
+  color: var(--ui-primary);
+}
+
+.farm-selectbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-left: auto;
+}
+
+.farm-selectbar__info {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ui-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.farm-selectbar__info b {
+  color: var(--ui-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.farm-selectbar__coverage {
+  font-size: 12px;
+}
+
+.farm-selectbar__links {
+  display: inline-flex;
+  flex: none;
+  gap: 14px;
+}
+
+.farm-selectbar__links button {
+  color: var(--ui-primary);
+  font-size: 12px;
+}
+
+.farm-mode-switch button:disabled,
+.farm-selectbar__links button:disabled {
+  color: var(--ui-subtle);
+  cursor: not-allowed;
+}
+
+.farm-selectbar :deep(.n-button) {
+  min-width: 150px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+}
+
+.farm-selectbar__total {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1023px) {
+  .farm-selection-row {
+    display: block;
+  }
+
+  .farm-mode-switch {
+    width: min(360px, 100%);
+  }
+
+  .farm-selectbar {
+    position: fixed;
+    z-index: 30;
+    right: 12px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    left: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--ui-border);
+    border-radius: 14px;
+    background: var(--ui-surface-strong);
+    box-shadow: var(--ui-shadow-lg);
+  }
+
+  .farm-grid.is-selecting {
+    padding-bottom: 110px;
+  }
+}
+
+@media (max-width: 479px) {
+  .farm-mode-switch {
+    width: 100%;
+  }
+
+  .farm-mode-switch button > span {
+    display: none;
+  }
+}
+
+.farm-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  font-size: 13px;
+}
+
+.farm-summary__states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.farm-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.farm-state b {
+  margin-left: 2px;
+  color: var(--ui-ink);
+  font-weight: 650;
+}
+
+.farm-state.is-zero {
+  opacity: 0.65;
+}
+
+.farm-summary__career {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.farm-summary__career-toggle {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-muted);
+}
+
+@media (max-width: 639px) {
+  .farm-summary__career {
+    display: none;
+  }
+
+  .farm-summary__career-toggle {
+    display: inline-flex;
+  }
 }
 
 .farm-actions {
@@ -807,10 +1103,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   margin-left: auto;
-}
-
-.farm-tool-short {
-  display: none;
 }
 
 @media (max-width: 479px) {
@@ -829,26 +1121,8 @@ onUnmounted(() => {
   }
 
   .farm-actions,
-  .farm-summary,
-  .farm-tool-name {
+  .farm-summary {
     display: none;
-  }
-
-  .farm-tool-short {
-    display: inline-flex;
-  }
-
-  .farm-mobile-all {
-    padding-inline: 8px;
-  }
-
-  .farm-tools :deep(.n-button) {
-    padding-inline: 8px;
-  }
-
-  .farm-tools .farm-tool-clear {
-    width: 28px;
-    padding: 0;
   }
 }
 
@@ -858,6 +1132,19 @@ onUnmounted(() => {
 
 .farm-actions :deep(.n-button__content) {
   gap: 4px;
+}
+
+@media (min-width: 480px) {
+  .farm-head.is-selecting {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .farm-actions.is-selecting {
+    display: flex;
+    justify-content: flex-end;
+  }
 }
 
 @media (min-width: 640px) {

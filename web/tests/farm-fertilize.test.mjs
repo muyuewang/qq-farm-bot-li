@@ -66,3 +66,20 @@ test('fertilizer replies cannot overwrite another account or clear its pending r
   assert.equal(store.fertilizePending, false)
   assert.equal(store.fertilizeError, '化肥不足')
 })
+
+test('selected-land fertilizer requests preserve the explicit target set', async (t) => {
+  const requests = []
+  const { store } = harness(t, 'farm', {
+    post: async (url, body, options) => {
+      requests.push({ url, body, options })
+      return { data: { ok: true, data: { successCount: 1, skippedCount: 0, updatedLands: [] } } }
+    },
+  })
+  await store.fertilizeAll('a', 'normal', [2, 4])
+  assert.deepEqual(requests[0].body, { fertilizerType: 'normal', landIds: [2, 4] })
+  assert.equal(requests[0].options.headers['x-account-id'], 'a')
+  await store.fertilizeAll('a', 'organic', [])
+  assert.deepEqual(requests[1].body, { fertilizerType: 'organic', landIds: [] })
+  await store.fertilizeAll('a', 'normal')
+  assert.deepEqual(requests[2].body, { fertilizerType: 'normal' })
+})

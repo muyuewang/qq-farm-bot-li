@@ -1029,7 +1029,7 @@ async function handleApiCall(msg: any): Promise<void> {
                 result = await fertilizeOwnLand(args[0], args[1]);
                 break;
             case 'fertilizeAllOwnLands':
-                result = await require('../services/farm').fertilizeAllOwnLands(args[0]);
+                result = await require('../services/farm').fertilizeAllOwnLands(args[0], args[1]);
                 break;
             case 'buyFertilizer': {
                 const fertilizerType = args[0] || 'organic';

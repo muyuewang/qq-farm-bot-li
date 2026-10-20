@@ -357,14 +357,14 @@ export const useFarmStore = defineStore('farm', () => {
     }
   }
 
-  async function fertilizeAll(accountId: string, fertilizerType: FertilizerType) {
+  async function fertilizeAll(accountId: string, fertilizerType: FertilizerType, landIds?: number[]) {
     if (!accountId || fertilizePending.value)
       return false
     const sequence = ++fertilizeRequestSequence
     fertilizePending.value = true
     fertilizeError.value = ''
     try {
-      const res = await api.post('/api/farm/fertilize-all', { fertilizerType }, {
+      const res = await api.post('/api/farm/fertilize-all', landIds ? { fertilizerType, landIds } : { fertilizerType }, {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
