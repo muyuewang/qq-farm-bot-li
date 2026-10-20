@@ -13,7 +13,7 @@ const TSDK_VERSION = 'v3.9.0.1792070537';
 const TSDK_SHA256 = '837bd271557dc9a21d5cd28b66076ea012eb39a4f4cbe298f529716469c087fc';
 const TSDK_BUILDS = Object.freeze({
     qq: { file: 'tsdk.wasm', version: TSDK_VERSION, sha256: TSDK_SHA256 },
-    wx: { file: 'tsdk-wx.wasm', version: 'v3.9.0.1790237209', sha256: '4bf6aa0ede9677fe82186c1a76f8df8a14ccd6d14b6ff1280230923189f4e972' },
+    wx: { file: 'tsdk-wx.wasm', version: 'v3.9.0.1792070005', sha256: '1a9416db8b328e8957a079c583ffc5fc7e48d6af8c45aa40d9969dd68157beca' },
 });
 const MINI_PROGRAM_APP_IDS = Object.freeze({
     qq: '1112386029',
@@ -66,6 +66,8 @@ class TsdkRuntime {
     exports = null;
     initPromise = null;
     ready = false;
+    loadedWasmPath = '';
+    loadedWasmSha256 = '';
     destroyed = false;
     userBound = false;
     serverTimeGeneration = 0;
@@ -80,6 +82,8 @@ class TsdkRuntime {
             platform: this.hostProfile.platform,
             version: TSDK_BUILDS[this.hostProfile.platform].version,
             ready: this.ready,
+            wasmPath: this.loadedWasmPath,
+            wasmSha256: this.loadedWasmSha256,
             unsupportedAceVmCalls: this.unsupportedAceVmCalls,
             lastUnsupportedAceVmAt: this.lastUnsupportedAceVmAt,
             lastUnsupportedAceVmTaskHash: this.lastUnsupportedAceVmTaskHash,
@@ -319,6 +323,8 @@ class TsdkRuntime {
             const hash = crypto.createHash('sha256').update(wasm).digest('hex');
             if (hash !== build.sha256)
                 throw new Error(`TSDK 文件校验失败: ${hash}`);
+            this.loadedWasmPath = wasmPath;
+            this.loadedWasmSha256 = hash;
             fs.mkdirSync(this.dataDir, { recursive: true });
             const { instance } = await WebAssembly.instantiate(wasm, this.createImports());
             if (this.destroyed)

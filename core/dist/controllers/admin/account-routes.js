@@ -424,27 +424,13 @@ function mountAccountRoutes(app, ctx) {
     });
     app.post('/api/settings/system-config', (req, res) => {
         try {
-            const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
-            const previous = getRuntimeConfig();
-            const saved = store.setSystemConfig({ serverUrl, clientVersion, platform, os, timeZone, deviceInfo });
+            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo });
             updateRuntimeConfig(saved);
             if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
                 ctx.provider.broadcastConfig('');
             }
-            const transportChanged = previous.serverUrl !== saved.serverUrl
-                || previous.clientVersion !== saved.clientVersion
-                || previous.platform !== saved.platform
-                || previous.os !== saved.os;
-            if (transportChanged && ctx.provider && typeof ctx.provider.getAccounts === 'function'
-                && typeof ctx.provider.isAccountRunning === 'function'
-                && typeof ctx.provider.restartAccount === 'function') {
-                const accounts = ctx.provider.getAccounts()?.accounts || [];
-                for (const account of accounts) {
-                    if (account?.id && ctx.provider.isAccountRunning(account.id)) {
-                        ctx.provider.restartAccount(account.id);
-                    }
-                }
-            }
+            // Keep live sessions intact. A new login must use a fresh one-time Code.
             res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
         }
         catch (e) {
@@ -453,27 +439,13 @@ function mountAccountRoutes(app, ctx) {
     });
     app.post('/api/settings/system-config/reset', (_req, res) => {
         try {
-            const previous = getRuntimeConfig();
             const saved = getDefaultSystemConfig();
             store.setSystemConfig(saved);
             updateRuntimeConfig(saved);
             if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
                 ctx.provider.broadcastConfig('');
             }
-            const transportChanged = previous.serverUrl !== saved.serverUrl
-                || previous.clientVersion !== saved.clientVersion
-                || previous.platform !== saved.platform
-                || previous.os !== saved.os;
-            if (transportChanged && ctx.provider && typeof ctx.provider.getAccounts === 'function'
-                && typeof ctx.provider.isAccountRunning === 'function'
-                && typeof ctx.provider.restartAccount === 'function') {
-                const accounts = ctx.provider.getAccounts()?.accounts || [];
-                for (const account of accounts) {
-                    if (account?.id && ctx.provider.isAccountRunning(account.id)) {
-                        ctx.provider.restartAccount(account.id);
-                    }
-                }
-            }
+            // Keep live sessions intact. A new login must use a fresh one-time Code.
             res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
         }
         catch (e) {

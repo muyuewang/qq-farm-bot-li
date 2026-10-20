@@ -5,26 +5,33 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // Verified in the official QQ PlayerLoginRequest and Heartbeat from the 2026-10-15 capture.
 const DEFAULT_CLIENT_VERSION = '1.15.0.2_20261001';
 const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1792029692080;
+// Independently verified from the 2026-10-20 WeChat handshake, PlayerLogin and Heartbeat.
+const DEFAULT_WX_CLIENT_VERSION = '1.15.0.2_20261001';
+const DEFAULT_WX_CLIENT_VERSION_UPDATED_AT = 1792470244044;
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
-function resolveClientVersion(savedVersion, savedUpdatedAt) {
+function resolveClientVersion(savedVersion, savedUpdatedAt, platform = 'qq') {
+    const isWechat = ['wx', 'wechat'].includes(platform);
+    const defaultVersion = isWechat ? DEFAULT_WX_CLIENT_VERSION : DEFAULT_CLIENT_VERSION;
+    const defaultUpdatedAt = isWechat ? DEFAULT_WX_CLIENT_VERSION_UPDATED_AT : DEFAULT_CLIENT_VERSION_UPDATED_AT;
     const version = String(savedVersion || '').trim();
     const updatedAt = Number(savedUpdatedAt);
-    if (version && Number.isFinite(updatedAt) && updatedAt > DEFAULT_CLIENT_VERSION_UPDATED_AT) {
+    if (version && Number.isFinite(updatedAt) && updatedAt > defaultUpdatedAt) {
         return { clientVersion: version, clientVersionUpdatedAt: updatedAt };
     }
     return {
-        clientVersion: DEFAULT_CLIENT_VERSION,
-        clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+        clientVersion: defaultVersion,
+        clientVersionUpdatedAt: defaultUpdatedAt,
     };
 }
-function resolveClientVersionUpdatedAt(clientVersion, currentVersion, currentUpdatedAt, requestedUpdatedAt, now = Date.now()) {
+function resolveClientVersionUpdatedAt(clientVersion, currentVersion, currentUpdatedAt, requestedUpdatedAt, now = Date.now(), platform = 'qq') {
     const requested = Number(requestedUpdatedAt);
     if (Number.isFinite(requested) && requested > 0)
         return requested;
     if (String(clientVersion || '').trim() !== String(currentVersion || '').trim())
         return now;
     const current = Number(currentUpdatedAt);
-    return Number.isFinite(current) && current > 0 ? current : DEFAULT_CLIENT_VERSION_UPDATED_AT;
+    return Number.isFinite(current) && current > 0 ? current
+        : (['wx', 'wechat'].includes(platform) ? DEFAULT_WX_CLIENT_VERSION_UPDATED_AT : DEFAULT_CLIENT_VERSION_UPDATED_AT);
 }
 const TIME_ZONE_OPTIONS = [
     { value: 'Asia/Shanghai', label: '北京时间 / 上海（UTC+8）' },
@@ -134,6 +141,8 @@ const DEFAULT_SYSTEM_CONFIG = {
     serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
     clientVersion: DEFAULT_CLIENT_VERSION,
     clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    wxClientVersion: DEFAULT_WX_CLIENT_VERSION,
+    wxClientVersionUpdatedAt: DEFAULT_WX_CLIENT_VERSION_UPDATED_AT,
     platform: 'qq',
     os: DEFAULT_DEVICE_INFO.os,
     timeZone: DEFAULT_TIME_ZONE,
@@ -143,6 +152,8 @@ const CONFIG = {
     serverUrl: DEFAULT_SYSTEM_CONFIG.serverUrl,
     clientVersion: DEFAULT_CLIENT_VERSION,
     clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    wxClientVersion: DEFAULT_WX_CLIENT_VERSION,
+    wxClientVersionUpdatedAt: DEFAULT_WX_CLIENT_VERSION_UPDATED_AT,
     platform: DEFAULT_SYSTEM_CONFIG.platform,
     os: DEFAULT_SYSTEM_CONFIG.os,
     timeZone: DEFAULT_SYSTEM_CONFIG.timeZone,
@@ -183,6 +194,14 @@ function updateRuntimeConfig(newConfig) {
             CONFIG.clientVersionUpdatedAt = updatedAt;
         }
     }
+    if (typeof newConfig.wxClientVersion === 'string') {
+        CONFIG.wxClientVersion = newConfig.wxClientVersion.trim() || DEFAULT_WX_CLIENT_VERSION;
+    }
+    if (newConfig.wxClientVersionUpdatedAt !== undefined) {
+        const updatedAt = Number(newConfig.wxClientVersionUpdatedAt);
+        if (Number.isFinite(updatedAt) && updatedAt > 0)
+            CONFIG.wxClientVersionUpdatedAt = updatedAt;
+    }
     if (newConfig.platform && typeof newConfig.platform === 'string') {
         CONFIG.platform = newConfig.platform;
     }
@@ -204,6 +223,8 @@ function getRuntimeConfig() {
         serverUrl: CONFIG.serverUrl,
         clientVersion: CONFIG.clientVersion,
         clientVersionUpdatedAt: CONFIG.clientVersionUpdatedAt,
+        wxClientVersion: CONFIG.wxClientVersion,
+        wxClientVersionUpdatedAt: CONFIG.wxClientVersionUpdatedAt,
         platform: CONFIG.platform,
         os: CONFIG.os,
         timeZone: CONFIG.timeZone,
@@ -238,6 +259,8 @@ module.exports = {
     CONFIG,
     DEFAULT_CLIENT_VERSION,
     DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    DEFAULT_WX_CLIENT_VERSION,
+    DEFAULT_WX_CLIENT_VERSION_UPDATED_AT,
     DEFAULT_TIME_ZONE,
     PlantPhase,
     PHASE_NAMES,

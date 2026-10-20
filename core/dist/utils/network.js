@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const { Buffer } = require('node:buffer');
+const { performance } = require('node:perf_hooks');
 const { EventEmitter } = require('node:events');
 const WebSocket = require('ws');
 const { CONFIG } = require('../config/config');
@@ -65,8 +66,8 @@ let wsErrorState = { code: 0, at: 0, message: '' };
 let lastRequestPressureLogAt = 0;
 const networkScheduler = createScheduler('network');
 const gatewayTokens = new GatewayTokenProvider();
-let lastHeartbeatResponse = Date.now();
-let lastInboundAt = Date.now();
+let lastHeartbeatMono = performance.now();
+let lastInboundMono = performance.now();
 let heartbeatMissCount = 0;
 // 出站请求 / 入站帧的按秒记账，只用于日志取证，不参与任何调度判定。
 const trafficMeter = createTrafficMeter();
@@ -95,12 +96,12 @@ function pendingBusinessCount() {
     return pendingClassCount('foreground') + pendingClassCount('farm') + pendingClassCount('friend');
 }
 function oldestPendingAgeMs() {
-    const now = Date.now();
+    const now = performance.now();
     let oldest = 0;
     for (const pending of pendingCallbacks.values()) {
-        if (!pending.startedAt)
+        if (pending.startedMono === undefined)
             continue;
-        const age = Math.max(0, now - pending.startedAt);
+        const age = Math.max(0, now - pending.startedMono);
         if (age > oldest)
             oldest = age;
     }
@@ -128,11 +129,11 @@ function isGatewayIdleForBackground() {
  * 只观察不排队，所以等待期间一点压力都不加给网关。
  */
 async function waitForGatewayIdle(maxWaitMs = LOW_PRIORITY_IDLE_WAIT_MAX_MS, pollMs = LOW_PRIORITY_IDLE_POLL_MS) {
-    const deadline = Date.now() + Math.max(0, Number(maxWaitMs) || 0);
+    const deadline = performance.now() + Math.max(0, Number(maxWaitMs) || 0);
     for (;;) {
         if (isGatewayIdleForBackground())
             return true;
-        if (Date.now() >= deadline)
+        if (performance.now() >= deadline)
             return false;
         await sleep(Math.max(20, Number(pollMs) || LOW_PRIORITY_IDLE_POLL_MS));
     }
@@ -148,7 +149,7 @@ function takeDispatchableRequest() {
     }
     if (requestQueue.length === 0)
         return null;
-    const index = selectDispatchIndex(requestQueue, Array.from(pendingCallbacks.values()), Date.now());
+    const index = selectDispatchIndex(requestQueue, Array.from(pendingCallbacks.values()), performance.now());
     if (index < 0)
         return null;
     return requestQueue.splice(index, 1)[0];
@@ -167,7 +168,7 @@ function drainRequestQueue() {
         const pending = request.expectReply ? {
             serviceName: request.serviceName,
             methodName: request.methodName,
-            startedAt: Date.now(),
+            startedMono: performance.now(),
             requestClass: request.requestClass,
             criticalLane: request.criticalLane,
             expectedErrorCodes: request.expectedErrorCodes,
@@ -219,12 +220,12 @@ function rejectAllPendingRequests(reason = '请求被中断') {
 function describePendingRequests() {
     if (pendingCallbacks.size === 0)
         return 'none';
-    const now = Date.now();
+    const now = performance.now();
     return Array.from(pendingCallbacks.entries())
         .slice(0, MAX_DESCRIBED_PENDING_REQUESTS)
         .map(([seq, pending]) => {
         const method = pending.methodName || 'unknown';
-        const ageMs = pending.startedAt ? Math.max(0, now - pending.startedAt) : 0;
+        const ageMs = pending.startedMono !== undefined ? Math.max(0, now - pending.startedMono) : 0;
         return `${method}#${seq}:${ageMs}ms`;
     })
         .join(',');
@@ -238,7 +239,7 @@ function describeQueuedRequests() {
         .join(',');
 }
 function logRequestPressure() {
-    const now = Date.now();
+    const now = performance.now();
     if (!shouldLogRequestPressure(requestQueue, now, lastRequestPressureLogAt))
         return;
     lastRequestPressureLogAt = now;
@@ -381,7 +382,7 @@ function sendMsgAsync(serviceName, methodName, bodyBytes, timeoutOrOptions = 200
             settled: false,
             requestClass,
             criticalLane,
-            enqueuedAt: Date.now(),
+            enqueuedAt: performance.now(),
             expectReply,
         };
         requestQueue.push(request);
@@ -423,7 +424,7 @@ function handleMessage(data) {
     try {
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
         const msg = types.GateMessage.decode(buf);
-        lastInboundAt = Date.now();
+        lastInboundMono = performance.now();
         const meta = msg.meta;
         if (!meta)
             return;
@@ -768,42 +769,34 @@ function handleNotify(msg) {
     }
 }
 // ============ 登录 ============
-// 官方 QQ 抓包（会话版本 1.14.0.4_20260911）的字段存在性：device_info 只写 client_version 和
-// sys_software，report_data 显式写出全部空字符串字段，extra 显式为空。protobufjs 按调用方是否
-// 赋值决定是否写默认值，所以这里必须保持字段集合与官方一致，不能只留非默认值。
-// QQ 1.15 separates player authentication from the farm scene login.
-// Keep explicit older QQ profiles and the verified WeChat profile on Login.
-function usesPlayerSceneLogin() {
-    if (isWechatPlatform())
-        return false;
-    const version = /^(\d+)\.(\d+)/.exec(getClientVersion());
+// QQ and WeChat 1.15 both authenticate the player before entering a farm scene.
+// Historical versions retain their single-stage Login wire layout.
+function usesPlayerSceneLogin(clientVersion = getClientVersion()) {
+    const version = /^(\d+)\.(\d+)/.exec(clientVersion);
     return !!version && (Number(version[1]) > 1 || (Number(version[1]) === 1 && Number(version[2]) >= 15));
 }
-function buildLoginBody() {
-    const requestType = usesPlayerSceneLogin() ? types.PlayerLoginRequest : types.LoginRequest;
+function buildLoginBody(clientVersion = getClientVersion()) {
+    const modern = usesPlayerSceneLogin(clientVersion);
+    const requestType = modern ? types.PlayerLoginRequest : types.LoginRequest;
     return Buffer.from(requestType.encode(requestType.create({
         sharer_id: toLong(0),
         sharer_open_id: '',
-        device_info: getLoginDeviceInfo(),
+        device_info: getLoginDeviceInfo(clientVersion),
         share_cfg_id: toLong(0),
-        // WeChat launch scene is entry-dependent and unavailable from a standalone Code.
+        // A standalone WeChat Code does not supply its entry-dependent launch scene.
         scene_id: isWechatPlatform() ? undefined : '1234567',
         report_data: {
-            callback: '',
-            cd_extend_info: '',
-            click_id: '',
-            clue_token: '',
+            ...(modern ? {} : { callback: '', cd_extend_info: '', click_id: '', clue_token: '', req_id: '', trackid: '' }),
             minigame_channel: isWechatPlatform() ? 'other' : 'other-qq',
             minigame_platid: 2,
-            req_id: '',
-            trackid: '',
         },
-        extra: Buffer.alloc(0),
+        ...(modern ? { share_key: '', game_scene_id: 1 } : { extra: Buffer.alloc(0) }),
     })).finish());
 }
 async function sendLogin(context, onLoginSuccess) {
-    const body = buildLoginBody();
-    await sendMsg(context, 'gamepb.userpb.UserService', usesPlayerSceneLogin() ? 'PlayerLogin' : 'Login', body, {
+    const modern = usesPlayerSceneLogin(context.clientVersion);
+    const body = buildLoginBody(context.clientVersion);
+    await sendMsg(context, 'gamepb.userpb.UserService', modern ? 'PlayerLogin' : 'Login', body, {
         expectedErrorCodes: new Set(),
         // 登录不走排队器（此时还没 online），按保命流量记账。
         requestClass: 'critical',
@@ -820,7 +813,7 @@ async function sendLogin(context, onLoginSuccess) {
             }
             let reply;
             try {
-                reply = (usesPlayerSceneLogin() ? types.PlayerLoginReply : types.LoginReply).decode(bodyBytes);
+                reply = (modern ? types.PlayerLoginReply : types.LoginReply).decode(bodyBytes);
             }
             catch (e) {
                 log('登录', `解码失败: ${e.message}`);
@@ -873,14 +866,14 @@ async function sendLogin(context, onLoginSuccess) {
                     return;
                 networkScheduler.clear('login_timeout');
                 context.phase = 'online';
-                context.onlineAt = Date.now();
+                context.onlineMono = performance.now();
                 startAceRuntime((service, method, body, timeoutMs) => (sendMsgAsync(service, method, body, { timeoutMs, priority: 'high', criticalLane: 'ace' })));
                 startHeartbeat(context);
                 // 登录引导阶段串行完成普通请求，避免和后续活动、背包初始化同时挤入 Gateway。
                 await fetchUserSettings();
                 if (!isCurrentConnection(context))
                     return;
-                if (usesPlayerSceneLogin()) {
+                if (modern) {
                     const sceneBody = types.PlayerSceneLoginRequest.encode({ global_scene_id: 1 }).finish();
                     const sceneResponse = await sendMsgAsync('gamepb.globalscenepb.GlobalSceneService', 'PlayerSceneLogin', sceneBody);
                     if (!isCurrentConnection(context))
@@ -909,10 +902,10 @@ async function sendLogin(context, onLoginSuccess) {
 }
 // ============ 心跳 ============
 const HEARTBEAT_REQUEST_TIMEOUT = 20000;
-function buildHeartbeatBody(gid) {
+function buildHeartbeatBody(gid, clientVersion = getClientVersion()) {
     return Buffer.from(types.HeartbeatRequest.encode(types.HeartbeatRequest.create({
         gid: toLong(gid),
-        client_version: getClientVersion(),
+        client_version: clientVersion,
         field_3: toLong(0),
     })).finish());
 }
@@ -921,8 +914,8 @@ function startHeartbeat(context) {
     networkScheduler.clear('traffic_stats');
     const heartbeat = { attempts: 0, replies: 0, failures: 0 };
     context.heartbeat = heartbeat;
-    lastHeartbeatResponse = Date.now();
-    lastInboundAt = Date.now();
+    lastHeartbeatMono = performance.now();
+    lastInboundMono = performance.now();
     heartbeatMissCount = 0;
     // 一分钟一条流量快照：只在真的有过请求时打，空闲连接不产生日志。
     // 带 gid 是因为多个账号进程的日志写进同一个 combined.log，否则没法按账号统计。
@@ -946,14 +939,14 @@ function startHeartbeat(context) {
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
         if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid)
             return;
-        const body = buildHeartbeatBody(userState.gid);
+        const body = buildHeartbeatBody(userState.gid, context.clientVersion);
         heartbeat.attempts += 1;
         try {
             const { body: replyBody } = await sendMsgAsync('gamepb.userpb.UserService', 'Heartbeat', body, { timeoutMs: HEARTBEAT_REQUEST_TIMEOUT, priority: 'high', criticalLane: 'heartbeat' });
             if (!isCurrentConnection(context))
                 return;
             heartbeat.replies += 1;
-            lastHeartbeatResponse = Date.now();
+            lastHeartbeatMono = performance.now();
             heartbeatMissCount = 0;
             try {
                 const reply = types.HeartbeatReply.decode(replyBody);
@@ -967,9 +960,9 @@ function startHeartbeat(context) {
                 return;
             heartbeat.failures += 1;
             heartbeatMissCount += 1;
-            const now = Date.now();
-            const inboundSilenceMs = Math.max(0, now - lastInboundAt);
-            const heartbeatSilenceMs = Math.max(0, now - lastHeartbeatResponse);
+            const now = performance.now();
+            const inboundSilenceMs = Math.max(0, now - lastInboundMono);
+            const heartbeatSilenceMs = Math.max(0, now - lastHeartbeatMono);
             logWarn('心跳', `心跳未响应 (miss=${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}, `
                 + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
                 + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, `
@@ -1002,13 +995,13 @@ function clearNetworkRuntime(reason) {
 function getConnectionDiagnostics(context) {
     return {
         platform: CONFIG.platform,
-        clientVersion: getClientVersion(),
-        connectionAgeMs: context?.startedAt ? Math.max(0, Date.now() - context.startedAt) : 0,
-        onlineAgeMs: context?.onlineAt ? Math.max(0, Date.now() - context.onlineAt) : 0,
+        clientVersion: context?.clientVersion || getClientVersion(),
+        connectionAgeMs: context?.startedMono !== undefined ? Math.max(0, performance.now() - context.startedMono) : 0,
+        onlineAgeMs: context?.onlineMono !== undefined ? Math.max(0, performance.now() - context.onlineMono) : 0,
         heartbeat: context?.heartbeat ? { ...context.heartbeat } : null,
         ...getGatewayLoad(),
-        lastInboundAgeMs: Math.max(0, Date.now() - lastInboundAt),
-        lastHeartbeatAgeMs: Math.max(0, Date.now() - lastHeartbeatResponse),
+        lastInboundAgeMs: Math.max(0, performance.now() - lastInboundMono),
+        lastHeartbeatAgeMs: Math.max(0, performance.now() - lastHeartbeatMono),
         heartbeatMissCount,
         pendingRequests: describePendingRequests(),
         queuedRequests: describeQueuedRequests(),
@@ -1060,21 +1053,23 @@ function connect(code, onLoginSuccess) {
         throw new Error('WebSocket 连接已存在');
     clientSeq = 1;
     serverSeq = 0;
-    lastInboundAt = Date.now();
-    lastHeartbeatResponse = Date.now();
+    lastInboundMono = performance.now();
+    lastHeartbeatMono = performance.now();
     heartbeatMissCount = 0;
     trafficMeter.reset();
     // 重连的空档不算停顿：丢掉旧基线，让新连接的第一个 tick 重新起算。
     stallProbe.reset();
+    const clientVersion = getClientVersion();
     const url = new URL(CONFIG.serverUrl);
     url.search = new URLSearchParams({
-        platform: CONFIG.platform,
+        platform: isWechatPlatform() ? 'wx' : CONFIG.platform,
         os: CONFIG.os,
-        ver: getClientVersion(),
+        ver: clientVersion,
         code: authCode,
     }).toString();
     const di = CONFIG.deviceInfo || {};
     const socket = new WebSocket(url.toString(), {
+        handshakeTimeout: 20000,
         headers: {
             'User-Agent': di.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
             'Origin': 'https://gate-obt.nqf.qq.com',
@@ -1087,7 +1082,8 @@ function connect(code, onLoginSuccess) {
         intentionalClose: false,
         finalized: false,
         loginInitialized: false,
-        startedAt: Date.now(),
+        clientVersion,
+        startedMono: performance.now(),
     };
     currentConnection = context;
     ws = socket;

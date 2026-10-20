@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');
-const { DEFAULT_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersionUpdatedAt } = require('../../config/config');
+const { DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersionUpdatedAt } = require('../../config/config');
 const sharedState = require('./shared-state');
 const { STORE_FILE, PUSHOO_CHANNELS, DEFAULT_OFFLINE_REMINDER, DEFAULT_LOGIN_SETTINGS, globalConfig, normalizeAccountConfig, cloneAccountConfig, DEFAULT_ACCOUNT_CONFIG, } = sharedState;
 function normalizeOfflineReminder(input) {
@@ -134,14 +134,23 @@ function setSystemConfig(config) {
         deviceId: 'DESKTOP-PC<WPC>',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
     };
-    const srcDevice = (config.deviceInfo && typeof config.deviceInfo === 'object') ? config.deviceInfo : {};
+    const current = globalConfig.systemConfig;
+    const srcDevice = {
+        ...(current?.deviceInfo || {}),
+        ...((config.deviceInfo && typeof config.deviceInfo === 'object') ? config.deviceInfo : {}),
+    };
     const topVersion = String(config.clientVersion || '').trim();
-    const deviceVersion = String(srcDevice.clientVersion || '').trim();
-    const requestedVersion = deviceVersion || topVersion;
+    const deviceVersion = String(config.deviceInfo?.clientVersion || '').trim();
+    const requestedVersion = deviceVersion || topVersion || current?.clientVersion;
     const clientVersion = requestedVersion || DEFAULT_DEVICE_INFO.clientVersion;
     const currentVersion = String(globalConfig.systemConfig?.clientVersion || DEFAULT_DEVICE_INFO.clientVersion).trim();
     const currentUpdatedAt = Number(globalConfig.systemConfig?.clientVersionUpdatedAt);
     const clientVersionUpdatedAt = resolveClientVersionUpdatedAt(clientVersion, currentVersion, currentUpdatedAt, config.clientVersionUpdatedAt);
+    // Older API clients may omit the new field; never copy the QQ version into it.
+    const currentWxVersion = globalConfig.systemConfig?.wxClientVersion || DEFAULT_WX_CLIENT_VERSION;
+    const wxClientVersion = config.wxClientVersion === undefined
+        ? currentWxVersion : (String(config.wxClientVersion || '').trim() || DEFAULT_WX_CLIENT_VERSION);
+    const wxClientVersionUpdatedAt = resolveClientVersionUpdatedAt(wxClientVersion, currentWxVersion, globalConfig.systemConfig?.wxClientVersionUpdatedAt, config.wxClientVersionUpdatedAt, Date.now(), 'wx');
     const deviceInfo = {
         os: String(srcDevice.os || DEFAULT_DEVICE_INFO.os).trim(),
         clientVersion,
@@ -152,12 +161,14 @@ function setSystemConfig(config) {
         userAgent: String(srcDevice.userAgent || DEFAULT_DEVICE_INFO.userAgent).trim(),
     };
     globalConfig.systemConfig = {
-        serverUrl: String(config.serverUrl || '').trim(),
+        serverUrl: String(config.serverUrl ?? current?.serverUrl ?? '').trim(),
         clientVersion: deviceInfo.clientVersion,
         clientVersionUpdatedAt,
-        platform: String(config.platform || 'qq').trim(),
+        wxClientVersion,
+        wxClientVersionUpdatedAt,
+        platform: String(config.platform || current?.platform || 'qq').trim(),
         os: deviceInfo.os,
-        timeZone: normalizeTimeZone(config.timeZone || DEFAULT_TIME_ZONE),
+        timeZone: normalizeTimeZone(config.timeZone || current?.timeZone || DEFAULT_TIME_ZONE),
         deviceInfo,
     };
     saveGlobalConfig();

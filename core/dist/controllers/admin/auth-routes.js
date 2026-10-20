@@ -58,7 +58,8 @@ function mountAuthRoutes(app, ctx) {
         res.json({ ok: true, data: { ok: true, uptime: process.uptime(), version } });
     });
     app.get('/api/game-version', (_req, res) => {
-        res.json({ ok: true, clientVersion: getRuntimeConfig().clientVersion, botVersion: version });
+        const { clientVersion, wxClientVersion } = getRuntimeConfig();
+        res.json({ ok: true, clientVersion, wxClientVersion, botVersion: version });
     });
     app.get('/api/auth/validate', (_req, res) => {
         res.json({ ok: true, data: { valid: true } });

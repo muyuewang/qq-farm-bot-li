@@ -522,6 +522,12 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
     if (!loginReady && snapshot && snapshot.systemServerUrl !== undefined) {
         updateRuntimeConfig({ serverUrl: String(snapshot.systemServerUrl || '') });
     }
+    if (!loginReady && snapshot?.systemDeviceInfo) {
+        updateRuntimeConfig({ deviceInfo: snapshot.systemDeviceInfo });
+    }
+    if (!loginReady && snapshot?.systemWxClientVersion !== undefined) {
+        updateRuntimeConfig({ wxClientVersion: String(snapshot.systemWxClientVersion || '') });
+    }
     if (!loginReady && snapshot && snapshot.systemClientVersion !== undefined) {
         updateRuntimeConfig({ clientVersion: String(snapshot.systemClientVersion || '') });
     }
@@ -609,11 +615,15 @@ async function startBot(config) {
     isRunning = true;
     shutdownStarted = false;
     runtimeGeneration += 1;
-    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion } = config;
+    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion, systemWxClientVersion, systemDeviceInfo } = config;
     if (systemTimeZone !== undefined)
         updateRuntimeConfig({ timeZone: systemTimeZone });
     if (systemServerUrl !== undefined)
         updateRuntimeConfig({ serverUrl: String(systemServerUrl || '') });
+    if (systemDeviceInfo)
+        updateRuntimeConfig({ deviceInfo: systemDeviceInfo });
+    if (systemWxClientVersion !== undefined)
+        updateRuntimeConfig({ wxClientVersion: String(systemWxClientVersion || '') });
     if (systemClientVersion !== undefined)
         updateRuntimeConfig({ clientVersion: String(systemClientVersion || '') });
     CONFIG.platform = platform || 'qq';
