@@ -1064,7 +1064,7 @@ function startHeartbeat(context: ConnectionContext): void {
                 `心跳未响应 (miss=${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}, `
                 + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
                 + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, `
-                + `近60s ${trafficMeter.formatWindow(60000)})`,
+                + `近60s ${trafficMeter.formatWindow(60000)}, ${formatTcpSnapshot(context.socket)})`,
                 { gid: userState.gid },
             );
             if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)) return;
@@ -1073,7 +1073,8 @@ function startHeartbeat(context: ConnectionContext): void {
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
                 reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败，`
-                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}，停顿: ${stallProbe.summary()}`,
+                    + `掉线前 60s 流量: ${trafficMeter.formatWindow(60000)}，停顿: ${stallProbe.summary()}，`
+                    + `${formatTcpSnapshot(context.socket)}`,
             });
             try { (context.socket as any).terminate(); } catch {}
         }
@@ -1097,6 +1098,31 @@ function clearNetworkRuntime(reason: string): void {
     userState.openId = '';
 }
 
+/**
+ * TCP 层快照：从 ws 内部的 net.Socket 取内核记的收发字节数与发送缓冲水位。
+ * 用途只有一个 —— 分清「包没离开我们」和「包出去了没回来」。取不到就返回 null（测试桩、浏览器端）。
+ */
+function getTcpSnapshot(socket: any): Record<string, any> | null {
+    try {
+        const raw = socket?._socket;
+        if (!raw) return null;
+        return {
+            bytesRead: Number(raw.bytesRead) || 0,
+            bytesWritten: Number(raw.bytesWritten) || 0,
+            writableLength: Number(raw.writableLength) || 0,
+            remote: `${raw.remoteAddress || ''}:${raw.remotePort || ''}`,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function formatTcpSnapshot(socket: any): string {
+    const tcp = getTcpSnapshot(socket);
+    if (!tcp) return 'tcp=不可用';
+    return `tcp[read=${tcp.bytesRead},write=${tcp.bytesWritten},缓冲=${tcp.writableLength},peer=${tcp.remote}]`;
+}
+
 function getConnectionDiagnostics(context: ConnectionContext | null) {
     return {
         platform: CONFIG.platform,
@@ -1112,6 +1138,7 @@ function getConnectionDiagnostics(context: ConnectionContext | null) {
         queuedRequests: describeQueuedRequests(),
         ace: context?.phase === 'online' ? getAceDiagnostics() : null,
         tsdk: cryptoWasm.getDiagnostics(),
+        tcp: getTcpSnapshot(context?.socket || ws),
     };
 }
 
@@ -1192,6 +1219,8 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
 
     (socket as any).on('open', () => {
         if (!isCurrentConnection(context)) return;
+        // 内核层探测：只用于事后定性这条流通不通，不参与断线判定（探测失败约 11 分钟后才报错）。
+        try { (socket as any)._socket?.setKeepAlive?.(true, 15000); } catch {}
         context.phase = 'login';
         networkScheduler.setTimeoutTask('login_timeout', 20000, () => {
             if (!isCurrentConnection(context) || context.phase !== 'login') return;

@@ -131,3 +131,36 @@ test('a failed handshake ends once and never reuses its Code', () => {
     assert.equal(h.api.getWs(), null);
     assert.equal(h.sockets.length, 1);
 });
+
+test('掉线诊断带 TCP 层字节计数，握手完成后打开内核 keepalive', async () => {
+    await loadProto();
+    const h = harness();
+    const keepAlive = [];
+    h.api.connect('synthetic-code');
+    h.sockets[0]._socket = {
+        bytesRead: 987654,
+        bytesWritten: 12345,
+        writableLength: 600,
+        remoteAddress: '101.35.200.1',
+        remotePort: 443,
+        setKeepAlive: (enabled, idleMs) => keepAlive.push([enabled, idleMs]),
+    };
+    h.sockets[0].emit('open');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(keepAlive, [[true, 15000]]);
+    const tcp = h.api.snapshot().tcp;
+    assert.equal(tcp.bytesRead, 987654);
+    assert.equal(tcp.bytesWritten, 12345);
+    assert.equal(tcp.writableLength, 600);
+    assert.equal(tcp.remote, '101.35.200.1:443');
+    h.api.cleanup();
+});
+
+test('拿不到 net.Socket 时 TCP 快照降级为 null，不影响诊断', async () => {
+    await loadProto();
+    const h = harness();
+    h.api.connect('synthetic-code');
+    await h.api.login();
+    assert.equal(h.api.snapshot().tcp, null);
+    h.api.cleanup();
+});
