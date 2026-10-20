@@ -1056,9 +1056,6 @@ function connect(code, onLoginSuccess) {
     lastInboundMono = performance.now();
     lastHeartbeatMono = performance.now();
     heartbeatMissCount = 0;
-    trafficMeter.reset();
-    // 重连的空档不算停顿：丢掉旧基线，让新连接的第一个 tick 重新起算。
-    stallProbe.reset();
     const clientVersion = getClientVersion();
     const url = new URL(CONFIG.serverUrl);
     url.search = new URLSearchParams({
