@@ -70,3 +70,13 @@ test('formatWindow 一行带齐取证字段', () => {
     assert.match(line, /班次\[farm:12\]/);
     assert.match(line, /方法\[SellGoodsx12\]/);
 });
+
+test('formatWindow 带出峰值那一秒距现在几秒：突发和静默是否同秒要能直接读出来', () => {
+    const m = createTrafficMeter();
+    const t0 = 1_700_000_000_000;
+    for (let i = 0; i < 10; i++) m.recordOutbound('farm', 'Bag', t0);
+    m.recordOutbound('critical', 'Heartbeat', t0 + 5000);
+
+    assert.match(m.formatWindow(10_000, t0 + 5000), /峰值在-5s$/);
+    assert.equal(createTrafficMeter().formatWindow(10_000, t0).includes('峰值在'), false, '没有出站就不该有峰值时刻');
+});

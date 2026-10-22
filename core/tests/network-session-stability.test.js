@@ -153,6 +153,7 @@ test('掉线诊断带 TCP 层字节计数，握手完成后打开内核 keepaliv
     assert.equal(tcp.bytesWritten, 12345);
     assert.equal(tcp.writableLength, 600);
     assert.equal(tcp.remote, '101.35.200.1:443');
+    assert.equal(tcp.txQueue, undefined, '拿不到 localPort 时不该去读内核表，也不该编出队列数');
     h.api.cleanup();
 });
 

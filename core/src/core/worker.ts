@@ -49,6 +49,13 @@ interface WorkerRuntimeConfig {
 
 const workerConfig = CONFIG as WorkerRuntimeConfig;
 
+// 奶茶(30min)、节令(30min)、神秘商人(2h) 都在登录就绪那一刻注册，周期互为整数倍，
+// 所以每隔 2 小时必然在同一秒一起到期 —— 2026-10-22 那次掉线前的 peak=10/s 正好落在 T0+4h 整。
+// 偏移取对 30min 互不重合的分钟数（11 / 19 / 37 ≡ 11 / 19 / 7），之后任何一秒都只有一个任务到期。
+const MILK_TEA_CHECK_PHASE_MS = 11 * 60 * 1000;
+const SOLAR_CALENDAR_CHECK_PHASE_MS = 19 * 60 * 1000;
+const MYSTERY_SHOP_CHECK_PHASE_MS = 37 * 60 * 1000;
+
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
 }
@@ -440,7 +447,7 @@ function startMysteryShopTimer(): void {
     if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) return;
     workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
-    });
+    }, { phaseMs: MYSTERY_SHOP_CHECK_PHASE_MS });
 }
 
 let milkTeaAutomation: any = null;
@@ -499,7 +506,7 @@ function startMilkTeaActivityTimer(): void {
     });
     workerScheduler.setIntervalTask('milk_tea_interval', MILK_TEA_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('milk_tea', runMilkTeaTick).catch(() => null);
-    });
+    }, { phaseMs: MILK_TEA_CHECK_PHASE_MS });
 }
 
 let solarCalendarAutomation: any = null;
@@ -537,12 +544,13 @@ function stopSolarCalendarTimer(): void {
 function startSolarCalendarTimer(): void {
     stopSolarCalendarTimer();
     if (!loginReady || !isSolarCalendarAutomationEnabled(getAutomation())) return;
-    workerScheduler.setTimeoutTask('solar_calendar_initial', 90000, () => {
+    // 150s 而不是和奶茶一样的 90s：两个首跑同秒会一起抢锁，把登录后第一次读取挤成一波突发。
+    workerScheduler.setTimeoutTask('solar_calendar_initial', 150000, () => {
         runExclusiveAutomationTask('solar_calendar', runSolarCalendarTick).catch(() => null);
     });
     workerScheduler.setIntervalTask('solar_calendar_interval', SOLAR_CALENDAR_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('solar_calendar', runSolarCalendarTick).catch(() => null);
-    });
+    }, { phaseMs: SOLAR_CALENDAR_CHECK_PHASE_MS });
 }
 
 function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {

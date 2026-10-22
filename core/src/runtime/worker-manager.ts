@@ -75,11 +75,14 @@ function createWorkerManager(options: WorkerManagerOptions) {
     /**
      * 能不能拿原 Code 再试一次。只认「会话已经建立起来、之后被外侧拆掉」这一类掉线：
      * 握手阶段就被拒（400 / phase=connecting）说明 Code 本身无效，重发只会再吃一个 400；
-     * 被别的终端踢掉走的是 account_kicked，重试等于和真人抢登录。
+     * 被别的终端踢掉走的是 account_kicked，重试等于和真人抢登录；
+     * 心跳判死（heartbeat_timeout）也不试——这种掉线服务端已经把会话作废了，
+     * 2026-10-22 三次实测全是拿原 Code 撞一个 400，等于白跑一轮还多占一次登录名额。
      */
-    function shouldRetryWithStoredCode(accountId: string, account: any, phase: string, handshakeCode: number): boolean {
+    function shouldRetryWithStoredCode(accountId: string, account: any, phase: string, handshakeCode: number, source: string): boolean {
         if (phase !== 'online') return false;
         if (handshakeCode === 400) return false;
+        if (source === 'heartbeat_timeout') return false;
         const code = String(account && account.code ? account.code : '');
         if (!code) return false;
         const rec = codeRetryStates.get(accountId);
@@ -428,7 +431,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
             }
             // 先用原 Code 重启试一次，这一次不发下线提醒——提醒的语义是「需要人工」，
             // 真试不动了再走下面的老路径发。
-            if (!worker.stopping && shouldRetryWithStoredCode(accountId, worker.accountRef, phase, code)) {
+            if (!worker.stopping && shouldRetryWithStoredCode(accountId, worker.accountRef, phase, code, source)) {
                 const retryAccount = worker.accountRef;
                 const retryCode = String(retryAccount.code || '');
                 codeRetryStates.set(accountId, { code: retryCode, at: Date.now() });

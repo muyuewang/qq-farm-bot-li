@@ -43,3 +43,16 @@ test('automation lock allows nested calls in the same task', async () => {
 
     assert.equal(maxActive, 2);
 });
+
+test('串行之外还留缝：同秒到期的任务不再首尾相连接着发', async () => {
+    const starts = [];
+    const task = () => { starts.push(Date.now()); };
+
+    await Promise.all([
+        runExclusiveAutomationTask('gap-a', task),
+        runExclusiveAutomationTask('gap-b', task),
+    ]);
+
+    assert.equal(starts.length, 2);
+    assert.ok(starts[1] - starts[0] >= 1400, `两个任务的起始间隔只有 ${starts[1] - starts[0]}ms`);
+});

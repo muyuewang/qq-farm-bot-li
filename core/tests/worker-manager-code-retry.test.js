@@ -119,6 +119,16 @@ test('握手被拒（400 / phase=connecting）不重试：Code 本身已经无�
     assert.equal(ctx.reminders.length, 1);
 });
 
+test('心跳判死（heartbeat_timeout / phase=online）不重试：实测三次都是拿原 Code 撞 400', async () => {
+    const ctx = setup();
+    ctx.manager.startWorker({ id: 'A', name: '沐月-QQ', code: 'CODE-1', platform: 'qq' });
+    ctx.disconnect(ctx.children[0], { source: 'heartbeat_timeout', code: 0, phase: 'online' });
+    await sleep(60);
+    assert.equal(ctx.children.length, 1, '心跳判死之后服务端已经把会话作废，重发只是空转');
+    assert.equal(ctx.reminders.length, 1, '直接按老路径交人工');
+    assert.match(ctx.lines.join('\n'), /等待 Helper 刷新 Code 或重新扫码/);
+});
+
 test('登录阶段就断（phase=connecting, code=0）同样不重试', async () => {
     const ctx = setup();
     ctx.manager.startWorker({ id: 'A', name: '沐月-QQ', code: 'CODE-1', platform: 'qq' });

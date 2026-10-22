@@ -31,6 +31,7 @@ const {
 const { getAmbientRequestClass } = require('./request-context');
 const { TRAFFIC_STATS_LOG_INTERVAL_MS, createTrafficMeter } = require('./traffic-meter');
 const { createStallProbe } = require('./stall-probe');
+const { readSocketQueues } = require('./tcp-queue');
 const { startAceRuntime, stopAceRuntime, getAceDiagnostics } = require('../services/ace');
 
 // ============ 事件发射器 (用于推送通知) ============
@@ -1029,7 +1030,7 @@ function startHeartbeat(context: ConnectionContext): void {
         const stats = trafficMeter.snapshot(TRAFFIC_STATS_LOG_INTERVAL_MS);
         if (stats.outbound + stats.responseIn + stats.pushIn === 0) return;
         log('系统', `Gateway 流量: ${trafficMeter.formatWindow(TRAFFIC_STATS_LOG_INTERVAL_MS)}, `
-            + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}`, { gid: userState.gid });
+            + `在途=${pendingCallbacks.size}, 排队=${requestQueue.length}, ${formatTcpSnapshot(context.socket)}`, { gid: userState.gid });
     }, { preventOverlap: true });
 
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
@@ -1106,11 +1107,13 @@ function getTcpSnapshot(socket: any): Record<string, any> | null {
     try {
         const raw = socket?._socket;
         if (!raw) return null;
+        const queues = readSocketQueues(Number(raw.localPort) || 0, Number(raw.remotePort) || 0, String(raw.remoteAddress || ''));
         return {
             bytesRead: Number(raw.bytesRead) || 0,
             bytesWritten: Number(raw.bytesWritten) || 0,
             writableLength: Number(raw.writableLength) || 0,
             remote: `${raw.remoteAddress || ''}:${raw.remotePort || ''}`,
+            ...(queues || {}),
         };
     } catch {
         return null;
@@ -1120,7 +1123,8 @@ function getTcpSnapshot(socket: any): Record<string, any> | null {
 function formatTcpSnapshot(socket: any): string {
     const tcp = getTcpSnapshot(socket);
     if (!tcp) return 'tcp=不可用';
-    return `tcp[read=${tcp.bytesRead},write=${tcp.bytesWritten},缓冲=${tcp.writableLength},peer=${tcp.remote}]`;
+    const queues = tcp.txQueue === undefined ? '' : `,队列=tx=${tcp.txQueue},rx=${tcp.rxQueue}`;
+    return `tcp[read=${tcp.bytesRead},write=${tcp.bytesWritten},缓冲=${tcp.writableLength},peer=${tcp.remote}${queues}]`;
 }
 
 function getConnectionDiagnostics(context: ConnectionContext | null) {
