@@ -116,9 +116,12 @@ function createTrafficMeter() {
         const s = snapshot(windowMs, now);
         const classes = s.byClass.map(([k, v]) => `${k}:${v}`).join(',');
         const methods = s.topMethods.map(([k, v]) => `${k}x${v}`).join(',');
+        // 峰值所在秒距今几秒：用来看出站突发和下行字节冻结是不是发生在同一秒。
+        const peakAgeSec = s.peakRps > 0 ? Math.max(0, Math.floor(now / TRAFFIC_BUCKET_MS) - s.peakSec) : -1;
         return `rps=${s.avgRps} peak=${s.peakRps}/s out=${s.outbound} in(回包=${s.responseIn},推送=${s.pushIn})`
             + `${classes ? ` 班次[${classes}]` : ''}`
-            + `${methods ? ` 方法[${methods}]` : ''}`;
+            + `${methods ? ` 方法[${methods}]` : ''}`
+            + `${peakAgeSec >= 0 ? ` 峰值在-${peakAgeSec}s` : ''}`;
     }
     return { recordOutbound, recordInbound, reset, snapshot, formatWindow };
 }

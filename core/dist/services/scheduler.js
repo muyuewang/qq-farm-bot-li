@@ -147,13 +147,14 @@ function createScheduler(namespace = 'default') {
             throw new Error(`interval 任务 ${key} 缺少回调函数`);
         clear(key);
         const delay = Math.max(1, toDelayMs(intervalMs, 1000));
+        const phaseMs = toDelayMs(options.phaseMs, 0);
         const preventOverlap = options.preventOverlap !== false;
         const runImmediately = !!options.runImmediately;
         const entry = {
             kind: 'interval',
             delayMs: delay,
             createdAt: Date.now(),
-            nextRunAt: Date.now() + delay,
+            nextRunAt: Date.now() + phaseMs + delay,
             lastRunAt: 0,
             runCount: 0,
             running: false,
@@ -190,6 +191,21 @@ function createScheduler(namespace = 'default') {
         };
         if (runImmediately) {
             Promise.resolve().then(runner).catch(() => null);
+        }
+        if (phaseMs > 0) {
+            // 相位偏移把整条节拍往后挪，周期本身不变：用来让多个整数倍周期（30min / 2h）
+            // 的任务不再每次都在同一秒到期。
+            const phaseHandle = setTimeout(() => {
+                const current = timers.get(key);
+                if (!current)
+                    return;
+                const handle = setInterval(runner, delay);
+                current.handle = handle;
+                current.nextRunAt = Date.now() + delay;
+            }, phaseMs);
+            entry.handle = phaseHandle;
+            timers.set(key, entry);
+            return phaseHandle;
         }
         const handle = setInterval(runner, delay);
         entry.handle = handle;
