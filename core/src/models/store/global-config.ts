@@ -99,7 +99,11 @@ function getLoginSettings(): LoginSettings {
 
 function setLoginSettings(cfg: Partial<LoginSettings> | undefined): LoginSettings {
     const next = normalizeLoginSettings({ ...getLoginSettings(), ...(cfg || {}) });
-    if (next.qqQrLogin && (!next.napCatEndpoint || !next.napCatSignature)) {
+    // 部署侧已经自带 NapCat（compose 的 napcat profile 会注入 NAPCAT_LOGIN_ENABLED，
+    // 并且 NAPCAT_WEBUI_URL / NAPCAT_OPENAUTH_URL 就是取码链路真正使用的地址）时，
+    // 不再要求面板里重复填地址和签名——运行时取码只读这两个环境变量。
+    const napCatProvidedByHost = process.env.NAPCAT_LOGIN_ENABLED === 'true' || !!process.env.NAPCAT_WEBUI_URL;
+    if (next.qqQrLogin && !napCatProvidedByHost && (!next.napCatEndpoint || !next.napCatSignature)) {
         throw new Error('开启 QQ 扫码登录前，请配置 NapCat 接口地址和接口签名');
     }
     saveGlobalConfig({ loginSettings: next });

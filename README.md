@@ -229,7 +229,7 @@ chmod +x ./qq-farm-bot
 
 Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。会话已经建立、之后被外侧拆除（`ws_close` 这类 `phase=online` 的掉线）时，主进程会先用原 Code 把该账号重启一次，试一次仍不通才发下线提醒交人工；心跳判死（`heartbeat_timeout`）、握手阶段就被拒（`400`）和被其他终端踢下线不会自动重试，同一个 Code 十分钟内的重试上限是一次。QQ 客户端被挤下线后，官方“重新登录”会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方“重新登录”，Helper 会更新匹配账号的 Code 并重新启动远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
 
-QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务。登录设置中的 NapCat 接口地址需填写该服务的可访问地址，NapCat 接口签名需与其 `API_SIGNING_SECRET` 配置一致；两者会保存在本机数据目录中，由后端调用外部服务时读取。QQ 扫码登录默认关闭，开启前必须同时配置接口地址和签名。
+QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，默认开启。用 compose 部署时在 `.env` 里设 `COMPOSE_PROFILES=napcat` 与 `NAPCAT_LOGIN_ENABLED=true`，napcat 服务会一起起来，取码地址由 `NAPCAT_WEBUI_URL` / `NAPCAT_OPENAUTH_URL` 提供，面板里的 NapCat 接口地址和签名可以不填；不用 compose 自带 NapCat 时，才需要在登录设置里同时填写接口地址与签名（签名需与对端 `API_SIGNING_SECRET` 一致），否则保存登录设置会被拒绝。两者保存在本机数据目录中，由后端调用外部服务时读取。
 
 ## 配置说明
 

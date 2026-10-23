@@ -34,7 +34,9 @@ const DEFAULT_OFFLINE_REMINDER = {
 };
 const DEFAULT_LOGIN_SETTINGS = {
     wechatQrLogin: true,
-    qqQrLogin: false,
+    // 扫码登录是本仓库的主要登录方式：compose 起 napcat profile 后， NapCat 地址由
+    // NAPCAT_WEBUI_URL / NAPCAT_OPENAUTH_URL 给出，不需要用户在面板里再填一遍。
+    qqQrLogin: true,
     napCatEndpoint: '',
     napCatSignature: '',
 };
