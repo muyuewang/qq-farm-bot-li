@@ -2,7 +2,7 @@ syntax = "proto3";
 package gamepb.activitypb;
 import "corepb.proto";
 
-// Verified against official 1.15.0.1_20261001 encoders and captured responses.
+// Verified against official 1.15.1.4_20261001 encoders and captured responses.
 
 message ActivityBodyShop {
     repeated ShopGoodsInfo goods = 1;
@@ -176,6 +176,7 @@ message MilkTeaRankItem {
     int64 total_revenue = 4;
     int32 rank = 5;
     bool can_show_off = 6;
+    bool shop_opened = 7;
 }
 
 message MilkTeaHireInteract {
@@ -186,6 +187,7 @@ message MilkTeaHireInteract {
     int64 rand = 5;
     MilkTeaInteractOwnerEffect owner = 6;
     MilkTeaInteractFriendEffect friend = 7;
+    repeated corepb.Item items_gained = 8;
 }
 
 message MilkTeaInteractOwnerEffect {
@@ -484,6 +486,11 @@ message MilkTeaActivityHead {
     bytes extra = 5;
     int64 begin_time = 6;
     int64 end_time = 7;
+    int64 client_id = 8;
+    int32 status = 20;
+    int64 splash_order = 21;
+    bool splashed = 22;
+    bool has_red_dot = 23;
     int64 settle_start_time = 24;
 }
 message MilkTeaActivityData {

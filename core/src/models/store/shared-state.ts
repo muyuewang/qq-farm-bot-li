@@ -3,10 +3,12 @@ export {};
 
 const { DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersion } = require('../../config/config');
 const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
-const { readJsonFile } = require('../../services/json-db');
+const { createConfigStorage } = require('./config-storage');
+const { storageError } = require('../../services/json-db');
 
 const STORE_FILE: string = getDataFile('store.json');
 const ACCOUNTS_FILE: string = getDataFile('accounts.json');
+const configStorage = createConfigStorage(STORE_FILE);
 const KNOWN_FRIEND_GIDS_DIR: string = getDataFile('known_friend_gids');
 
 const ALLOWED_PLANTING_STRATEGIES: PlantingStrategy[] = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
@@ -544,9 +546,9 @@ function resolveAccountId(accountId: unknown): string {
 }
 
 function loadGlobalConfig(): void {
-    ensureDataDir();
     try {
-        const data: any = readJsonFile(STORE_FILE, () => ({}));
+        ensureDataDir();
+        const data: any = configStorage.load({ migrate: !process.env.FARM_ACCOUNT_ID });
         if (data && typeof data === 'object') {
             accountFallbackConfig = cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG);
             globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
@@ -554,14 +556,11 @@ function loadGlobalConfig(): void {
             const cfgMap = (data.accountConfigs && typeof data.accountConfigs === 'object')
                 ? data.accountConfigs
                 : {};
-            globalConfig.accountConfigs = {};
+            globalConfig.accountConfigs = Object.create(null);
             for (const [id, cfg] of Object.entries(cfgMap)) {
                 const sid = String(id || '').trim();
                 if (!sid) continue;
                 globalConfig.accountConfigs[sid] = normalizeAccountConfig(cfg, DEFAULT_ACCOUNT_CONFIG);
-            }
-            for (const [id, cfg] of Object.entries(globalConfig.accountConfigs)) {
-                globalConfig.accountConfigs[id] = normalizeAccountConfig(cfg, DEFAULT_ACCOUNT_CONFIG);
             }
             globalConfig.ui = { ...globalConfig.ui, ...(data.ui || {}) };
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
@@ -632,12 +631,14 @@ function loadGlobalConfig(): void {
         }
     } catch (e: any) {
         console.error('加载配置失败:', e.message);
+        throw storageError('读取', STORE_FILE, e);
     }
 }
 
 module.exports = {
     // File paths
     STORE_FILE,
+    configStorage,
     ACCOUNTS_FILE,
     KNOWN_FRIEND_GIDS_DIR,
     // Constants

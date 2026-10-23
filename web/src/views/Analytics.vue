@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
 import { NInputNumber } from 'naive-ui/es/input-number'
-import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTab } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
+import PageTabs from '@/components/PageTabs.vue'
 import { useAccountStore } from '@/stores/account'
 import { usePlantBlacklistStore } from '@/stores/plant-blacklist'
 import { useSettingStore } from '@/stores/setting'
@@ -286,7 +287,7 @@ function getSeedNameById(seedId: number) {
 
 <template>
   <div class="page-stack space-y-4">
-    <NTabs v-model:value="activeTab" class="page-tabs" type="line">
+    <PageTabs v-model:value="activeTab">
       <NTab name="strategy">
         <span class="inline-flex items-center gap-2"><span class="i-carbon-chart-line" />种植策略</span>
       </NTab>
@@ -301,7 +302,7 @@ function getSeedNameById(seedId: number) {
       <NTab v-for="tab in configTabs" :key="tab.key" :name="tab.key">
         <span class="inline-flex items-center gap-2"><span :class="tab.icon" />{{ tab.label }}</span>
       </NTab>
-    </NTabs>
+    </PageTabs>
 
     <div>
       <div v-if="activeTab === 'strategy'" class="space-y-4">

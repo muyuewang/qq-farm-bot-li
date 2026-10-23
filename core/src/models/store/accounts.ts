@@ -1,25 +1,43 @@
 import type { Account, AccountsData } from '../../types/account';
 export {};
 
-const fs = require('node:fs');
 const { ensureDataDir } = require('../../config/runtime-paths');
-const { readJsonFile, writeJsonFileAtomic } = require('../../services/json-db');
+const { readJsonFileStrict, writeJsonFileAtomic, storageError } = require('../../services/json-db');
 
 const { ACCOUNTS_FILE } = require('./shared-state');
+let accountsCache: AccountsData | null = null;
+
+function cloneAccounts(data: AccountsData): AccountsData {
+    return { accounts: data.accounts.map(account => ({ ...account })), nextId: data.nextId };
+}
 
 function loadAccounts(): AccountsData {
-    ensureDataDir();
-    const data = readJsonFile(ACCOUNTS_FILE, () => ({ accounts: [], nextId: 1 }));
-    return normalizeAccountsData(data);
+    accountsCache = null;
+    try {
+        ensureDataDir();
+        const raw = readJsonFileStrict(ACCOUNTS_FILE, () => ({ accounts: [], nextId: 1 }));
+        if (!raw || !Array.isArray(raw.accounts)) throw new Error('Invalid accounts data');
+        const data = normalizeAccountsData(raw);
+        accountsCache = data;
+        return cloneAccounts(data);
+    } catch (error: any) {
+        throw storageError('读取', ACCOUNTS_FILE, error);
+    }
 }
 
 function saveAccounts(data: AccountsData): void {
-    ensureDataDir();
-    writeJsonFileAtomic(ACCOUNTS_FILE, normalizeAccountsData(data));
+    let normalized: AccountsData;
+    try {
+        ensureDataDir();
+        normalized = normalizeAccountsData(data);
+        writeJsonFileAtomic(ACCOUNTS_FILE, normalized);
+    }
+    catch (error: any) { throw storageError('保存', ACCOUNTS_FILE, error); }
+    accountsCache = normalized;
 }
 
 function getAccounts(): AccountsData {
-    return loadAccounts();
+    return accountsCache ? cloneAccounts(accountsCache) : loadAccounts();
 }
 
 function normalizeAccountsData(raw: unknown): AccountsData {
@@ -52,8 +70,8 @@ function normalizeAccount(raw: any): Account {
 }
 
 function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): AccountsData {
-    const { ensureAccountConfig, removeAccountConfig } = require('./account-config');
-    const data = normalizeAccountsData(loadAccounts());
+    const { ensureAccountConfig } = require('./account-config');
+    const data = getAccounts();
     let touchedAccountId = '';
     const source: any = acc || {};
     const cleanAccount: any = {};
@@ -82,16 +100,16 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
             updatedAt: Date.now(),
         });
     }
-    saveAccounts(data);
     if (touchedAccountId) {
         ensureAccountConfig(touchedAccountId);
     }
+    saveAccounts(data);
     return data;
 }
 
 function deleteAccount(id: unknown): AccountsData {
     const { removeAccountConfig } = require('./account-config');
-    const data = normalizeAccountsData(loadAccounts());
+    const data = getAccounts();
     data.accounts = data.accounts.filter(a => a.id !== String(id));
     if (data.accounts.length === 0) {
         data.nextId = 1;

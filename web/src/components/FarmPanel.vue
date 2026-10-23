@@ -80,7 +80,7 @@ const confirmConfig = ref({
   opType: '',
 })
 
-const selectedInteractionItemId = ref('')
+const selectedInteractionItemId = ref<string>()
 const lastInteractionResults = ref<Record<string, FriendInteractionResultDto[]>>({})
 const interactionConfirmVisible = ref(false)
 const interactionConfirmMessage = ref('')
@@ -95,6 +95,14 @@ const batchAction = ref<BatchAction>(route.query.interactionItem ? 'item' : 'nor
 const selectedInteractionItem = computed<FriendInteractionItemDto | null>(() => (
   interactionItems.value.find(item => String(item.itemId) === selectedInteractionItemId.value) || null
 ))
+
+const interactionItemPlaceholder = computed(() => {
+  if (interactionItemsLoading.value)
+    return '正在读取道具…'
+  if (interactionItemsError.value)
+    return '道具读取失败'
+  return interactionItems.value.length ? '选择道具' : '背包暂无可用道具'
+})
 
 const showManualFertilizerButtons = computed(() => settings.value.automation?.show_manual_fertilizer !== false)
 const selectionBusy = computed(() => batchPending.value || fertilizePending.value || interactionUsePending.value || operating.value)
@@ -553,7 +561,7 @@ async function refreshFarm() {
 watch(currentAccountId, () => {
   farmStore.resetLandState()
   farmingLandId.value = null
-  selectedInteractionItemId.value = ''
+  selectedInteractionItemId.value = undefined
   selecting.value = false
   selectedIds.value = []
   lastInteractionResults.value = {}
@@ -562,7 +570,7 @@ watch(currentAccountId, () => {
 watch(interactionItems, (items) => {
   const first = items[0]
   if (!first) {
-    selectedInteractionItemId.value = ''
+    selectedInteractionItemId.value = undefined
     return
   }
   const requestedItemId = String(route.query.interactionItem || '')
@@ -765,10 +773,14 @@ onUnmounted(() => {
               </div>
             </div>
             <div v-if="batchAction === 'item'" class="farm-item-picker">
-              <BaseSelect v-model="selectedInteractionItemId" :options="interactionItems.map(item => ({ label: `${item.name}（库存 ${item.count}）`, value: item.itemId }))" :disabled="selectionBusy || interactionItemsLoading" placeholder="选择道具" aria-label="选择道具" />
-              <span v-if="interactionItemsLoading" class="text-xs text-gray-500">正在读取道具…</span>
-              <span v-else-if="interactionItemsError" class="farm-item-error">{{ interactionItemsError }}<button type="button" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">重试</button></span>
-              <span v-else-if="!interactionItems.length" class="text-xs text-gray-500">背包暂无可用道具</span>
+              <BaseSelect
+                v-model="selectedInteractionItemId"
+                :options="interactionItems.map(item => ({ label: `${item.name}（库存 ${item.count}）`, value: String(item.itemId) }))"
+                :disabled="selectionBusy || interactionItemsLoading || !interactionItems.length"
+                :placeholder="interactionItemPlaceholder"
+                aria-label="选择道具"
+              />
+              <span v-if="interactionItemsError" class="farm-item-error">{{ interactionItemsError }}<button type="button" @click="currentAccountId && farmStore.fetchInteractionItems(currentAccountId)">重试</button></span>
               <p v-else-if="selectedInteractionItem?.description">
                 {{ selectedInteractionItem.description }}
               </p>
@@ -916,6 +928,11 @@ onUnmounted(() => {
   color: var(--ui-muted);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.farm-item-picker :deep(.n-base-selection) {
+  --n-placeholder-color: var(--ui-muted) !important;
+  --n-placeholder-color-disabled: var(--ui-muted) !important;
 }
 
 .farm-item-picker p {

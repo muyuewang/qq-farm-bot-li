@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
-import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTab } from 'naive-ui/es/tabs'
 import { NTimePicker } from 'naive-ui/es/time-picker'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import PageTabs from '@/components/PageTabs.vue'
 import AutomationSettingsForm from '@/components/settings/AutomationSettingsForm.vue'
 import BagSeedPriorityItem from '@/components/settings/BagSeedPriorityItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -1510,16 +1511,14 @@ async function handleResetSystemConfig() {
 <template>
   <div class="settings-page page-stack">
     <div class="settings-content">
-      <div class="page-tabs">
-        <NTabs :value="activeTab" type="line" @update:value="setActiveTab">
+      <PageTabs :value="activeTab" @update:value="setActiveTab">
           <NTab v-for="tab in tabs" :key="tab.key" :name="tab.key">
             <span class="inline-flex items-center gap-2">
               <span :class="tab.icon" />
               {{ tab.label }}
             </span>
           </NTab>
-        </NTabs>
-      </div>
+      </PageTabs>
 
       <div class="settings-body">
         <!-- 账号管理 -->

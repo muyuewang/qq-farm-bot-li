@@ -54,7 +54,7 @@ function toggleNavigation() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin: 0;
 }
 
 .page-heading {
@@ -81,10 +81,6 @@ function toggleNavigation() {
 }
 
 @media (max-width: 1023px) {
-  .page-header {
-    margin-bottom: 12px;
-  }
-
   .page-heading__title {
     font-size: 19px;
   }

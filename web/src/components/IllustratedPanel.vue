@@ -483,9 +483,7 @@ watch(isConnected, refresh)
     position: sticky;
     top: var(--sticky-top, 0px);
     z-index: 6;
-    padding-bottom: 12px;
-    margin-bottom: -12px;
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--ui-bg) 92%, transparent) 70%, transparent);
+    background: var(--chrome-bg);
   }
 }
 .illustrated-head__card {
@@ -494,12 +492,10 @@ watch(isConnected, refresh)
   padding: 20px 22px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card);
-  background: color-mix(in srgb, var(--ui-surface-strong) 94%, transparent);
+  background: var(--ui-table-head);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
     var(--ui-shadow-sm);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
 }
 .illustrated-head__top {
   display: flex;

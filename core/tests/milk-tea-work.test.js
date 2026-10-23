@@ -15,7 +15,7 @@ test('current shift separates official base wage from the actual bonus and resol
     assert.equal(result.work.my_shift.interactionResult.reward.count, 54);
     assert.equal(result.work.talentDescription, '金币收入+10%');
     assert.equal(result.interactions[0].description, '帮助老板立即卖出40杯奶茶，你将获得本班工资20%的奖金');
-    assert.equal(result.interactions[3].description, '有40%概率获得宣传喇叭x1，有60%概率工资减半');
+    assert.equal(result.interactions[3].description, '有40%概率获得宣传喇叭x6，有60%概率工资减半');
     assert.equal(result.interactions[4].description, '有60%概率工资翻倍，有40%概率工资减半');
     assert.ok(result.interactions.every(value => !/[{}<>]/.test(value.description)));
 });
@@ -41,10 +41,10 @@ test('actual interaction outcomes retain deductions and distinguish horn/drink r
     for (const [type, success, friend, expected] of [
         [5, false, { bonus_amount: '-135' }, ['奶茶券', -135]],
         [5, true, { bonus_amount: '270' }, ['奶茶券', 270]],
-        [4, true, {}, ['宣传喇叭', 1]],
+        [4, true, {}, ['宣传喇叭', 6]],
         [3, true, { taste_recipe_id: '2', taste_cups: '24' }, ['甜莓奶茶', 24]],
     ]) {
-        value.my_shift.interact = { type, success, friend, interaction_id: '999' };
+        value.my_shift.interact = { type, success, friend, interaction_id: '90014' };
         value.slips = [{ shift_id: '6', interact: value.my_shift.interact }];
         const result = normalizeMilkTeaWork(value);
         for (const entry of [result.work.my_shift, result.work.slips[0]]) {

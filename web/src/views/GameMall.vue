@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTab } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MallCatalogPanel from '@/components/commerce/MallCatalogPanel.vue'
 import MysteryShopPanel from '@/components/commerce/MysteryShopPanel.vue'
+import PageTabs from '@/components/PageTabs.vue'
 import { useCommerceStore } from '@/stores/commerce'
 
 type MallTab = 'mall' | 'svip' | 'mystery' | 'limited'
@@ -30,14 +31,14 @@ function selectTab(tab: MallTab) {
 
 <template>
   <div class="mall-page page-stack">
-    <NTabs class="page-tabs" :value="activeTab" type="line" @update:value="selectTab">
+    <PageTabs :value="activeTab" @update:value="selectTab">
       <NTab v-for="tab in tabs" :key="tab.key" :name="tab.key" :disabled="purchasing && activeTab !== tab.key">
         <span class="inline-flex items-center gap-2">
           <span :class="tab.icon" />
           {{ tab.label }}
         </span>
       </NTab>
-    </NTabs>
+    </PageTabs>
 
     <MysteryShopPanel v-if="activeTab === 'mystery'" />
     <MallCatalogPanel v-else :slot-type="activeTab === 'svip' ? 4 : activeTab === 'limited' ? 5 : 1" />

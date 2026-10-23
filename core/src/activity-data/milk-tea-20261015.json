@@ -147,9 +147,9 @@
       "drink_icon": "gui/texture/icon/icon_s4_milktea_9/spriteFrame",
       "base_price": "1041:45",
       "normal_output_count": 1,
-      "coin_formula_a": 1459,
+      "coin_formula_a": 7296,
       "coin_formula_b": 2,
-      "coin_formula_c": 1094,
+      "coin_formula_c": 5472,
       "drink_desc": "消耗森野黄金芽制作，每颗可制作1杯；带有售价倍率的果实，产量按相同倍率提升。"
     }
   ],
@@ -380,7 +380,7 @@
       "icon_url": "gui/texture/Season/S4/S4MyJob/S4interactIcon/icon_S4MyJob_interact_4/spriteFrame",
       "interact_win_word": "悠然自得！没有人发现你在快乐！",
       "interact_lose_word": "不！快乐离你而去！",
-      "des": "有<color=#7db33e>40%</color>概率获得<color=#7db33e>宣传喇叭x1</color>，有<color=#7db33e>60%</color>概率工资减半",
+      "des": "有<color=#7db33e>40%</color>概率获得<color=#7db33e>宣传喇叭x{0}</color>，有<color=#7db33e>60%</color>概率工资减半",
       "interact_win_des": "<b>员工效果降低<color=#d37137>20%</color></b>",
       "interact_lose_des": "<b>减免<color=#d37137>50%</color>工资</b>"
     },
@@ -405,105 +405,120 @@
       "interaction_id": 90001,
       "interaction_type": 1,
       "duration_id": 1,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90002,
       "interaction_type": 2,
       "duration_id": 1,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90003,
       "interaction_type": 3,
       "duration_id": 1,
-      "random_drink_count": 4
+      "random_drink_count": 4,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90004,
       "interaction_type": 4,
       "duration_id": 1,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": "1042:1"
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90005,
       "interaction_type": 5,
       "duration_id": 1,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90006,
       "interaction_type": 1,
       "duration_id": 2,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90007,
       "interaction_type": 2,
       "duration_id": 2,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90008,
       "interaction_type": 3,
       "duration_id": 2,
-      "random_drink_count": 12
+      "random_drink_count": 12,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90009,
       "interaction_type": 4,
       "duration_id": 2,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": "1042:3"
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90010,
       "interaction_type": 5,
       "duration_id": 2,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90011,
       "interaction_type": 1,
       "duration_id": 3,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90012,
       "interaction_type": 2,
       "duration_id": 3,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90013,
       "interaction_type": 3,
       "duration_id": 3,
-      "random_drink_count": 24
+      "random_drink_count": 24,
+      "item_reward": null
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90014,
       "interaction_type": 4,
       "duration_id": 3,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": "1042:6"
     },
     {
       "activity_id": 2026110101,
       "interaction_id": 90015,
       "interaction_type": 5,
       "duration_id": 3,
-      "random_drink_count": 0
+      "random_drink_count": 0,
+      "item_reward": null
     }
   ]
 }

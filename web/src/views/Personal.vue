@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTab } from 'naive-ui/es/tabs'
 import { ref, watch } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
 import IllustratedPanel from '@/components/IllustratedPanel.vue'
+import PageTabs from '@/components/PageTabs.vue'
 import PetPanel from '@/components/PetPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 
@@ -29,7 +30,7 @@ watch(currentTab, (tab) => {
 
 <template>
   <div class="page-stack flex flex-col">
-    <NTabs v-model:value="currentTab" class="page-tabs shrink-0" type="line" animated>
+    <PageTabs v-model:value="currentTab" animated>
       <NTab name="farm">
         <span class="inline-flex items-center gap-2"><span class="i-carbon-sprout" />我的农场</span>
       </NTab>
@@ -45,7 +46,7 @@ watch(currentTab, (tab) => {
       <NTab name="task">
         <span class="inline-flex items-center gap-2"><span class="i-carbon-task" />我的任务</span>
       </NTab>
-    </NTabs>
+    </PageTabs>
 
     <div class="min-w-0">
       <div v-for="tab in visitedTabs" v-show="tab === currentTab" :key="tab">

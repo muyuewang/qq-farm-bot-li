@@ -14,7 +14,7 @@ test('QQ and WeChat versions can be configured independently', () => {
     try {
         CONFIG.clientVersion = '';
         CONFIG.wxClientVersion = '';
-        assert.equal(DEFAULT_WX_CLIENT_VERSION, '1.15.0.2_20261001');
+        assert.equal(DEFAULT_WX_CLIENT_VERSION, '1.15.1.4_20261001');
         for (const platform of ['qq', 'wx', 'wechat']) {
             CONFIG.platform = platform;
             assert.equal(getClientVersion(), DEFAULT_CLIENT_VERSION);

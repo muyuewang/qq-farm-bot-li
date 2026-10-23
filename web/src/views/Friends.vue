@@ -8,13 +8,14 @@ import { NDropdown } from 'naive-ui/es/dropdown'
 import { NModal } from 'naive-ui/es/modal'
 import { NPagination } from 'naive-ui/es/pagination'
 import { NSpin } from 'naive-ui/es/spin'
-import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTab } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
+import PageTabs from '@/components/PageTabs.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -891,7 +892,7 @@ async function handleBatchAddKnownFriendGids() {
 
 <template>
   <div class="page-stack">
-    <NTabs class="page-tabs" :value="activeTab" type="line" @update:value="setActiveTab">
+    <PageTabs :value="activeTab" @update:value="setActiveTab">
       <NTab v-for="tab in TABS" :key="tab.key" :name="tab.key">
         <span class="inline-flex items-center gap-2">
           <span :class="tab.icon" />
@@ -901,7 +902,7 @@ async function handleBatchAddKnownFriendGids() {
           </span>
         </span>
       </NTab>
-    </NTabs>
+    </PageTabs>
 
     <div class="page-toolbar panel-sticky panel-sticky--page">
       <span class="text-sm text-gray-500">

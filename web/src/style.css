@@ -30,6 +30,7 @@ textarea * {
   --ui-bg-soft: #eef2eb;
   --ui-surface: rgba(255, 255, 255, 0.86);
   --ui-surface-strong: rgba(255, 255, 255, 0.92);
+  --ui-surface-solid: #fff;
   --ui-surface-soft: rgba(239, 245, 238, 0.8);
   --ui-border: rgba(58, 86, 68, 0.1);
   --ui-border-strong: rgba(58, 86, 68, 0.2);
@@ -53,8 +54,8 @@ textarea * {
   --ui-blue-soft: #eaf2f5;
   --ui-bg-glow: rgba(214, 236, 214, 0.75);
   --ui-bg-glow-2: rgba(222, 236, 240, 0.6);
-  --chrome-bg: color-mix(in srgb, #f3f5ef 96%, transparent);
-  --chrome-blur: blur(18px) saturate(150%);
+  --chrome-bg: color-mix(in srgb, var(--ui-bg) 96%, transparent);
+  --ui-table-head: #edf2eb;
   --ui-radius-control: 10px;
   --ui-radius-card: 14px;
   --ui-shadow-sm: 0 1px 2px rgba(45, 66, 52, 0.04), 0 6px 20px rgba(45, 66, 52, 0.05);
@@ -106,6 +107,7 @@ textarea * {
   --ui-bg-soft: #15191e;
   --ui-surface: #1a1f25;
   --ui-surface-strong: #20262d;
+  --ui-surface-solid: #1a1f25;
   --ui-surface-soft: #242a32;
   --ui-border: rgba(255, 255, 255, 0.07);
   --ui-border-strong: rgba(255, 255, 255, 0.12);
@@ -138,7 +140,8 @@ textarea * {
   --glass-highlight: rgba(255, 255, 255, 0.03);
   --ui-bg-glow: rgba(91, 189, 136, 0.045);
   --ui-bg-glow-2: rgba(130, 182, 214, 0.035);
-  --chrome-bg: color-mix(in srgb, #111418 94%, transparent);
+  --chrome-bg: color-mix(in srgb, var(--ui-bg) 94%, transparent);
+  --ui-table-head: #242a32;
 }
 
 .dark :is(.n-input, .n-input-number, .n-base-selection) {
@@ -613,33 +616,11 @@ select:focus-visible {
   letter-spacing: 0;
 }
 
-/* 滚动模型：一页只有一个滚动区。页头固定在滚动区外；页面级 Tab 吸顶；
-   面板工具栏在桌面端吸在 Tab 下方，手机端随内容滚走，把可视区留给列表。
-   页头、Tab、页面工具栏视为同一块顶部栏：静止时透明（露出页面底色），
-   内容开始滚动后统一换上毛玻璃底，底色横向铺满整行，只在整块栏的最下沿画一条细线。 */
+/* 标题和页面导航共用一个固定区域；内容只在 .page-scroll 中滚动。
+   面板操作留在内容层，手机上随列表滚动，避免多层吸顶占用阅读空间。 */
 .page-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  margin-bottom: 16px !important;
-  isolation: isolate;
-}
-
-.page-tabs::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0 calc(-1 * var(--page-pad, 0px));
-  content: '';
-  transition:
-    background-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.is-scrolled .page-tabs::before {
-  background: var(--chrome-bg);
-  box-shadow: 0 1px 0 var(--ui-border);
-  -webkit-backdrop-filter: var(--chrome-blur);
-  backdrop-filter: var(--chrome-blur);
+  min-width: 0;
+  margin: 8px 0 0 !important;
 }
 
 @media (min-width: 1024px) {
@@ -647,15 +628,12 @@ select:focus-visible {
     position: sticky;
     top: var(--sticky-top, 0px);
     z-index: 6;
-    background: var(--ui-surface-strong);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-    backdrop-filter: blur(16px) saturate(140%);
+    background: var(--panel-sticky-bg, var(--ui-table-head));
   }
 
   /* 直接放在页面底色上的工具栏：并入顶部栏，细线移到它的下沿。 */
   .panel-sticky--page {
     z-index: 9;
-    margin-top: -16px;
     padding-block: 10px;
     background: transparent;
     -webkit-backdrop-filter: none;
@@ -676,12 +654,6 @@ select:focus-visible {
   .is-scrolled .panel-sticky--page::before {
     background: var(--chrome-bg);
     box-shadow: 0 1px 0 var(--ui-border);
-    -webkit-backdrop-filter: var(--chrome-blur);
-    backdrop-filter: var(--chrome-blur);
-  }
-
-  .is-scrolled .page-tabs:has(~ .panel-sticky--page)::before {
-    box-shadow: none;
   }
 
   /* 卡片内的工具栏：底色向两侧铺满卡片内边距（--panel-pad），吸顶时不露出下面的列表。 */
@@ -697,11 +669,9 @@ select:focus-visible {
     position: absolute;
     z-index: -1;
     inset: 0 calc(-1 * var(--panel-pad, 20px));
-    background: color-mix(in srgb, var(--panel-sticky-bg, var(--ui-surface-strong)) 96%, transparent);
+    background: var(--panel-sticky-bg, var(--ui-table-head));
     box-shadow: 0 1px 0 var(--ui-border);
     content: '';
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
   }
 }
 

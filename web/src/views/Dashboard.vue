@@ -546,7 +546,7 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
 
         <div class="ov-account__foot">
-          <span>会话效率 <b>{{ expRate }}</b></span>
+          <span>本次经验/时 <b>{{ expRate }}</b></span>
           <LevelForecast v-if="isOnline" class="ov-forecast" :forecast="status?.levelForecast" />
         </div>
       </section>
