@@ -32,6 +32,34 @@ function readJsonFile(filePath, fallbackFactory = () => ({})) {
         return fallback;
     }
 }
+// Configuration reads must distinguish a missing file from a damaged or unreadable one.
+// Keep the existing tolerant readers unchanged for their current callers.
+function storageError(action, filePath, cause) {
+    if (String(cause?.code || '').startsWith('STORAGE_'))
+        return cause;
+    const code = action === '读取' ? 'STORAGE_READ_FAILED'
+        : action === '迁移' ? 'STORAGE_MIGRATION_FAILED' : 'STORAGE_WRITE_FAILED';
+    return Object.assign(new Error(`${action} ${path.basename(filePath)} 失败，请检查数据文件、目录权限和磁盘空间`, { cause }), {
+        code, filePath,
+    });
+}
+function readJsonFileStrict(filePath, fallbackFactory) {
+    let raw;
+    try {
+        raw = fs.readFileSync(filePath, 'utf8');
+    }
+    catch (error) {
+        if (error.code === 'ENOENT' && fallbackFactory)
+            return fallbackFactory();
+        throw storageError('读取', filePath, error);
+    }
+    try {
+        return JSON.parse(raw);
+    }
+    catch (error) {
+        throw storageError('读取', filePath, error);
+    }
+}
 function writeJsonFileAtomic(filePath, data, space = 2) {
     const json = JSON.stringify(data, null, space);
     writeTextFileAtomic(filePath, json);
@@ -56,6 +84,8 @@ function writeTextFileAtomic(filePath, text = '') {
 module.exports = {
     readTextFile,
     readJsonFile,
+    readJsonFileStrict,
+    storageError,
     writeTextFileAtomic,
     writeJsonFileAtomic,
 };

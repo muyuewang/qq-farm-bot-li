@@ -17,40 +17,48 @@ function getAccountConfigSnapshot(accountId) {
     return normalizeAccountConfig(globalConfig.accountConfigs[id], sharedState.accountFallbackConfig);
 }
 function setAccountConfigSnapshot(accountId, nextConfig, persist = true) {
+    // Initialization must happen before changing memory; a first direct call can
+    // otherwise reload old data over the configuration it is about to save.
+    const persistence = persist ? require('./global-config') : null;
     const id = sharedState.resolveAccountId(accountId);
+    const next = normalizeAccountConfig(nextConfig, sharedState.accountFallbackConfig);
     if (!id) {
-        sharedState.accountFallbackConfig = normalizeAccountConfig(nextConfig, sharedState.accountFallbackConfig);
-        globalConfig.defaultAccountConfig = cloneAccountConfig(sharedState.accountFallbackConfig);
-        if (persist) {
-            require('./global-config').saveGlobalConfig();
+        if (persist)
+            persistence.saveGlobalConfig({ defaultAccountConfig: next });
+        else {
+            sharedState.accountFallbackConfig = next;
+            globalConfig.defaultAccountConfig = cloneAccountConfig(next);
         }
         return cloneAccountConfig(sharedState.accountFallbackConfig);
     }
-    globalConfig.accountConfigs[id] = normalizeAccountConfig(nextConfig, sharedState.accountFallbackConfig);
-    if (persist) {
-        require('./global-config').saveGlobalConfig();
-    }
+    if (persist)
+        sharedState.configStorage.saveAccount(id, next);
+    globalConfig.accountConfigs[id] = next;
     return cloneAccountConfig(globalConfig.accountConfigs[id]);
 }
 function removeAccountConfig(accountId) {
+    require('./global-config');
     const id = sharedState.resolveAccountId(accountId);
     if (!id)
         return;
     if (globalConfig.accountConfigs[id]) {
+        sharedState.configStorage.removeAccount(id);
         delete globalConfig.accountConfigs[id];
-        require('./global-config').saveGlobalConfig();
     }
 }
 function ensureAccountConfig(accountId, options = {}) {
+    if (options.persist !== false)
+        require('./global-config');
     const id = sharedState.resolveAccountId(accountId);
     if (!id)
         return null;
     if (globalConfig.accountConfigs[id]) {
         return cloneAccountConfig(globalConfig.accountConfigs[id]);
     }
-    globalConfig.accountConfigs[id] = cloneAccountConfig(sharedState.DEFAULT_ACCOUNT_CONFIG);
+    const next = cloneAccountConfig(sharedState.DEFAULT_ACCOUNT_CONFIG);
     if (options.persist !== false)
-        require('./global-config').saveGlobalConfig();
+        sharedState.configStorage.saveAccount(id, next);
+    globalConfig.accountConfigs[id] = next;
     return cloneAccountConfig(globalConfig.accountConfigs[id]);
 }
 function getAutomation(accountId) {
@@ -95,6 +103,8 @@ function applyConfigSnapshot(snapshot, options = {}) {
     const cfg = snapshot || {};
     const persist = options.persist !== false;
     const accountId = options.accountId;
+    if (persist)
+        require('./global-config');
     const current = getAccountConfigSnapshot(accountId);
     const next = normalizeAccountConfig(current, sharedState.accountFallbackConfig);
     if (cfg.automation && typeof cfg.automation === 'object') {
@@ -137,9 +147,6 @@ function applyConfigSnapshot(snapshot, options = {}) {
     }
     if (cfg.knownFriendGids !== undefined) {
         next.knownFriendGids = normalizeKnownFriendGids(cfg.knownFriendGids, next.knownFriendGids);
-        if (accountId) {
-            writeKnownFriendGidsCache(accountId, next.knownFriendGids);
-        }
     }
     if (cfg.knownFriendGidSyncCooldownSec !== undefined) {
         next.knownFriendGidSyncCooldownSec = normalizeKnownFriendGidSyncCooldownSec(cfg.knownFriendGidSyncCooldownSec, next.knownFriendGidSyncCooldownSec);
@@ -201,15 +208,16 @@ function applyConfigSnapshot(snapshot, options = {}) {
     if (cfg.autoAcceptHarvestStealSteal !== undefined && cfg.autoAcceptHarvestStealSteal !== null) {
         next.autoAcceptHarvestStealSteal = normalizeAutoAcceptHarvestStealSteal(cfg.autoAcceptHarvestStealSteal, next.autoAcceptHarvestStealSteal);
     }
-    if (cfg.ui && typeof cfg.ui === 'object') {
-        const theme = String(cfg.ui.theme || '').toLowerCase();
-        if (theme === 'dark' || theme === 'light') {
+    setAccountConfigSnapshot(accountId, next, persist);
+    const theme = String(cfg.ui?.theme || '').toLowerCase();
+    if ((theme === 'dark' || theme === 'light') && globalConfig.ui.theme !== theme) {
+        if (persist)
+            require('./global-config').setUITheme(theme);
+        else
             globalConfig.ui.theme = theme;
-        }
     }
-    setAccountConfigSnapshot(accountId, next, false);
-    if (persist)
-        require('./global-config').saveGlobalConfig();
+    if (cfg.knownFriendGids !== undefined && accountId)
+        writeKnownFriendGidsCache(accountId, next.knownFriendGids);
     return getConfigSnapshot(accountId);
 }
 function setAutomation(key, value, accountId) {

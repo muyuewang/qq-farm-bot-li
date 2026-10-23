@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');
 const { DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersionUpdatedAt } = require('../../config/config');
 const sharedState = require('./shared-state');
-const { STORE_FILE, PUSHOO_CHANNELS, DEFAULT_OFFLINE_REMINDER, DEFAULT_LOGIN_SETTINGS, globalConfig, normalizeAccountConfig, cloneAccountConfig, DEFAULT_ACCOUNT_CONFIG, } = sharedState;
+const { PUSHOO_CHANNELS, DEFAULT_OFFLINE_REMINDER, DEFAULT_LOGIN_SETTINGS, globalConfig, normalizeAccountConfig, cloneAccountConfig, DEFAULT_ACCOUNT_CONFIG, } = sharedState;
 function normalizeOfflineReminder(input) {
     const src = (input && typeof input === 'object') ? input : {};
     let offlineDeleteSec = Number.parseInt(src.offlineDeleteSec, 10);
@@ -45,36 +44,15 @@ function normalizeOfflineReminder(input) {
         offlineDeleteSec,
     };
 }
-function sanitizeGlobalConfigBeforeSave() {
-    sharedState.accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
-    globalConfig.defaultAccountConfig = cloneAccountConfig(sharedState.accountFallbackConfig);
-    const map = (globalConfig.accountConfigs && typeof globalConfig.accountConfigs === 'object')
-        ? globalConfig.accountConfigs
-        : {};
-    const nextMap = {};
-    for (const [id, cfg] of Object.entries(map)) {
-        const sid = String(id || '').trim();
-        if (!sid)
-            continue;
-        nextMap[sid] = normalizeAccountConfig(cfg, DEFAULT_ACCOUNT_CONFIG);
-    }
-    globalConfig.accountConfigs = nextMap;
-}
-function saveGlobalConfig() {
-    const { ensureDataDir } = require('../../config/runtime-paths');
-    ensureDataDir();
-    try {
-        const oldJson = readTextFile(STORE_FILE, '');
-        sanitizeGlobalConfigBeforeSave();
-        const newJson = JSON.stringify(globalConfig, null, 2);
-        if (oldJson !== newJson) {
-            console.warn('[系统] 正在保存配置到:', STORE_FILE);
-            writeJsonFileAtomic(STORE_FILE, globalConfig);
-        }
-    }
-    catch (e) {
-        console.error('保存配置失败:', e.message);
-    }
+function saveGlobalConfig(changes = {}) {
+    const next = { ...globalConfig, ...changes };
+    const fallback = normalizeAccountConfig(next.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
+    next.defaultAccountConfig = cloneAccountConfig(fallback);
+    // Publish memory only after persistence succeeds. Account documents have their
+    // own write path, so a global setting never scans or serializes all accounts.
+    sharedState.configStorage.saveGlobal(next);
+    Object.assign(globalConfig, next);
+    sharedState.accountFallbackConfig = fallback;
 }
 function getUI() {
     return { ...globalConfig.ui };
@@ -82,11 +60,7 @@ function getUI() {
 function setUITheme(theme) {
     const t = String(theme || '').toLowerCase();
     const next = (t === 'light') ? 'light' : 'dark';
-    // Import here to avoid circular - use direct globalConfig mutation
-    if (globalConfig.ui) {
-        globalConfig.ui.theme = next;
-    }
-    saveGlobalConfig();
+    saveGlobalConfig({ ui: { ...globalConfig.ui, theme: next } });
     return getUI();
 }
 function getOfflineReminder() {
@@ -109,14 +83,13 @@ function setLoginSettings(cfg) {
     if (next.qqQrLogin && (!next.napCatEndpoint || !next.napCatSignature)) {
         throw new Error('开启 QQ 扫码登录前，请配置 NapCat 接口地址和接口签名');
     }
-    globalConfig.loginSettings = next;
-    saveGlobalConfig();
+    saveGlobalConfig({ loginSettings: next });
     return getLoginSettings();
 }
 function setOfflineReminder(cfg) {
     const current = normalizeOfflineReminder(globalConfig.offlineReminder);
-    globalConfig.offlineReminder = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
-    saveGlobalConfig();
+    const next = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
+    saveGlobalConfig({ offlineReminder: next });
     return getOfflineReminder();
 }
 function getSystemConfig() {
@@ -160,7 +133,7 @@ function setSystemConfig(config) {
         deviceId: String(srcDevice.deviceId || DEFAULT_DEVICE_INFO.deviceId).trim(),
         userAgent: String(srcDevice.userAgent || DEFAULT_DEVICE_INFO.userAgent).trim(),
     };
-    globalConfig.systemConfig = {
+    const next = {
         serverUrl: String(config.serverUrl ?? current?.serverUrl ?? '').trim(),
         clientVersion: deviceInfo.clientVersion,
         clientVersionUpdatedAt,
@@ -171,7 +144,7 @@ function setSystemConfig(config) {
         timeZone: normalizeTimeZone(config.timeZone || current?.timeZone || DEFAULT_TIME_ZONE),
         deviceInfo,
     };
-    saveGlobalConfig();
+    saveGlobalConfig({ systemConfig: next });
     return { ...globalConfig.systemConfig };
 }
 // Initialize on load
@@ -180,7 +153,7 @@ loadGlobalConfig();
 // Apply offlineReminder normalization after load
 globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
 globalConfig.loginSettings = normalizeLoginSettings(globalConfig.loginSettings);
-if (sharedState.systemConfigMigrated) {
+if (sharedState.systemConfigMigrated && !process.env.FARM_ACCOUNT_ID) {
     saveGlobalConfig();
     sharedState.systemConfigMigrated = false;
 }

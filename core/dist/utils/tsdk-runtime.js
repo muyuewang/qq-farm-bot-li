@@ -9,11 +9,11 @@ const { performance } = require('node:perf_hooks');
 const { CONFIG } = require('../config/config');
 const { ensureDataDir, getResourcePath } = require('../config/runtime-paths');
 const { log, logWarn } = require('./utils');
-const TSDK_VERSION = 'v3.9.0.1792070537';
-const TSDK_SHA256 = '837bd271557dc9a21d5cd28b66076ea012eb39a4f4cbe298f529716469c087fc';
+const TSDK_VERSION = 'v3.9.0.1792566360';
+const TSDK_SHA256 = 'd1cd42c1f4f4cb15f111f16879f0edf7bf8d4a69a1bfe80d40138fdf3132dc15';
 const TSDK_BUILDS = Object.freeze({
     qq: { file: 'tsdk.wasm', version: TSDK_VERSION, sha256: TSDK_SHA256 },
-    wx: { file: 'tsdk-wx.wasm', version: 'v3.9.0.1792070005', sha256: '1a9416db8b328e8957a079c583ffc5fc7e48d6af8c45aa40d9969dd68157beca' },
+    wx: { file: 'tsdk-wx.wasm', version: 'v3.9.0.1792565883', sha256: '9c8b1ca061d8e122dd902ff651755d9d2f2006fdf5483765bffd9b9c10aee6ad' },
 });
 const MINI_PROGRAM_APP_IDS = Object.freeze({
     qq: '1112386029',
@@ -192,7 +192,7 @@ class TsdkRuntime {
             return this.hostProfile.deviceText;
         const device = CONFIG.deviceInfo || {};
         const model = String(device.deviceId || `${os.type()} ${os.arch()}`);
-        const platform = String(CONFIG.os || process.platform);
+        const platform = String(CONFIG.os || process.platform).trim().toLowerCase();
         const system = String(device.sysSoftware || os.release());
         return `${model};${platform};${system};Node.js;`;
     }
@@ -249,7 +249,10 @@ class TsdkRuntime {
                 l: () => this.hostProfile.debugMode,
                 m: (ptr, capacity) => this.writeCString(this.hostProfile.appId, ptr, capacity),
                 n: (ptr, capacity) => this.writeCString(this.hostProfile.appId, ptr, capacity),
-                o: () => this.warnOnce('integrity-functions', 'Node.js 环境不提供小游戏函数完整性列表'),
+                // The WeChat import also writes environment-probe results; a missing probe must not be reported as passed.
+                o: () => this.warnOnce('integrity-functions', this.hostProfile.platform === 'wx'
+                    ? 'Node.js 环境不提供微信小游戏环境探测接口'
+                    : 'Node.js 环境不提供小游戏函数完整性列表'),
                 p: (filePtr) => {
                     try {
                         const stat = fs.statSync(this.resolveDataPath(this.readCString(filePtr)));
