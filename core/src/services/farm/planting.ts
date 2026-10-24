@@ -13,7 +13,7 @@ const { getPlantRankings } = require('../analytics');
 const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getCareerInfoOrNull } = require('../career');
-const { getAllLands, buyGoods, removePlant, fertilizeOne } = require('./api');
+const { getAllLands, buyGoods, removePlant, fertilizeOne, isFertilizerContainerEmpty } = require('./api');
 const {
     selectFutureLayoutReservation,
     getRegisteredLayout,
@@ -925,7 +925,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
     return { plantedLands: [...new Set(plantedLands)], remainingLandIds, uncertain };
 }
 
-async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean } = {}): Promise<{ normal: number; organic: number }> {
+async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean; lands?: any[] } = {}): Promise<{ normal: number; organic: number }> {
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
@@ -973,7 +973,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let latestLands: any[] = [];
     const landTypeById = new Map<number, string>();
     try {
-        const latest = await getAllLands();
+        // 巡田补肥的调用方刚拉过一次全农场地块，传进来复用，省掉重复的 AllLands
+        const latest: any = Array.isArray(options.lands) ? { lands: options.lands } : await getAllLands();
         latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
         for (const land of latestLands) {
             if (!land) continue;
@@ -1027,7 +1028,16 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let fertilizedOrganic: number = 0;
 
     if (!skipNormal && (fertilizerConfig === 'normal' || fertilizerConfig === 'both' || fertilizerConfig === 'smart')) {
-        if (normalTargets.length === 0) {
+        if (isFertilizerContainerEmpty(NORMAL_FERTILIZER_ID)) {
+            log('施肥', `${reasonLabel}：普通化肥容器为空，5 分钟内不再发送施肥请求`, {
+                module: 'farm',
+                event: eventName,
+                result: 'skip',
+                reason,
+                type: 'normal',
+                cause: 'container_empty',
+            });
+        } else if (normalTargets.length === 0) {
             log('施肥', `${reasonLabel}：普通化肥目标为空（传入 ${planted.length} 块，范围: ${selectedLandTypeNames.join('、')}），跳过普通施肥`, {
                 module: 'farm',
                 event: eventName,
@@ -1051,7 +1061,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         });
             recordOperation('fertilize', fertilizedNormal);
             } else {
-                log('施肥', `${reasonLabel}：普通化肥施肥 0/${normalTargets.length} 块（可能化肥不足或地块不可施）`, {
+                const emptyLatched: boolean = isFertilizerContainerEmpty(NORMAL_FERTILIZER_ID);
+                log('施肥', `${reasonLabel}：普通化肥施肥 0/${normalTargets.length} 块（${emptyLatched ? '普通化肥容器为空，5 分钟内不再申请' : '可能化肥不足或地块不可施'}）`, {
                     module: 'farm',
                     event: eventName,
                     result: 'skip',

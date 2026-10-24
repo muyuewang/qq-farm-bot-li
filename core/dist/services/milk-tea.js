@@ -205,7 +205,7 @@ async function getMilkTeaActivity(page = 'shop', input = {}) {
     }
     return result;
 }
-async function perform(action, input) {
+async function perform(action, input, options = {}) {
     if (!Object.hasOwn(operations, action) || readActions.has(action))
         fail('未知的活动操作');
     const page = ['exchange'].includes(action) ? 'exchange' : ['unlock', 'fundClaim'].includes(action) ? 'fund'
@@ -325,6 +325,10 @@ async function perform(action, input) {
     const rewards = items(reply.awards || reply.items || reply.rewards || reply.opening_gift || reply.items_gained);
     if (action === 'boost')
         rewards.push(...items([{ id: 1041, count: reply.token_gain }, { id: 1001, count: reply.coin_gain }]).filter(v => v.count > 0));
+    // 自动化只读回包里的 result/rewards，写后再拉一整份活动快照（GetGroup + 商店/工坊页 + 背包）纯属白给；
+    // 面板调用保持原样，它要靠这份新状态重渲染。
+    if (options.skipStateRefresh)
+        return { activity: null, result, rewards };
     try {
         return { activity: await getMilkTeaActivity(page, input), result, rewards };
     }
@@ -332,8 +336,8 @@ async function perform(action, input) {
         return { activity: null, result, rewards, refreshRequired: true };
     }
 }
-function operateMilkTeaActivity(action, input = {}) {
-    const result = tail.then(() => perform(action, input));
+function operateMilkTeaActivity(action, input = {}, options = {}) {
+    const result = tail.then(() => perform(action, input, options));
     tail = result.catch(() => { });
     return result;
 }

@@ -10,7 +10,7 @@ const { toNum, log, logWarn, randomDelay } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
 const { runExclusiveAutomationTask } = require('../automation-lock');
 const { recordOperation } = require('../stats');
-const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./api');
+const { getAllLands, harvest, farming, unlockLand, upgradeLand, isFertilizerContainerEmpty, NORMAL_FERTILIZER_ID } = require('./api');
 const {
     analyzeLands,
     getCleanableFarmSocialEventItemIds,
@@ -351,7 +351,11 @@ async function runFarmOperation(
         const canApplyNormal = fertilizerConfig === 'normal'
             || fertilizerConfig === 'both'
             || fertilizerConfig === 'smart';
-        if (isAutomationOn('fertilizer_multi_season') && canApplyNormal) {
+        // 容器为空的结论还在有效期内：纯普通化肥策略下，连"检测哪些地仍可施"都不用问，
+        // 一整轮（AllLands 两次 + 每块地一次 Fertilize）直接省掉。both/smart 还顺带做有机肥，保留检测。
+        const skipRoundForEmptyContainer: boolean = fertilizerConfig === 'normal'
+            && isFertilizerContainerEmpty(NORMAL_FERTILIZER_ID);
+        if (isAutomationOn('fertilizer_multi_season') && canApplyNormal && !skipRoundForEmptyContainer) {
             try {
                 const latest = await getAllLands();
                 const latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
@@ -379,7 +383,7 @@ async function runFarmOperation(
                         count: targets.length,
                         landIds: targets,
                     });
-                    const result = await runFertilizerByConfig(targets, { reason: 'multi_season', propagateErrors });
+                    const result = await runFertilizerByConfig(targets, { reason: 'multi_season', propagateErrors, lands: latestLands });
                     if (result.normal > 0) actions.push(`补肥${result.normal}`);
                 }
             } catch (e: any) {

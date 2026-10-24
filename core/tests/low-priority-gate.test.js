@@ -41,7 +41,7 @@ test('让路错误识别：让路、队列已满、连接断开都算「该整�
     assert.ok(isGatewayYieldError(busy));
     assert.ok(isGatewayYieldError(new Error('请求等待队列已满: Enter (queued=100, pending=4)')));
     assert.ok(isGatewayYieldError(new Error('请求超时: Enter (stage=queued, pending=3, queued=1)')));
-    assert.ok(isGatewayYieldError(new Error('请求已中断: 93s 无入站数据，连续 3 次心跳失败')));
+    assert.ok(isGatewayYieldError(new Error('请求已中断: 143s 无入站数据，连续 5 次心跳失败')));
     assert.ok(isGatewayYieldError(new Error('连接未打开: Enter')));
     assert.ok(isGatewayYieldError(new Error('账号尚未登录: Enter')));
 

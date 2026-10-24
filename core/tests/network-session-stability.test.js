@@ -102,7 +102,7 @@ test('wall-clock jumps cannot disconnect a recently active connection or conceal
     const heartbeat = h.tasks.get('heartbeat_interval');
     h.advance(20000);
     h.jumpWall(86400000);
-    await heartbeat(); await heartbeat(); await heartbeat();
+    await heartbeat(); await heartbeat(); await heartbeat(); await heartbeat();
     assert.equal(disconnects.length, 0);
     assert.equal(h.api.snapshot().lastInboundAgeMs, 20000);
     assert.equal(h.api.snapshot().onlineAgeMs, 20000);

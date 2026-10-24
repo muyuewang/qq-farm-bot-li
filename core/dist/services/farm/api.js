@@ -79,6 +79,33 @@ const NORMAL_FERTILIZER_ID = 1011;
 const ORGANIC_FERTILIZER_ID = 1012;
 const MAX_ORGANIC_FERTILIZE_OPERATIONS = 240;
 const MAX_ORGANIC_FERTILIZE_ROUNDS = 20;
+// 容器为空时服务端对每一块地都回 1000019「容器不足」，而地块侧的数据完全看不出差别：
+// 补肥每 30~60 秒就会重新"检测到 N 块地仍可施"，撞一次失败再撞下一次。记住这个结论一段时间，
+// 期间不再发这类写请求；施成功任一块地、或到期后重新试探（购肥成功通常在 TTL 之内就会发生）。
+const FERTILIZER_EMPTY_CODE = 1000019;
+const FERTILIZER_EMPTY_TTL_MS = 5 * 60 * 1000;
+const fertilizerEmptyUntil = new Map();
+function isFertilizerEmptyError(error) {
+    return getGatewayErrorCode(error) === FERTILIZER_EMPTY_CODE
+        && /容器不足|容器为空/.test(String(error && error.message ? error.message : ''));
+}
+function markFertilizerContainerEmpty(fertilizerId) {
+    fertilizerEmptyUntil.set(toNum(fertilizerId), Date.now() + FERTILIZER_EMPTY_TTL_MS);
+}
+function clearFertilizerContainerEmpty(fertilizerId) {
+    fertilizerEmptyUntil.delete(toNum(fertilizerId));
+}
+function isFertilizerContainerEmpty(fertilizerId) {
+    const key = toNum(fertilizerId);
+    const until = fertilizerEmptyUntil.get(key) || 0;
+    if (!until)
+        return false;
+    if (Date.now() >= until) {
+        fertilizerEmptyUntil.delete(key);
+        return false;
+    }
+    return true;
+}
 async function fertilizeOne(landId, fertilizerId = NORMAL_FERTILIZER_ID) {
     return fertilizeBatch([landId], fertilizerId);
 }
@@ -120,6 +147,7 @@ async function fertilize(landIds, fertilizerId = NORMAL_FERTILIZER_ID, propagate
             })).finish();
             await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
             successCount++;
+            clearFertilizerContainerEmpty(fertilizerId);
         }
         catch (error) {
             if (isSkippableFertilizeLandError(error)) {
@@ -130,6 +158,12 @@ async function fertilize(landIds, fertilizerId = NORMAL_FERTILIZER_ID, propagate
                     landId,
                     code: getGatewayErrorCode(error),
                 });
+            }
+            else if (isFertilizerEmptyError(error)) {
+                markFertilizerContainerEmpty(fertilizerId);
+                if (propagateErrors)
+                    throw error;
+                break;
             }
             else if (propagateErrors) {
                 throw error;
@@ -248,6 +282,9 @@ module.exports = {
     fertilize,
     isSkippableFertilizeLandError,
     fertilizeOrganicLoop,
+    isFertilizerContainerEmpty,
+    NORMAL_FERTILIZER_ID,
+    ORGANIC_FERTILIZER_ID,
     removePlant,
     upgradeLand,
     unlockLand,

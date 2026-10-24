@@ -131,11 +131,12 @@ test('invalid TSDK initialization credentials are rejected', () => {
 });
 
 test('heartbeat policy tolerates transient stalls but terminates a stale connection', () => {
-    assert.equal(MAX_HEARTBEAT_MISSES, 3);
+    assert.equal(MAX_HEARTBEAT_MISSES, 5);
     assert.equal(HEARTBEAT_STALE_AFTER_MS, 30000);
     assert.equal(shouldTerminateForHeartbeat(2, 120000), false);
-    assert.equal(shouldTerminateForHeartbeat(3, 30000), false);
-    assert.equal(shouldTerminateForHeartbeat(3, 30001), true);
+    assert.equal(shouldTerminateForHeartbeat(4, 120000), false);
+    assert.equal(shouldTerminateForHeartbeat(5, 30000), false);
+    assert.equal(shouldTerminateForHeartbeat(5, 30001), true);
     assert.equal(shouldTerminateForHeartbeat(8, 1000), false);
 });
 

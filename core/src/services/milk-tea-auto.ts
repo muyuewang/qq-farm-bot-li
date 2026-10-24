@@ -76,7 +76,7 @@ function sleep(ms: number): Promise<void> {
 
 function createMilkTeaAutomation(deps: {
     getMilkTeaActivity: (page: string, input?: any) => Promise<any>;
-    operateMilkTeaActivity: (action: string, input?: any) => Promise<any>;
+    operateMilkTeaActivity: (action: string, input?: any, options?: { skipStateRefresh?: boolean }) => Promise<any>;
     getShareRewardActivity: (activityId: string) => Promise<any>;
     operateShareRewardActivity: (activityId: string, action: string, input?: any) => Promise<any>;
     getServerTimeSec: () => number;
@@ -100,6 +100,11 @@ function createMilkTeaAutomation(deps: {
     function rewardText(result: any): string {
         const rewards = result?.rewards || [];
         return rewards.length ? `，获得 ${rewards.map((item: any) => `${item.name}x${item.count}`).join('、')}` : '';
+    }
+
+    // 自动化侧的写请求统一走这里：milk-tea.ts 写后那份活动快照没人读，省掉它。
+    function write(action: string, input: any = {}): Promise<any> {
+        return operateMilkTeaActivity(action, input, { skipStateRefresh: true });
     }
 
     async function perform(title: string, run: () => Promise<any>, action: string): Promise<any> {
@@ -146,7 +151,7 @@ function createMilkTeaAutomation(deps: {
             skip('claim', '收银台暂无可领取收益');
             return;
         }
-        await perform('领取奶茶收银台收益', () => operateMilkTeaActivity('claim'), 'claim');
+        await perform('领取奶茶收银台收益', () => write('claim'), 'claim');
     }
 
     async function runWages(): Promise<void> {
@@ -156,7 +161,7 @@ function createMilkTeaAutomation(deps: {
             skip('wages', '没有待领取的工资');
             return;
         }
-        await perform('领取奶茶员工工资', () => operateMilkTeaActivity('wages'), 'wages');
+        await perform('领取奶茶员工工资', () => write('wages'), 'wages');
     }
 
     async function runFund(): Promise<void> {
@@ -171,7 +176,7 @@ function createMilkTeaAutomation(deps: {
             skip('fund_claim', '没有已达档位可领取的成长基金奖励');
             return;
         }
-        await perform('领取成长基金档位奖励', () => operateMilkTeaActivity('fundClaim'), 'fund_claim');
+        await perform('领取成长基金档位奖励', () => write('fundClaim'), 'fund_claim');
     }
 
     /**
@@ -206,7 +211,7 @@ function createMilkTeaAutomation(deps: {
         for (const batch of batches.slice(0, CRAFT_CALLS_PER_TICK)) {
             const total = batch.stacks.reduce((sum: number, v: any) => sum + Number(v.count), 0);
             await perform(`制作奶茶（${batch.name} ×${total}）`,
-                () => operateMilkTeaActivity('craft', { fruits: batch.stacks.map((v: any) => ({ uid: v.uid, count: v.count })) }), 'craft');
+                () => write('craft', { fruits: batch.stacks.map((v: any) => ({ uid: v.uid, count: v.count })) }), 'craft');
             await sleep(CRAFT_SPACER_MS);
         }
         if (batches.length > CRAFT_CALLS_PER_TICK) {
@@ -268,7 +273,7 @@ function createMilkTeaAutomation(deps: {
         const who = `${chosen.friend.name || chosen.friend.gid}${chosen.is_robot ? '（机器人）' : ''}`;
         const talent = Number(chosen.talent_id) ? `，${chosen.talent_name || talentName(Number(chosen.talent_id))}` : '';
         await perform(`雇佣奶茶员工（${who}${talent}，${hours ? `${hours} 小时` : '所选'}班次，位置 ${slotIndex + 1}，花 ${wage} 奶茶券）`,
-            () => operateMilkTeaActivity('hire', {
+            () => write('hire', {
                 slotIndex,
                 targetGid: String(chosen.friend.gid),
                 durationId: options.durationId,
@@ -285,7 +290,7 @@ function createMilkTeaAutomation(deps: {
             return;
         }
         await perform('奶茶店铺升级',
-            () => operateMilkTeaActivity('upgrade', { expectedLevel: Number(state.summary.level) }), 'upgrade');
+            () => write('upgrade', { expectedLevel: Number(state.summary.level) }), 'upgrade');
     }
 
     /**
@@ -319,7 +324,7 @@ function createMilkTeaAutomation(deps: {
             return;
         }
         await perform(`一键爆单 ${count} 次（待售 ${pending} 杯）`,
-            () => operateMilkTeaActivity('boost', { count, expectedCosts: [{ id: itemId, count: 1 }] }), 'boost');
+            () => write('boost', { count, expectedCosts: [{ id: itemId, count: 1 }] }), 'boost');
     }
 
     /**
@@ -359,7 +364,7 @@ function createMilkTeaAutomation(deps: {
         }
         const employer = shift.employer?.name || shift.shop_name || '老板';
         await perform(`工作互动·花式摇杯（在 ${employer} 的店，本班还剩 ${chances} 次）`,
-            () => operateMilkTeaActivity('interact', { interactionType: WORK_INTERACTION_ID, expectedShiftId: String(shift.shift_id ?? '') }),
+            () => write('interact', { interactionType: WORK_INTERACTION_ID, expectedShiftId: String(shift.shift_id ?? '') }),
             'work_interact');
     }
 

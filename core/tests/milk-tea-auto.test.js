@@ -66,6 +66,7 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
     const pageInputs = [];
     const operations = [];
     const calls = [];
+    const writeOptions = [];
     const shareReads = [];
     const shareOperations = [];
     let now = serverTime;
@@ -90,9 +91,10 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
             if (state instanceof Error) throw state;
             return typeof state === 'function' ? state(page) : state;
         }),
-        operateMilkTeaActivity: async (action, input) => track(async () => {
+        operateMilkTeaActivity: async (action, input, options) => track(async () => {
             operations.push(action);
             calls.push({ action, input: input || {} });
+            writeOptions.push({ action, options: options || {} });
             if (operate) {
                 const outcome = operate(action);
                 if (outcome instanceof Error) throw outcome;
@@ -125,6 +127,7 @@ function harness({ pages, share, operate, operateShare, serverTime = 1790260000 
         pageInputs,
         operations,
         calls,
+        writeOptions,
         shareReads,
         shareOperations,
         maxInflight: () => maxInflight,
@@ -715,4 +718,6 @@ test('十一个任务串行执行、任务之间休眠，不并发压连接', as
     assert.deepEqual(h.reads, ['shop', 'work', 'fund', 'workshop', 'hireList', 'upgrade', 'shop', 'work']);
     assert.deepEqual(h.operations, ['claim', 'wages', 'fundClaim', 'craft', 'hire', 'upgrade', 'boost', 'interact']);
     assert.deepEqual(h.shareOperations.map(v => v.action), ['daily', 'share', 'milestones']);
+    // 自动化只要回包里的 result/rewards，写后那份整页快照没人读，必须全部带上跳过标记。
+    assert.deepEqual(h.writeOptions.map(v => v.options.skipStateRefresh), h.operations.map(() => true));
 });

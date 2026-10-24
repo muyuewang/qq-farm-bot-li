@@ -87,6 +87,10 @@ function createMilkTeaAutomation(deps) {
         const rewards = result?.rewards || [];
         return rewards.length ? `，获得 ${rewards.map((item) => `${item.name}x${item.count}`).join('、')}` : '';
     }
+    // 自动化侧的写请求统一走这里：milk-tea.ts 写后那份活动快照没人读，省掉它。
+    function write(action, input = {}) {
+        return operateMilkTeaActivity(action, input, { skipStateRefresh: true });
+    }
     async function perform(title, run, action) {
         try {
             const result = await run();
@@ -129,7 +133,7 @@ function createMilkTeaAutomation(deps) {
             skip('claim', '收银台暂无可领取收益');
             return;
         }
-        await perform('领取奶茶收银台收益', () => operateMilkTeaActivity('claim'), 'claim');
+        await perform('领取奶茶收银台收益', () => write('claim'), 'claim');
     }
     async function runWages() {
         const state = await shopState('work', 'wages');
@@ -139,7 +143,7 @@ function createMilkTeaAutomation(deps) {
             skip('wages', '没有待领取的工资');
             return;
         }
-        await perform('领取奶茶员工工资', () => operateMilkTeaActivity('wages'), 'wages');
+        await perform('领取奶茶员工工资', () => write('wages'), 'wages');
     }
     async function runFund() {
         // 成长基金跟店铺开没开业无关，读的是 fund 页自己的进度。
@@ -154,7 +158,7 @@ function createMilkTeaAutomation(deps) {
             skip('fund_claim', '没有已达档位可领取的成长基金奖励');
             return;
         }
-        await perform('领取成长基金档位奖励', () => operateMilkTeaActivity('fundClaim'), 'fund_claim');
+        await perform('领取成长基金档位奖励', () => write('fundClaim'), 'fund_claim');
     }
     /**
      * 制作奶茶（62）。服务端要求每堆的数量和刚读到的一致，所以只能整堆提交；按果实 id 分组、
@@ -187,7 +191,7 @@ function createMilkTeaAutomation(deps) {
         const batches = groups.flatMap((group) => Array.from({ length: Math.ceil(group.stacks.length / CRAFT_STACKS_PER_CALL) }, (_, index) => ({ name: group.name, stacks: group.stacks.slice(index * CRAFT_STACKS_PER_CALL, (index + 1) * CRAFT_STACKS_PER_CALL) })));
         for (const batch of batches.slice(0, CRAFT_CALLS_PER_TICK)) {
             const total = batch.stacks.reduce((sum, v) => sum + Number(v.count), 0);
-            await perform(`制作奶茶（${batch.name} ×${total}）`, () => operateMilkTeaActivity('craft', { fruits: batch.stacks.map((v) => ({ uid: v.uid, count: v.count })) }), 'craft');
+            await perform(`制作奶茶（${batch.name} ×${total}）`, () => write('craft', { fruits: batch.stacks.map((v) => ({ uid: v.uid, count: v.count })) }), 'craft');
             await sleep(CRAFT_SPACER_MS);
         }
         if (batches.length > CRAFT_CALLS_PER_TICK) {
@@ -247,7 +251,7 @@ function createMilkTeaAutomation(deps) {
         const hours = Number((state.durations || []).find((v) => Number(v.duration_id) === options.durationId)?.duration_sec || 0) / 3600;
         const who = `${chosen.friend.name || chosen.friend.gid}${chosen.is_robot ? '（机器人）' : ''}`;
         const talent = Number(chosen.talent_id) ? `，${chosen.talent_name || talentName(Number(chosen.talent_id))}` : '';
-        await perform(`雇佣奶茶员工（${who}${talent}，${hours ? `${hours} 小时` : '所选'}班次，位置 ${slotIndex + 1}，花 ${wage} 奶茶券）`, () => operateMilkTeaActivity('hire', {
+        await perform(`雇佣奶茶员工（${who}${talent}，${hours ? `${hours} 小时` : '所选'}班次，位置 ${slotIndex + 1}，花 ${wage} 奶茶券）`, () => write('hire', {
             slotIndex,
             targetGid: String(chosen.friend.gid),
             durationId: options.durationId,
@@ -263,7 +267,7 @@ function createMilkTeaAutomation(deps) {
             skip('upgrade', '还没达到店铺升级的营业额条件');
             return;
         }
-        await perform('奶茶店铺升级', () => operateMilkTeaActivity('upgrade', { expectedLevel: Number(state.summary.level) }), 'upgrade');
+        await perform('奶茶店铺升级', () => write('upgrade', { expectedLevel: Number(state.summary.level) }), 'upgrade');
     }
     /**
      * 一键爆单（60）：一个宣传喇叭卖 boost_cups_per_use 杯，用量按待售杯数向上取整，
@@ -296,7 +300,7 @@ function createMilkTeaAutomation(deps) {
             skip('boost', '待售数量不足一次爆单');
             return;
         }
-        await perform(`一键爆单 ${count} 次（待售 ${pending} 杯）`, () => operateMilkTeaActivity('boost', { count, expectedCosts: [{ id: itemId, count: 1 }] }), 'boost');
+        await perform(`一键爆单 ${count} 次（待售 ${pending} 杯）`, () => write('boost', { count, expectedCosts: [{ id: itemId, count: 1 }] }), 'boost');
     }
     /**
      * 我的工作互动（65）。只有被雇佣到别人的店里当班才有班次可互动：my_shift 在、还没下班、
@@ -335,7 +339,7 @@ function createMilkTeaAutomation(deps) {
             return;
         }
         const employer = shift.employer?.name || shift.shop_name || '老板';
-        await perform(`工作互动·花式摇杯（在 ${employer} 的店，本班还剩 ${chances} 次）`, () => operateMilkTeaActivity('interact', { interactionType: WORK_INTERACTION_ID, expectedShiftId: String(shift.shift_id ?? '') }), 'work_interact');
+        await perform(`工作互动·花式摇杯（在 ${employer} 的店，本班还剩 ${chances} 次）`, () => write('interact', { interactionType: WORK_INTERACTION_ID, expectedShiftId: String(shift.shift_id ?? '') }), 'work_interact');
     }
     /**
      * 快乐不独享是活动组里的独立实例，每期换一个 activity_id，所以按实例表从新到旧找

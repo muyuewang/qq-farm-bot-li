@@ -947,8 +947,14 @@ function startHeartbeat(context) {
             if (!isCurrentConnection(context))
                 return;
             heartbeat.replies += 1;
+            const recoveredMisses = heartbeatMissCount;
+            const heartbeatOutageMs = Math.max(0, performance.now() - lastHeartbeatMono);
             lastHeartbeatMono = performance.now();
             heartbeatMissCount = 0;
+            if (recoveredMisses > 0) {
+                logWarn('心跳', `心跳恢复: 连续 ${recoveredMisses}/${MAX_HEARTBEAT_MISSES} 次未响应后重新收到回包，`
+                    + `静默 ${Math.round(heartbeatOutageMs / 1000)}s, 近60s ${trafficMeter.formatWindow(60000)}`, { gid: userState.gid, event: 'heartbeat_recovered', misses: recoveredMisses });
+            }
             try {
                 const reply = types.HeartbeatReply.decode(replyBody);
                 if (reply.server_time)
