@@ -878,6 +878,9 @@ async function handleApiCall(msg) {
                 case 'getIllustratedSnapshot':
                     result = await require('../services/illustrated').getIllustratedSnapshot();
                     break;
+                case 'getCollectionsSnapshot':
+                    result = await require('../services/collections').getCollectionsSnapshot();
+                    break;
                 case 'claimIllustratedRewards':
                     result = await require('../services/illustrated').claimIllustratedRewards(args[0]);
                     break;

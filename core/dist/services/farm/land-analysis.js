@@ -632,8 +632,9 @@ function summarizeLandDetails(lands) {
     }
     return summary;
 }
-const ALL_FERTILIZER_LAND_TYPES = ['purple-gold', 'gold', 'black', 'red', 'normal'];
+const ALL_FERTILIZER_LAND_TYPES = ['blue-crystal', 'purple-gold', 'gold', 'black', 'red', 'normal'];
 const FERTILIZER_LAND_TYPE_LABELS = {
+    'blue-crystal': '蓝晶土地',
     'purple-gold': '紫金土地',
     gold: '金土地',
     black: '黑土地',
@@ -642,6 +643,8 @@ const FERTILIZER_LAND_TYPE_LABELS = {
 };
 function getLandTypeByLevel(level) {
     const lv = toNum(level);
+    if (lv === 6)
+        return 'blue-crystal';
     if (lv >= 5)
         return 'purple-gold';
     if (lv === 4)

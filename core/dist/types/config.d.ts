@@ -2,7 +2,7 @@ export {};
 export type PlantingStrategy = 'preferred' | 'level' | 'max_exp' | 'max_fert_exp' | 'max_profit' | 'max_fert_profit' | 'bag_priority';
 export type BagSeedFallbackStrategy = Exclude<PlantingStrategy, 'bag_priority'>;
 export type FertilizerMode = 'both' | 'normal' | 'organic' | 'smart' | 'none';
-export type FertilizerLandType = 'purple-gold' | 'gold' | 'black' | 'red' | 'normal';
+export type FertilizerLandType = 'blue-crystal' | 'purple-gold' | 'gold' | 'black' | 'red' | 'normal';
 export interface AutomationConfig {
     farm: boolean;
     farm_push: boolean;

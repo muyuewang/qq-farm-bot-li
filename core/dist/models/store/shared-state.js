@@ -17,7 +17,8 @@ const PUSHOO_CHANNELS = new Set([
     'discord', 'wxpusher', 'meow',
 ]);
 const DEFAULT_FERTILIZER_LAND_TYPES = ['purple-gold', 'gold', 'black', 'red', 'normal'];
-const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
+const ALL_FERTILIZER_LAND_TYPES = ['blue-crystal', ...DEFAULT_FERTILIZER_LAND_TYPES];
+const FERTILIZER_LAND_TYPE_SET = new Set(ALL_FERTILIZER_LAND_TYPES);
 const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC = 300;
 const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC = 60;
@@ -214,7 +215,7 @@ function normalizeBagSeedLandTypes(input) {
                 continue;
             types.push(type);
         }
-        if (types.length === 0 || types.length === DEFAULT_FERTILIZER_LAND_TYPES.length)
+        if (types.length === 0 || types.length === ALL_FERTILIZER_LAND_TYPES.length)
             continue;
         normalized[String(seedId)] = types;
     }

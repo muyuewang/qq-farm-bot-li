@@ -1,6 +1,6 @@
 export {};
 export type PlantPhase = 'empty' | 'seed' | 'sprout' | 'growing' | 'mature' | 'harvestable' | 'withered';
-export type LandType = 'normal' | 'gold' | 'black' | 'red' | 'purple-gold';
+export type LandType = 'normal' | 'gold' | 'black' | 'red' | 'purple-gold' | 'blue-crystal';
 export interface LandData {
     landId: number;
     plantId: number;
