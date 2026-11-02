@@ -5,6 +5,7 @@ export type FertilizerMode = 'both' | 'normal' | 'organic' | 'smart' | 'none';
 export type FertilizerLandType = 'blue-crystal' | 'purple-gold' | 'gold' | 'black' | 'red' | 'normal';
 export interface AutomationConfig {
     farm: boolean;
+    farm_harvest_tiangong: boolean;
     farm_push: boolean;
     land_upgrade: boolean;
     friend: boolean;

@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * 土地分析 - 纯分析函数 + 阶段/生命周期
  */
 const { PlantPhase, PHASE_NAMES } = require('../../config/config');
-const { getPlantName, getPlantExp, getPlantById, getSeedImageBySeedId, getPlantGrowTime, getPlantGrowPhases, getItemById, getMutantEffectsByIds, getMutantDisplayPlantId, } = require('../../config/gameConfig');
+const { getPlantName, getPlantExp, getPlantById, getSeedImageBySeedId, getPlantGrowTime, getPlantGrowPhases, getItemById, getItemImageById, getMutantEffectsByIds, getMutantDisplayPlantId, } = require('../../config/gameConfig');
 const { toNum, toTimeSec, getServerTimeSec, log, logWarn } = require('../../utils/utils');
 const MATURE_PHASE_RECORD_ID = 19;
 const { buildLandUpgradeDetail } = require('./land-upgrade');
@@ -51,24 +51,44 @@ function getPlantStatusFlags(plant, currentPhase, nowSec = getServerTimeSec(), o
         needBug: hasForeignOwner(plant?.insect_owners) || (insectTime > 0 && insectTime <= nowSec),
     };
 }
-function getPlantMutantConfigIds(plant, currentPhase = null) {
-    const values = [];
-    if (Array.isArray(plant?.mutant_config_ids))
-        values.push(...plant.mutant_config_ids);
+function getPlantMutantRecords(plant, currentPhase = null) {
+    const records = [];
     if (Array.isArray(currentPhase?.mutants)) {
-        values.push(...currentPhase.mutants.map((mutant) => mutant?.mutant_config_id));
+        records.push(...currentPhase.mutants);
     }
     else if (Array.isArray(plant?.phases)) {
         for (const phase of plant.phases) {
             if (Array.isArray(phase?.mutants)) {
-                values.push(...phase.mutants.map((mutant) => mutant?.mutant_config_id));
+                records.push(...phase.mutants);
             }
         }
     }
     if (Array.isArray(plant?.extended_mutations)) {
-        values.push(...plant.extended_mutations.map((record) => record?.mutant_config_id));
+        records.push(...plant.extended_mutations);
     }
+    return records;
+}
+function getPlantMutantConfigIds(plant, currentPhase = null) {
+    const values = Array.isArray(plant?.mutant_config_ids) ? [...plant.mutant_config_ids] : [];
+    values.push(...getPlantMutantRecords(plant, currentPhase).map((record) => record?.mutant_config_id));
     return [...new Set(values.map(normalizePositiveId).filter(Boolean))];
+}
+function getPlantCollectionMutations(plant, currentPhase) {
+    const collections = new Map();
+    for (const record of getPlantMutantRecords(plant, currentPhase)) {
+        if (toNum(record?.mutant_config_id) !== 18)
+            continue;
+        const seriesId = normalizePositiveId(record.collection_series_id);
+        const itemId = normalizePositiveId(record.collection_item_id);
+        if (!seriesId && !itemId)
+            continue;
+        collections.set(`${seriesId}:${itemId}`, {
+            seriesId, itemId,
+            name: itemId ? (getItemById(Number(itemId))?.name || `藏品${itemId}`) : `藏品系列${seriesId}`,
+            image: itemId ? getItemImageById(Number(itemId)) : '',
+        });
+    }
+    return [...collections.values()];
 }
 // 抓包确认：黄金虫、足球和乌云由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
 // 乌云必须以 interaction_uses / interaction_targets 的实时记录为准；field_40={8,1} 只是清理后仍保留的历史。
@@ -295,7 +315,9 @@ function buildLandDetail(land, options = {}) {
     const phaseVal = toNum(currentPhase.phase);
     const plantId = toNum(plant.id);
     const mutantConfigIds = getPlantMutantConfigIds(plant, currentPhase);
-    const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
+    const mutantEffects = getMutantEffectsByIds(mutantConfigIds).map((effect) => effect.id === 18
+        ? { ...effect, collections: getPlantCollectionMutations(plant, currentPhase) }
+        : effect);
     // 协议没有独立的“紫晶共鸣”布尔值：紫金土地由 level 标识，
     // 是否存在加成及具体比例必须以服务端 LandInfo.buff.plant_exp_bonus 为准。
     const purpleCrystalResonanceExpBonus = level === 5 && mutantConfigIds.length > 0

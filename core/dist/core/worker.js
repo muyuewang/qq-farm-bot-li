@@ -1163,6 +1163,12 @@ async function handleApiCall(msg) {
                 case 'operateAutumnActivity':
                     result = await require('../services/autumn-activities').operateAutumnActivity(args[0], args[1], args[2]);
                     break;
+                case 'getPropsShop':
+                    result = await require('../services/commerce').getPropsShop();
+                    break;
+                case 'purchaseProps':
+                    result = await require('../services/commerce').purchaseProps(args[0], args[1], args[2]);
+                    break;
                 case 'getMallCatalog':
                     result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
                     break;

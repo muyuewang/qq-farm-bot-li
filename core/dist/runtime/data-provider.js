@@ -146,6 +146,8 @@ function createDataProvider(options) {
         operateShareRewardActivity: (accountRef, activityId, action, input) => callWorkerApi(resolveAccountRefId(accountRef), 'operateShareRewardActivity', activityId, action, input),
         getAutumnActivity: (accountRef, key) => callWorkerApi(resolveAccountRefId(accountRef), 'getAutumnActivity', key),
         operateAutumnActivity: (accountRef, key, action, input) => callWorkerApi(resolveAccountRefId(accountRef), 'operateAutumnActivity', key, action, input),
+        getPropsShop: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getPropsShop'),
+        purchaseProps: (accountRef, goodsId, count, expectedOffer) => (callWorkerApi(resolveAccountRefId(accountRef), 'purchaseProps', goodsId, count, expectedOffer)),
         getMallCatalog: (accountRef, slotType, subSlotType) => (callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)),
         purchaseMallProduct: (accountRef, goodsId, count, slotType, expectedPrice) => (callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMallProduct', goodsId, count, slotType, expectedPrice)),
         getMysteryShop: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getMysteryShop'),

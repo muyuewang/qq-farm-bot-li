@@ -44,6 +44,7 @@ const DEFAULT_LOGIN_SETTINGS = {
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
         farm: true,
+        farm_harvest_tiangong: true,
         farm_push: true,
         land_upgrade: true,
         friend: true,

@@ -18,7 +18,7 @@ function friendlyError(error) {
     if (ERROR_MESSAGES[code])
         return { code, message: ERROR_MESSAGES[code] };
     const protocolMessage = String(error?.errorMessage || '').trim()
-        || raw.match(/\bcode=\d+\b\s*(.*)$/)?.[1]?.trim();
+        || raw.match(/\bcode=\d+\b(.*)$/)?.[1]?.trim();
     if (protocolMessage)
         return { code, message: protocolMessage };
     if (raw.includes('账号未运行') || raw.includes('账号已离线') || raw.includes('连接未打开') || raw.includes('账号尚未登录')) {
@@ -54,6 +54,8 @@ function mountCommerceRoutes(app, ctx) {
     app.post('/api/activities/share-reward/:activityId/:action', withAccount((accountId, req) => (ctx.provider.operateShareRewardActivity(accountId, req.params.activityId, req.params.action, req.body))));
     app.get('/api/activities/autumn/:key', withAccount((accountId, req) => (ctx.provider.getAutumnActivity(accountId, req.params.key))));
     app.post('/api/activities/autumn/:key/:action', withAccount((accountId, req) => (ctx.provider.operateAutumnActivity(accountId, req.params.key, req.params.action, req.body))));
+    app.get('/api/props-shop', withAccount((accountId) => ctx.provider.getPropsShop(accountId)));
+    app.post('/api/props-shop/purchase', withAccount((accountId, req) => (ctx.provider.purchaseProps(accountId, req.body?.goodsId, req.body?.count, req.body?.expectedOffer))));
     app.get('/api/game-mall', withAccount((accountId, req) => (ctx.provider.getMallCatalog(accountId, req.query.slotType, req.query.subSlotType))));
     app.post('/api/game-mall/purchase', withAccount((accountId, req) => (ctx.provider.purchaseMallProduct(accountId, req.body?.goodsId, req.body?.count, req.body?.slotType, req.body?.expectedPrice))));
     app.get('/api/mystery-shop', withAccount((accountId) => (ctx.provider.getMysteryShop(accountId))));
