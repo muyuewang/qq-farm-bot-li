@@ -70,6 +70,7 @@ function createDataProvider(options) {
         getLands: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getLands', true),
         getIllustratedSnapshot: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getIllustratedSnapshot'),
         getCollectionsSnapshot: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getCollectionsSnapshot'),
+        operateCollections: (accountRef, action, input) => callWorkerApi(resolveAccountRefId(accountRef), 'operateCollections', action, input),
         claimIllustratedRewards: (accountRef, type) => callWorkerApi(resolveAccountRefId(accountRef), 'claimIllustratedRewards', type),
         getSolarCalendar: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getSolarCalendar'),
         operateSolarCalendar: (accountRef, action, input) => callWorkerApi(resolveAccountRefId(accountRef), 'operateSolarCalendar', action, input),

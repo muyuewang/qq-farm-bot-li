@@ -33,6 +33,7 @@ export declare function buildLandUpgradeDetail(land: any, landsMap?: Map<number,
         image: any;
     }[];
     unknown: boolean;
+    precedingLands?: undefined;
 } | {
     mode: string;
     current: {
@@ -51,5 +52,44 @@ export declare function buildLandUpgradeDetail(land: any, landsMap?: Map<number,
     serverAllowed?: undefined;
     needLevel?: undefined;
     prerequisite?: undefined;
+    precedingLands?: undefined;
+} | {
+    mode: string;
+    current: {
+        level: number;
+        name: string;
+        image: string;
+        yieldBonus: number;
+        growthReduction: number;
+        expBonus: number;
+        mutantMultiplier: number;
+        resonanceBonus: number;
+    };
+    next: {
+        level: number;
+        name: string;
+        image: string;
+        yieldBonus: number;
+        growthReduction: number;
+        expBonus: number;
+        mutantMultiplier: number;
+        resonanceBonus: number;
+    };
+    serverAllowed: boolean;
+    needLevel: number;
+    prerequisite: any;
+    precedingLands: {
+        name: string;
+        required: number;
+        owned: number;
+        met: boolean;
+    };
+    costs: {
+        id: string;
+        count: string;
+        name: any;
+        image: any;
+    }[];
+    unknown: boolean;
 };
 //# sourceMappingURL=land-upgrade.d.ts.map

@@ -35,8 +35,8 @@ let fertilizerGiftLastOpenAt = 0;
 let charitySettlementGiftLastOpenAt = 0;
 let pendingBagRequest = null;
 // ============ API ============
-async function getBag() {
-    if (pendingBagRequest)
+async function getBag(options = {}) {
+    if (!options.fresh && pendingBagRequest)
         return pendingBagRequest;
     const request = (async () => {
         const body = types.BagRequest.encode(types.BagRequest.create({})).finish();
@@ -134,7 +134,13 @@ async function useItem(itemId, count = 1, landIds = [], uid = 0) {
         },
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', body);
-    return types.UseReply.decode(replyBody);
+    return describeUseReply(types.UseReply.decode(replyBody));
+}
+function describeUseReply(reply) {
+    return { ...reply, rewards: (reply.items || []).map((item) => ({
+            id: toNum(item.id), count: String(item.count),
+            name: getItemById(toNum(item.id))?.name || `物品${item.id}`,
+        })) };
 }
 async function batchUseItems(items) {
     const payload = (items || []).map((it) => ({
@@ -144,7 +150,7 @@ async function batchUseItems(items) {
     }));
     const body = types.BatchUseRequest.encode(types.BatchUseRequest.create({ items: payload })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'BatchUse', body);
-    return types.BatchUseReply.decode(replyBody);
+    return describeUseReply(types.BatchUseReply.decode(replyBody));
 }
 function isFruitItemId(id) {
     return !!getPlantByFruitId(Number(id));
