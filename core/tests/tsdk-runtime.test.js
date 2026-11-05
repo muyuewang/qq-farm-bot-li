@@ -15,10 +15,10 @@ const {
     resolveTsdkHostProfile,
 } = require('../dist/utils/tsdk-runtime');
 
-// 漂移基准，不是官方对拍结果：同一合成输入下确定性输出，换 TSDK 版本时尾部整段会变（v3.9.0.1793452320 起前 40 字节仍不变）。
+// 漂移基准，不是官方对拍结果：同一合成输入下确定性输出，换 TSDK 版本时尾部整段会变（v3.9.0.1793452320 与 v3.9.0.1793764291 两版之间前 40 字节仍不变）。
 // 官方凭据一致性见 docs/tsdk-runtime.md 与 docs/wechat-connection.md 的当日复核记录，本地只负责抓住「非预期的输入变化」。
 const EXPECTED_QQ_CREDENTIAL_BYTES = Buffer.from(
-    "344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b677d833d474225755fd7b82d6397caad3467cb4ce6ecccaa389a0bced2c183f709fb2acaa495b1ac06918bfe865b93af379489b06fa121fd9503e2956885a2b06d226fd3b8",
+    "344e0d774812caf143fabc83bfe2fef9f863b450d5ee978e5c7b50dfa10f02df7b677d833d4742256177bbb425cef83b3fe7926e3d2626b0abb0603d4ea2ee346993d1eaf96b87504a3311a1db6643d623e08523d1b9bc75cb0b703b4433226ec7434e35d3b8",
     "hex",
 );
 
@@ -52,7 +52,7 @@ test('bundled TSDK matches the audited official QQ build', () => {
     const wasmPath = path.join(__dirname, '..', 'src', 'utils', 'tsdk.wasm');
     const hash = crypto.createHash('sha256').update(fs.readFileSync(wasmPath)).digest('hex');
 
-    assert.equal(TSDK_VERSION, 'v3.9.0.1793452320');
+    assert.equal(TSDK_VERSION, 'v3.9.0.1793764291');
     assert.equal(hash, TSDK_SHA256);
 });
 
@@ -93,7 +93,7 @@ test('QQ host inputs reproduce the complete audited credential byte vector', asy
 
 test('WeChat loads its audited WASM and reports unsupported host calls without user data', async () => {
     const build = TSDK_BUILDS.wx;
-    assert.equal(build.version, 'v3.9.0.1793451777');
+    assert.equal(build.version, 'v3.9.0.1793763796');
     assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '../src/utils', build.file))).digest('hex'), build.sha256);
     const originalGet = https.get;
     const originalRequest = https.request;
