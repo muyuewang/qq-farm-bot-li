@@ -2,22 +2,161 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * 邮箱系统 - 自动领取邮箱奖励
+ *
+ * 邮箱领取属于日常任务：每天在配置的时间点（默认 10:00，可设为 0 点）检查一次。
+ * 领取完成、确认没有奖励或检查失败后，当天不再重复触发。
+ * 执行途中退出留下的 running 记录不算已完成，重启后重新读取邮箱状态。
  */
+const crypto = require('node:crypto');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum, getSystemDateKey } = require('../utils/utils');
+const { log, toNum, getSystemDateKey, getSystemClockMinutes, getServerTimeSec } = require('../utils/utils');
+const { getDataFile } = require('../config/runtime-paths');
+const { readJsonFileStrict, writeJsonFileAtomic } = require('./json-db');
+const { parseHourOfDay } = require('../utils/hour-of-day');
 const DAILY_KEY = 'email_rewards';
-let doneDateKey = '';
+const DEFAULT_EMAIL_CLAIM_HOUR = 10;
+const STATE_VERSION = 1;
+const MINUTES_PER_DAY = 24 * 60;
+let claimHour = DEFAULT_EMAIL_CLAIM_HOUR;
+let stateAccountId = '';
+let attemptedDateKey = '';
 let lastCheckAt = 0;
-const CHECK_COOLDOWN_MS = 5 * 60 * 1000;
-function isEmailCheckDue(previousCheckAt, now, force = false) {
-    return force || now - previousCheckAt >= CHECK_COOLDOWN_MS;
+let lastResult = '';
+let lastError = '';
+let lastClaimed = 0;
+let stateLoaded = false;
+function normalizeClaimHour(value, fallback = DEFAULT_EMAIL_CLAIM_HOUR) {
+    return parseHourOfDay(value) ?? parseHourOfDay(fallback) ?? DEFAULT_EMAIL_CLAIM_HOUR;
 }
-function markDoneToday() {
-    doneDateKey = getSystemDateKey();
+function getStateFile() {
+    if (!stateAccountId)
+        return '';
+    const token = crypto.createHash('sha256').update(stateAccountId, 'utf8').digest('hex');
+    return getDataFile(`email-claim-${token}.json`);
+}
+function loadState() {
+    if (stateLoaded)
+        return;
+    const file = getStateFile();
+    if (!file)
+        return;
+    const state = readJsonFileStrict(file, () => ({}));
+    stateLoaded = true;
+    if (!state || Number(state.version) !== STATE_VERSION)
+        return;
+    const dateKey = String(state.dateKey || '');
+    if (dateKey !== getSystemDateKey())
+        return;
+    attemptedDateKey = dateKey;
+    lastCheckAt = Math.max(0, Number(state.attemptedAt) || 0);
+    lastResult = String(state.result || '');
+    lastError = String(state.lastError || state.error || '');
+    lastClaimed = Math.max(0, Number(state.claimed) || 0);
+    if (lastResult === 'running') {
+        // 上次进程未取得最终结果，恢复为待检查；重新读取后只领取仍可领取的邮件。
+        attemptedDateKey = '';
+        lastResult = '';
+        lastError = '';
+        lastClaimed = 0;
+    }
+}
+function persistState() {
+    const file = getStateFile();
+    if (!file)
+        return true;
+    try {
+        writeJsonFileAtomic(file, {
+            version: STATE_VERSION,
+            dateKey: attemptedDateKey,
+            attemptedAt: lastCheckAt,
+            result: lastResult,
+            lastError,
+            claimed: lastClaimed,
+        });
+        return true;
+    }
+    catch {
+        // 状态保存失败时由调用方停止本次检查，并展示存储错误。
+        return false;
+    }
 }
 function isDoneToday() {
-    return doneDateKey === getSystemDateKey();
+    loadState();
+    return attemptedDateKey === getSystemDateKey() && lastResult !== 'running';
+}
+/** 配置当前账号的邮箱领取时间；切换账号时重新加载该账号的当日状态。 */
+function configureEmailClaim(options = {}) {
+    if (options.hour !== undefined) {
+        claimHour = normalizeClaimHour(options.hour, claimHour);
+    }
+    if (options.accountId !== undefined) {
+        const nextAccountId = String(options.accountId || '');
+        if (nextAccountId !== stateAccountId) {
+            stateAccountId = nextAccountId;
+            attemptedDateKey = '';
+            lastCheckAt = 0;
+            lastResult = '';
+            lastError = '';
+            lastClaimed = 0;
+            stateLoaded = false;
+            loadState();
+        }
+    }
+}
+function getEmailClaimHour() {
+    return claimHour;
+}
+/** 判断某个整点小时是否已经到达（按系统配置时区计算）。 */
+function isEmailClaimTimeReached(hour, nowMs = getServerTimeSec() * 1000) {
+    return getSystemClockMinutes(nowMs) >= normalizeClaimHour(hour) * 60;
+}
+/** 下一次到达设定时间点的本地时间戳；已经过点则顺延到明天。 */
+function getNextScheduledLocalAt(nowMs = Date.now()) {
+    const serverNowMs = getServerTimeSec() * 1000;
+    const minutesNow = getSystemClockMinutes(serverNowMs);
+    let deltaMinutes = claimHour * 60 - minutesNow;
+    if (deltaMinutes <= 0)
+        deltaMinutes += MINUTES_PER_DAY;
+    const secondOfMinute = Math.floor((serverNowMs % 60000) / 1000);
+    return nowMs + deltaMinutes * 60000 - secondOfMinute * 1000;
+}
+function getNextCheckAt() {
+    if (!isDoneToday() && isEmailClaimTimeReached(claimHour))
+        return 0;
+    return getNextScheduledLocalAt();
+}
+function markAttempted() {
+    attemptedDateKey = getSystemDateKey();
+    lastCheckAt = Date.now();
+    lastResult = 'running';
+    lastError = '';
+    lastClaimed = 0;
+    if (!persistState()) {
+        // 本次检查状态无法保存，停止请求并展示错误。
+        lastResult = 'error';
+        lastError = '无法保存邮箱检查状态';
+        return false;
+    }
+    return true;
+}
+function finishAttempt(result, error = '', claimed = 0) {
+    lastCheckAt = Date.now();
+    lastResult = result;
+    lastError = error;
+    lastClaimed = claimed;
+    persistState();
+}
+/** 仅供测试重置内存状态；不会删除真实账号的落盘文件。 */
+function resetEmailClaimStateForTest() {
+    claimHour = DEFAULT_EMAIL_CLAIM_HOUR;
+    stateAccountId = '';
+    attemptedDateKey = '';
+    lastCheckAt = 0;
+    lastResult = '';
+    lastError = '';
+    lastClaimed = 0;
+    stateLoaded = false;
 }
 async function getEmailList(boxType = 1) {
     const body = types.GetEmailListRequest.encode(types.GetEmailListRequest.create({
@@ -72,18 +211,33 @@ function getRewardSummary(items) {
     return summary.join('/');
 }
 async function checkAndClaimEmails(force = false) {
-    const now = Date.now();
-    if (!isEmailCheckDue(lastCheckAt, now, force))
-        return { claimed: 0, rewardItems: 0 };
-    lastCheckAt = now;
+    if (isDoneToday())
+        return { claimed: 0, rewardItems: 0, skipped: 'done' };
+    if (lastResult === 'running')
+        return { claimed: 0, rewardItems: 0, skipped: 'running' };
+    if (!force && !isEmailClaimTimeReached(claimHour))
+        return { claimed: 0, rewardItems: 0, skipped: 'waiting' };
+    // 先记录执行中，避免并发检查；只有取得最终结果后才结束当天检查。
+    if (!markAttempted()) {
+        log('邮箱', '无法保存邮箱检查状态，本次跳过以免重复请求', {
+            module: 'task',
+            event: DAILY_KEY,
+            result: 'error',
+        });
+        return { claimed: 0, rewardItems: 0, skipped: 'storage', error: '无法保存邮箱检查状态' };
+    }
     try {
-        const box1 = await getEmailList(1).catch(() => ({ emails: [] }));
-        const box2 = await getEmailList(2).catch(() => ({ emails: [] }));
+        // 小游戏网关在同一账号上必须串行请求，避免两个邮箱列表请求并发造成回包停滞。
+        const failures = [];
+        const box1 = await getEmailList(1).catch((e) => { failures.push(e); return { emails: [] }; });
+        const box2 = await getEmailList(2).catch((e) => { failures.push(e); return { emails: [] }; });
         const fromBox1 = (box1.emails || []).map((x) => ({ ...x, __boxType: 1 }));
         const fromBox2 = (box2.emails || []).map((x) => ({ ...x, __boxType: 2 }));
         const claimable = collectClaimableEmails({ emails: [...fromBox1, ...fromBox2] });
         if (claimable.length === 0) {
-            markDoneToday();
+            if (failures.length > 0)
+                throw failures[0] || new Error('邮箱列表读取失败');
+            finishAttempt('none');
             log('邮箱', '当前暂无可领取邮箱奖励', {
                 module: 'task',
                 event: DAILY_KEY,
@@ -132,24 +286,41 @@ async function checkAndClaimEmails(force = false) {
             }
         }
         if (claimed > 0) {
+            const incomplete = claimed < claimable.length || failures.length > 0;
+            finishAttempt(incomplete ? 'partial' : 'ok', incomplete ? '部分邮件未能领取' : '', claimed);
             const rewardStr = getRewardSummary(rewards);
-            log('邮箱', rewardStr ? `[邮箱领取] 领取成功 ${claimed} 封 → ${rewardStr}` : `[邮箱领取] 领取成功 ${claimed} 封`, {
+            const suffix = incomplete
+                ? `（${claimed}/${claimable.length} 封，部分失败）`
+                : (rewardStr ? ` → ${rewardStr}` : '');
+            log('邮箱', `[邮箱领取] 领取成功 ${claimed} 封${suffix}`, {
                 module: 'task',
                 event: DAILY_KEY,
-                result: 'ok',
+                result: incomplete ? 'partial' : 'ok',
                 count: claimed,
+                total: claimable.length,
+                listFailures: failures.length,
             });
-            markDoneToday();
+        }
+        else {
+            finishAttempt('error', '本次没有邮件领取成功');
+            log('邮箱', '邮箱奖励领取失败：本次没有邮件领取成功', {
+                module: 'task',
+                event: DAILY_KEY,
+                result: 'error',
+                count: claimable.length,
+            });
         }
         return { claimed, rewardItems: rewards.length };
     }
     catch (e) {
-        log('邮箱', `领取邮箱奖励失败: ${e.message}`, {
+        const message = String(e?.message || e || 'unknown');
+        finishAttempt('error', message);
+        log('邮箱', `领取邮箱奖励失败: ${message}`, {
             module: 'task',
             event: DAILY_KEY,
             result: 'error',
         });
-        return { claimed: 0, rewardItems: 0 };
+        return { claimed: 0, rewardItems: 0, error: message };
     }
 }
 async function batchDeleteEmail(boxType = 1, emailIds = []) {
@@ -166,12 +337,25 @@ module.exports = {
     batchClaimEmail,
     batchDeleteEmail,
     checkAndClaimEmails,
-    CHECK_COOLDOWN_MS,
-    isEmailCheckDue,
-    getEmailDailyState: () => ({
-        key: DAILY_KEY,
-        doneToday: isDoneToday(),
-        lastCheckAt,
-    }),
+    configureEmailClaim,
+    getEmailClaimHour,
+    isEmailClaimTimeReached,
+    getEmailDailyState: () => {
+        loadState();
+        const doneToday = isDoneToday();
+        const checkedToday = attemptedDateKey === getSystemDateKey();
+        return {
+            key: DAILY_KEY,
+            doneToday,
+            lastCheckAt,
+            nextCheckAt: getNextCheckAt(),
+            scheduledHour: claimHour,
+            // 已结束的结果跨日清除；尚在执行中的检查继续展示 running。
+            result: lastResult === 'running' || checkedToday ? lastResult : '',
+            lastError: checkedToday ? lastError : '',
+            claimed: checkedToday ? lastClaimed : 0,
+        };
+    },
+    resetEmailClaimStateForTest,
 };
 //# sourceMappingURL=email.js.map

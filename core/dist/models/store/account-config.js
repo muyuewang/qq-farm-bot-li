@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const sharedState = require('./shared-state');
+const { assertEmailClaimHour } = require('../../utils/hour-of-day');
 const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-cache');
-const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
+const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeEmailClaimHour, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
 function cloneBagSeedLandTypes(input) {
     const cloned = {};
     for (const [seedId, types] of Object.entries(input || {})) {
@@ -17,6 +18,8 @@ function getAccountConfigSnapshot(accountId) {
     return normalizeAccountConfig(globalConfig.accountConfigs[id], sharedState.accountFallbackConfig);
 }
 function setAccountConfigSnapshot(accountId, nextConfig, persist = true) {
+    if (Object.hasOwn(nextConfig, 'emailClaimHour'))
+        assertEmailClaimHour(nextConfig.emailClaimHour);
     // Initialization must happen before changing memory; a first direct call can
     // otherwise reload old data over the configuration it is about to save.
     const persistence = persist ? require('./global-config') : null;
@@ -87,6 +90,7 @@ function getConfigSnapshot(accountId) {
         fertilizerBuyNormalCount: Math.max(0, Math.min(10000, Number(cfg.fertilizerBuyNormalCount) || 0)),
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(cfg.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 30)),
+        emailClaimHour: normalizeEmailClaimHour(cfg.emailClaimHour, sharedState.DEFAULT_ACCOUNT_CONFIG.emailClaimHour),
         bagSeedPriority: [...(cfg.bagSeedPriority || [])],
         bagSeedMultiLandReservationEnabled: !!cfg.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: cloneBagSeedLandTypes(cfg.bagSeedLandTypes),
@@ -101,6 +105,8 @@ function getConfigSnapshot(accountId) {
 }
 function applyConfigSnapshot(snapshot, options = {}) {
     const cfg = snapshot || {};
+    if (Object.hasOwn(cfg, 'emailClaimHour'))
+        assertEmailClaimHour(cfg.emailClaimHour);
     const persist = options.persist !== false;
     const accountId = options.accountId;
     if (persist)
@@ -180,6 +186,9 @@ function applyConfigSnapshot(snapshot, options = {}) {
     }
     if (cfg.fertilizerBuyCheckIntervalMinutes !== undefined && cfg.fertilizerBuyCheckIntervalMinutes !== null) {
         next.fertilizerBuyCheckIntervalMinutes = Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 30));
+    }
+    if (cfg.emailClaimHour !== undefined) {
+        next.emailClaimHour = normalizeEmailClaimHour(cfg.emailClaimHour, next.emailClaimHour);
     }
     if (cfg.bagSeedPriority !== undefined && cfg.bagSeedPriority !== null) {
         next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);

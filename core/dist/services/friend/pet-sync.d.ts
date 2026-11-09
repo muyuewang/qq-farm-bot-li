@@ -62,8 +62,6 @@ export declare const FRIEND_PET_SYNC_TUNING: {
     SYNC_MAX_PER_ROUND_STEP: number;
     SYNC_MAX_PER_ROUND_CAP: number;
     SYNC_BUSY_COOLDOWN_MS: number;
-    FRIEND_TASK_WAIT_MAX_MS: number;
-    FRIEND_TASK_POLL_MS: number;
     GATEWAY_IDLE_WAIT_MAX_MS: number;
     SYNC_CHECK_INTERVAL_MS: number;
     SYNC_FAST_INTERVAL_MS: number;

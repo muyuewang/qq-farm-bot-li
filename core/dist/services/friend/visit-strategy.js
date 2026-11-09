@@ -798,7 +798,7 @@ async function visitFriend(friend, totalActions, myGid, accountId, options = {})
             actions.push(`偷${ok}${plantNames ? `(${plantNames})` : ''}`);
             totalActions.steal += ok;
             recordOperation('steal', ok);
-            await randomDelay(500, 800);
+            await randomDelay(200, 350);
         }
     }
     // 3. 捣乱操作 (放虫/放草)

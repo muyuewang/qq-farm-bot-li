@@ -10,19 +10,21 @@ const MIN_TASK_GAP_MS = 1500;
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-function runExclusiveAutomationTask(taskName, taskFn) {
+function runExclusiveAutomationTask(taskName, taskFn, options = {}) {
     const store = storage.getStore();
-    if (store && store.exclusive)
+    if (!options.detached && store && store.exclusive && store.active)
         return Promise.resolve(taskFn());
     const run = tail.then(async () => {
         const gapMs = lastTaskEndedAt + MIN_TASK_GAP_MS - Date.now();
         if (gapMs > 0)
             await sleep(gapMs);
         running = true;
+        const taskStore = { exclusive: true, active: true };
         try {
-            return await storage.run({ exclusive: true }, taskFn);
+            return await storage.run(taskStore, taskFn);
         }
         finally {
+            taskStore.active = false;
             running = false;
             lastTaskEndedAt = Date.now();
         }

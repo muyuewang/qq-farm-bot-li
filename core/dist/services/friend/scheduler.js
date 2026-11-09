@@ -26,13 +26,13 @@ exports.isHelpExpLimitReached = isHelpExpLimitReached;
 const { CONFIG } = require('../../config/config');
 const crypto = require('node:crypto');
 const { getUserState, networkEvents } = require('../../utils/network');
-const { toNum, getSystemDateKey, log, logWarn, randomDelay } = require('../../utils/utils');
+const { toNum, getSystemDateKey, log, logWarn, randomDelay, sleep } = require('../../utils/utils');
 const { getDataFile } = require('../../config/runtime-paths');
 const { createScheduler } = require('../scheduler');
 const { runExclusiveAutomationTask } = require('../automation-lock');
 const { readJsonFile, writeJsonFileAtomic } = require('../json-db');
 const { setOperationLimitsCallback } = require('../farm');
-const { isAutomationOn, getFriendBlacklist, getAutoAcceptFriendMinLevel, getAutoAcceptRequireOwnLevel, getAutoAcceptHarvestStealEnabled, getAutoAcceptHarvestStealHarvest, getAutoAcceptHarvestStealSteal, } = require('../../models/store');
+const { isAutomationOn, getFriendBlacklist, getStealDelaySeconds, getAutoAcceptFriendMinLevel, getAutoAcceptRequireOwnLevel, getAutoAcceptHarvestStealEnabled, getAutoAcceptHarvestStealHarvest, getAutoAcceptHarvestStealSteal, } = require('../../models/store');
 const { sellAllFruits } = require('../warehouse');
 const { getCareerInfo } = require('../career');
 const { getAllFriends, acceptFriends, rejectFriends, getApplications, } = require('./api');
@@ -49,6 +49,7 @@ function petSyncRef() {
 let isCheckingFriends = false;
 let friendLoopRunning = false;
 let externalSchedulerMode = false;
+let friendLoopGeneration = 0;
 let lastResetDate = ''; // 上次重置日期 (YYYY-MM-DD)
 const friendScheduler = createScheduler('friend');
 const operationLimits = new Map();
@@ -276,8 +277,24 @@ async function checkFriends(options = {}) {
         return false;
     isCheckingFriends = true;
     checkDailyReset();
+    const generation = friendLoopGeneration;
+    const roundDate = getSystemDateKey();
+    const canContinue = () => generation === friendLoopGeneration
+        && !!getUserState().gid && isAutomationOn('friend') && !inFriendQuietHours()
+        && getSystemDateKey() === roundDate;
+    async function waitStealGap(target) {
+        let remainingMs = getStealDelaySeconds(accountId) * 1000;
+        while (remainingMs > 0 && canContinue() && isAutomationOn('friend_steal')
+            && !getFriendBlacklist(accountId).includes(target.gid)) {
+            const sliceMs = Math.min(remainingMs, 1000);
+            await sleep(sliceMs);
+            remainingMs -= sliceMs;
+        }
+    }
     try {
-        const friendsReply = await getAllFriends();
+        const friendsReply = await runExclusiveAutomationTask('friend_list', () => (canContinue() ? getAllFriends() : null), { detached: true });
+        if (!canContinue())
+            return false;
         // 巡查结果同时刷新面板好友列表缓存，避免页面再次请求同一份列表。
         cacheFriendsListFromReply(friendsReply);
         const friends = extractReplyFriends(friendsReply);
@@ -326,7 +343,20 @@ async function checkFriends(options = {}) {
         });
         // 经验在本轮中途满掉之后被跳过的好友数
         let midRoundExpSkipped = 0;
+        let attemptedStealVisit = false;
         for (const target of plan.visits) {
+            if (!canContinue())
+                return false;
+            if (getFriendBlacklist(accountId).includes(target.gid))
+                continue;
+            if (attemptedStealVisit && target.wantSteal && isAutomationOn('friend_steal')) {
+                // 首位可偷好友立即访问，后续等待不持有自动化锁。
+                await waitStealGap(target);
+            }
+            if (!canContinue())
+                return false;
+            if (getFriendBlacklist(accountId).includes(target.gid))
+                continue;
             if (target.wantBad) {
                 // 纯捣乱的好友都排在队尾，额度一用完这一轮就可以收工
                 if (isBadOperationLimitReached() || getRemainingBadOperationTimes() <= 0) {
@@ -342,24 +372,37 @@ async function checkFriends(options = {}) {
                 }
             }
             try {
-                await visitFriend(target, totalActions, state.gid, state.accountId, {
-                    allowSteal: target.wantSteal,
-                    allowHelp: target.wantHelp,
-                    allowBad: target.wantBad,
-                    ignoreExpLimit,
-                });
+                await runExclusiveAutomationTask('friend_visit', async () => {
+                    if (!canContinue() || getFriendBlacklist(accountId).includes(target.gid))
+                        return;
+                    const allowSteal = target.wantSteal && isAutomationOn('friend_steal');
+                    const allowHelp = target.wantHelp && isAutomationOn('friend_help');
+                    const allowBad = target.wantBad && isAutomationOn('friend_bad');
+                    if (!allowSteal && !allowHelp && !allowBad)
+                        return;
+                    if (allowSteal)
+                        attemptedStealVisit = true;
+                    await visitFriend(target, totalActions, state.gid, state.accountId, {
+                        allowSteal,
+                        allowHelp,
+                        allowBad,
+                        ignoreExpLimit,
+                    });
+                }, { detached: true });
             }
             catch (e) {
                 log('好友', `巡查好友失败: ${target.name}, 错误: ${e.message}`, {
                     module: 'friend', event: '好友巡查失败', friendName: target.name, error: e.message,
                 });
             }
-            // 捣乱访问之间放慢一些，其余保持原节奏
+            // 普通访问快速让位，捣乱仍保留较慢间隔。
             if (target.wantBad)
                 await randomDelay(2000, 3500);
             else
-                await randomDelay(500, 800);
+                await randomDelay(200, 350);
         }
+        if (!canContinue())
+            return false;
         if (midRoundExpSkipped > 0) {
             log('好友', `本轮帮助经验在中途达到上限，跳过剩余 ${midRoundExpSkipped} 位非护主犬好友`, {
                 module: 'friend', event: '好友巡查跳过', reason: 'exp_limit', count: midRoundExpSkipped,
@@ -368,7 +411,7 @@ async function checkFriends(options = {}) {
         // 偷菜后自动出售
         if (totalActions.steal > 0) {
             try {
-                await sellAllFruits();
+                await runExclusiveAutomationTask('friend_sell', () => (canContinue() ? sellAllFruits() : undefined), { detached: true });
             }
             catch {
                 // ignore
@@ -409,7 +452,7 @@ async function friendCheckLoop() {
         return;
     if (!friendLoopRunning)
         return;
-    await runExclusiveAutomationTask('friend_check_loop', checkFriends);
+    await checkFriends();
     if (!friendLoopRunning)
         return;
     friendScheduler.setTimeoutTask('friend_check_loop', Math.max(0, CONFIG.friendCheckInterval), () => friendCheckLoop());
@@ -434,6 +477,7 @@ function startFriendCheckLoop(options = {}) {
 }
 function stopFriendCheckLoop() {
     friendLoopRunning = false;
+    friendLoopGeneration++;
     externalSchedulerMode = false;
     petSyncRef().stopFriendPetSyncTimer();
     flushFriendPetCacheNow();

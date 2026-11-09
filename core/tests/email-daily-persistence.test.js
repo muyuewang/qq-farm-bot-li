@@ -228,7 +228,9 @@ test('上游 Worker 的登录与跨日强制任务遵守邮箱时刻，同日整
         process: { env: { FARM_ACCOUNT_ID: 'worker' }, send: noop, on: noop },
         require: name => modules[name] || {},
     }, { filename });
-    const flush = () => new Promise(resolve => setImmediate(resolve));
+    // 本地 automation-lock 在两个任务之间强制留 1500ms 缝（MIN_TASK_GAP_MS），
+    // 排队的邮箱任务不会在微任务里就跑完；等过这个缝再断言，才和线上「30 秒一次 tick」看到的状态一致。
+    const flush = () => new Promise(resolve => setTimeout(resolve, 1600));
     worker.configure({ emailClaimHour: 10 });
     worker.start();
     await flush();
