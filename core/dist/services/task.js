@@ -38,6 +38,17 @@ async function claimDailyReward(type, pointIds) {
     const { body: replyBody } = await sendMsgAsync('gamepb.taskpb.TaskService', 'ClaimDailyReward', body);
     return types.ClaimDailyRewardReply.decode(replyBody);
 }
+async function reportClientProgress(taskId, progress) {
+    if (!types.ClientReportProgressRequest || !types.ClientReportProgressReply) {
+        return null;
+    }
+    const body = types.ClientReportProgressRequest.encode(types.ClientReportProgressRequest.create({
+        task_id: toLong(taskId),
+        progress: toLong(progress),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.taskpb.TaskService', 'ClientReportProgress', body);
+    return types.ClientReportProgressReply.decode(replyBody);
+}
 async function claimAllIllustratedRewards() {
     if (!types.ClaimAllRewardsV2Request || !types.ClaimAllRewardsV2Reply) {
         return { items: [], bonus_items: [] };
@@ -215,6 +226,53 @@ async function checkAndClaimIllustratedRewards() {
         return false;
     }
 }
+// ============ 客户端上报类成长任务 ============
+const CLIENT_REPORT_COND_TYPES = new Set([15]);
+function pickClientReportedTasks(tasks) {
+    const picked = [];
+    for (const task of (Array.isArray(tasks) ? tasks : [])) {
+        const taskId = toNum(task && task.id);
+        const totalProgress = toNum(task && task.total_progress);
+        if (taskId <= 0 || !CLIENT_REPORT_COND_TYPES.has(toNum(task && task.cond_type)))
+            continue;
+        if (!task.is_unlocked || task.is_claimed || totalProgress <= 0)
+            continue;
+        if (toNum(task.progress) >= totalProgress)
+            continue;
+        picked.push(task);
+    }
+    return picked;
+}
+async function completeClientReportedTasks(growthTasks) {
+    let advanced = false;
+    for (const task of pickClientReportedTasks(growthTasks)) {
+        const taskId = toNum(task.id);
+        const totalProgress = Math.max(1, toNum(task.total_progress));
+        const desc = task.desc || `成长任务#${taskId}`;
+        try {
+            const reply = await reportClientProgress(taskId, totalProgress);
+            const updated = normalizeTaskInfo(reply && reply.task_info)
+                .growthTasks.find((t) => toNum(t.id) === taskId);
+            if (toNum(updated && updated.progress) >= totalProgress) {
+                advanced = true;
+                log('任务', `成长任务进度已补齐: ${desc} (${totalProgress}/${totalProgress})`, {
+                    module: 'task', event: '上报成长任务', result: 'ok', taskId, totalProgress
+                });
+            }
+            else {
+                logWarn('任务', `成长任务进度上报未生效: ${desc}`, {
+                    module: 'task', event: '上报成长任务', result: 'ignored', taskId
+                });
+            }
+        }
+        catch (e) {
+            logWarn('任务', `成长任务进度上报失败: ${desc} - ${e.message}`, {
+                module: 'task', event: '上报成长任务', result: 'error', taskId
+            });
+        }
+    }
+    return advanced;
+}
 // ============ 自动领取 ============
 async function checkAndClaimTasks() {
     if (checking)
@@ -228,8 +286,12 @@ async function checkAndClaimTasks() {
             checking = false;
             return;
         }
-        const taskInfo = reply.task_info;
-        const normalized = normalizeTaskInfo(taskInfo);
+        let normalized = normalizeTaskInfo(reply.task_info);
+        if (await completeClientReportedTasks(normalized.growthTasks)) {
+            const refreshed = await getTaskInfo();
+            if (refreshed && refreshed.task_info)
+                normalized = normalizeTaskInfo(refreshed.task_info);
+        }
         const dailyClaimable = analyzeTaskList(normalized.dailyTasks, 'daily');
         const growthClaimable = analyzeTaskList(normalized.growthTasks, 'growth');
         const mainClaimable = analyzeTaskList(normalized.otherTasks, 'main');
