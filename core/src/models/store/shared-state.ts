@@ -82,20 +82,6 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
         show_manual_fertilizer: true,
-        milk_tea_claim_rewards: true,
-        milk_tea_claim_wages: true,
-        milk_tea_claim_fund: true,
-        milk_tea_happy_daily: true,
-        milk_tea_happy_share: true,
-        milk_tea_happy_milestones: true,
-        milk_tea_craft: true,
-        milk_tea_hire: true,
-        milk_tea_upgrade: true,
-        milk_tea_boost: true,
-        milk_tea_work_interact: true,
-        milk_tea_hire_duration_id: 1,
-        milk_tea_hire_talent_id: 0,
-        milk_tea_hire_allow_robots: true,
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
@@ -380,15 +366,6 @@ function normalizeAutomationValue(key: string, value: unknown, current: any): an
     }
     if (key === 'fertilizer_smart_seconds') {
         return Math.max(30, Math.min(3600, Number(value) || 300));
-    }
-    if (key === 'milk_tea_hire_duration_id') {
-        // 班次档数只认官方那三档，别的值一律回到现值：宁可不按用户的意思花奶茶券，也不能报一个服务端不认的档。
-        const durationId = Number.parseInt(String(value), 10);
-        return [1, 2, 3].includes(durationId) ? durationId : current;
-    }
-    if (key === 'milk_tea_hire_talent_id') {
-        const talentId = Number.parseInt(String(value), 10);
-        return [0, 9001, 9002, 9003, 9004].includes(talentId) ? talentId : current;
     }
     return !!value;
 }

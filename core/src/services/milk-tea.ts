@@ -210,7 +210,7 @@ async function getMilkTeaActivity(page = 'shop', input: any = {}) {
     return result;
 }
 
-async function perform(action: string, input: any, options: { skipStateRefresh?: boolean } = {}) {
+async function perform(action: string, input: any) {
     if (!Object.hasOwn(operations, action) || readActions.has(action)) fail('未知的活动操作');
     const page = ['exchange'].includes(action) ? 'exchange' : ['unlock', 'fundClaim'].includes(action) ? 'fund'
         : ['hire'].includes(action) ? 'hireList' : action === 'craft' ? 'workshop' : ['wages', 'interact'].includes(action) ? 'work' : ['rename', 'hireSetting'].includes(action) ? 'settings' : action === 'upgrade' ? 'upgrade' : 'shop';
@@ -293,15 +293,12 @@ async function perform(action: string, input: any, options: { skipStateRefresh?:
     if (action === 'hire' && !reply.results?.some((v: any) => v.success)) fail(reply.results?.[0]?.error_msg || '雇佣未成功，请刷新确认');
     const rewards = items(reply.awards || reply.items || reply.rewards || reply.opening_gift || reply.items_gained);
     if (action === 'boost') rewards.push(...items([{ id: 1041, count: reply.token_gain }, { id: 1001, count: reply.coin_gain }]).filter(v => v.count > 0));
-    // 自动化只读回包里的 result/rewards，写后再拉一整份活动快照（GetGroup + 商店/工坊页 + 背包）纯属白给；
-    // 面板调用保持原样，它要靠这份新状态重渲染。
-    if (options.skipStateRefresh) return { activity: null, result, rewards };
     try { return { activity: await getMilkTeaActivity(page, input), result, rewards }; }
     catch { return { activity: null, result, rewards, refreshRequired: true }; }
 }
 
-function operateMilkTeaActivity(action: string, input: any = {}, options: { skipStateRefresh?: boolean } = {}) {
-    const result = tail.then(() => perform(action, input, options));
+function operateMilkTeaActivity(action: string, input: any = {}) {
+    const result = tail.then(() => perform(action, input));
     tail = result.catch(() => {});
     return result;
 }

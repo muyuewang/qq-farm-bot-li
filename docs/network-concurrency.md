@@ -103,7 +103,6 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 2026-10-23 那份日志里，8m55s 内 `AllLands` 发了 104 次（同期 `Heartbeat` 128 次），另有 20 条 `code=1000019 普通化肥容器不足`——这两笔都是没人要的流量：
 
-- 奶茶自动化：一个动作原本拉三份活动快照（自动化侧选法用的 `shopState()`、`perform()` 写前校验、`perform()` 写后刷新），写后那份只被面板重渲染消费，自动化只读 `result/rewards`。现在 `operateMilkTeaActivity(action, input, { skipStateRefresh: true })` 跳过它，自动化每动作少一次 `GetGroup` + 一次背包/页签请求；手动面板路径不变。写前那份保留，它是 craft/hire/boost 选法防状态漂移的护栏。
 - 普通化肥容器为空：地块侧筛不出「容器空」和「这块地还能施」的差别，所以补肥每轮都会重新检测到 N 块地、撞一次 `1000019` 再撞下一轮。`farm/api.ts` 记住这个结论 5 分钟（施成功任一块地立即解除，手动路径照常抛错），期间 `runFertilizerByConfig` 直接跳过普通施肥，纯普通化肥策略下连巡田检测的 `AllLands` 都不发。
 - 巡田补肥把已经取到的地块快照传给 `runFertilizerByConfig(..., { lands })`，同一轮不再重复拉 `AllLands`（原来每轮两次）。
 

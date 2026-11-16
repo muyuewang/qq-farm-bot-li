@@ -20,7 +20,6 @@ const ranchAutomation = require('../services/ranch/automation');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
-const { createMilkTeaAutomation, isMilkTeaAutomationEnabled, MILK_TEA_CHECK_INTERVAL_MS } = require('../services/milk-tea-auto');
 const { createSolarCalendarAutomation, isSolarCalendarAutomationEnabled, SOLAR_CALENDAR_CHECK_INTERVAL_MS } = require('../services/solar-calendar-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
@@ -49,10 +48,9 @@ interface WorkerRuntimeConfig {
 
 const workerConfig = CONFIG as WorkerRuntimeConfig;
 
-// 奶茶(30min)、节令(30min)、神秘商人(2h) 都在登录就绪那一刻注册，周期互为整数倍，
+// 节令(30min)、神秘商人(2h) 都在登录就绪那一刻注册，周期互为整数倍，
 // 所以每隔 2 小时必然在同一秒一起到期 —— 2026-10-22 那次掉线前的 peak=10/s 正好落在 T0+4h 整。
-// 偏移取对 30min 互不重合的分钟数（11 / 19 / 37 ≡ 11 / 19 / 7），之后任何一秒都只有一个任务到期。
-const MILK_TEA_CHECK_PHASE_MS = 11 * 60 * 1000;
+// 偏移取对 30min 互不重合的分钟数（19 / 37 ≡ 19 / 7），之后任何一秒都只有一个任务到期。
 const SOLAR_CALENDAR_CHECK_PHASE_MS = 19 * 60 * 1000;
 const MYSTERY_SHOP_CHECK_PHASE_MS = 37 * 60 * 1000;
 
@@ -445,7 +443,6 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startUnifiedScheduler();
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
-        startMilkTeaActivityTimer();
         startSolarCalendarTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
@@ -476,65 +473,6 @@ function startMysteryShopTimer(): void {
     workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
     }, { phaseMs: MYSTERY_SHOP_CHECK_PHASE_MS });
-}
-
-let milkTeaAutomation: any = null;
-
-async function runMilkTeaTick(): Promise<void> {
-    if (!loginReady) return;
-    const automation = getAutomation() || {};
-    if (!isMilkTeaAutomationEnabled(automation)) return;
-    if (!milkTeaAutomation) {
-        const { getMilkTeaActivity, operateMilkTeaActivity } = require('../services/milk-tea');
-        const { getShareRewardActivity, operateShareRewardActivity } = require('../services/share-reward-activity');
-        const { getServerTimeSec } = require('../utils/utils');
-        milkTeaAutomation = createMilkTeaAutomation({
-            getMilkTeaActivity,
-            operateMilkTeaActivity,
-            getShareRewardActivity,
-            operateShareRewardActivity,
-            getServerTimeSec,
-            log,
-        });
-    }
-    try {
-        await milkTeaAutomation.runMilkTeaAutomation({
-            claimRewards: automation.milk_tea_claim_rewards === true,
-            claimWages: automation.milk_tea_claim_wages === true,
-            claimFund: automation.milk_tea_claim_fund === true,
-            happyDaily: automation.milk_tea_happy_daily === true,
-            happyShare: automation.milk_tea_happy_share === true,
-            happyMilestones: automation.milk_tea_happy_milestones === true,
-            craft: automation.milk_tea_craft === true,
-            hire: automation.milk_tea_hire === true,
-            upgrade: automation.milk_tea_upgrade === true,
-            boost: automation.milk_tea_boost === true,
-            workInteract: automation.milk_tea_work_interact === true,
-            // 雇佣的三个选法配置。机器人候选在老配置里可能还没有这个 key，缺省按默认（开）处理，
-            // 时长和特长由 milk-tea-auto 自己夹回合法档，非法值只会退回默认，不会报个服务端不认的档。
-            hireDurationId: automation.milk_tea_hire_duration_id,
-            hireTalentId: automation.milk_tea_hire_talent_id,
-            hireAllowRobots: automation.milk_tea_hire_allow_robots !== false,
-        });
-    } catch (e: any) {
-        log('活动', `奶茶自动任务失败: ${e.message}`, { module: 'activity', event: '奶茶活动自动', result: 'error' });
-    }
-}
-
-function stopMilkTeaActivityTimer(): void {
-    workerScheduler.clear('milk_tea_initial');
-    workerScheduler.clear('milk_tea_interval');
-}
-
-function startMilkTeaActivityTimer(): void {
-    stopMilkTeaActivityTimer();
-    if (!loginReady || !isMilkTeaAutomationEnabled(getAutomation())) return;
-    workerScheduler.setTimeoutTask('milk_tea_initial', 90000, () => {
-        runExclusiveAutomationTask('milk_tea', runMilkTeaTick).catch(() => null);
-    });
-    workerScheduler.setIntervalTask('milk_tea_interval', MILK_TEA_CHECK_INTERVAL_MS, () => {
-        runExclusiveAutomationTask('milk_tea', runMilkTeaTick).catch(() => null);
-    }, { phaseMs: MILK_TEA_CHECK_PHASE_MS });
 }
 
 let solarCalendarAutomation: any = null;
@@ -648,7 +586,6 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             }
 
             startMysteryShopTimer();
-            startMilkTeaActivityTimer();
             startSolarCalendarTimer();
         }
     }
