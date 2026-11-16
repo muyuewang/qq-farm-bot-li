@@ -10,7 +10,7 @@ const MCItemInfo_json_1 = __importDefault(require("../../gameConfig/ranch/MCItem
 const MCTask_json_1 = __importDefault(require("../../gameConfig/ranch/MCTask.json"));
 const BigFarmLevel_json_1 = __importDefault(require("../../gameConfig/ranch/BigFarmLevel.json"));
 const MCAnimalMutation_json_1 = __importDefault(require("../../gameConfig/ranch/MCAnimalMutation.json"));
-const { getItemById, getItemImageById } = require('../../config/gameConfig');
+const { getItemById, getItemImageById, getShopGoodsById } = require('../../config/gameConfig');
 const animalMap = new Map(MCAnimalConfig_json_1.default.map(row => [row.id, row]));
 const canMap = new Map(MCCanConfig_json_1.default.map(row => [row.id, row]));
 const facilityMap = new Map(MCFacilityConfig_json_1.default.map(row => [row.facility_id, row]));
@@ -45,6 +45,18 @@ function itemDto(item) {
         return { id, count: quantity(item.count), name: id === 7003 ? '普通罐头桶' : '有机罐头桶', image: getItemImageById(id === 7003 ? 80021 : 80031) };
     return { id, count: quantity(item.count), name: metadata?.name || `物品${id}`, image: getItemImageById(id) };
 }
+function pendingOperationView(operation) {
+    let label = operation.label;
+    const goodsId = operation.target.match(/^ranch:buy:(\d+)$/)?.[1];
+    if (label === '购买牧场商品' && goodsId) {
+        const goods = getShopGoodsById(Number(goodsId));
+        if (goods)
+            label = `购买${itemDto({ id: goods.item_id }).name}`;
+    }
+    return { ...operation, label, costs: operation.costs.map((cost) => ({ ...cost,
+            name: itemDto({ id: Number(cost.resourceKey.slice(5)) }).name,
+        })) };
+}
 function sumItems(items) {
     const totals = new Map();
     for (const item of items)
@@ -59,5 +71,5 @@ function levelInfo(exp) {
     const next = BigFarmLevel_json_1.default.find(row => row.level === current.level + 1);
     return { level: current.level, exp, currentExp: exp - current.exp, neededExp: next ? next.exp - current.exp : null };
 }
-module.exports = { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature, levelInfo };
+module.exports = { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, pendingOperationView, sumItems, signature, levelInfo };
 //# sourceMappingURL=model.js.map

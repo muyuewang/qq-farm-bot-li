@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const { rpc, inScene, isUnlocked } = require('./transport');
-const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, quantity, levelInfo, error } = require('./model');
+const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, pendingOperationView, quantity, levelInfo, error } = require('./model');
 const { getServerTimeSec } = require('../../utils/utils');
 function bagItems(bag) {
     return [...bag.physical_items, ...bag.virtual_items];
@@ -189,7 +189,7 @@ async function getState(view = 'animals', shopId, hostGid) {
     return inScene(async (cells) => {
         const raw = await loadRaw(cells);
         const state = snapshot(raw);
-        state.pendingOperations = require('./operation-state').forCurrentAccount().pending();
+        state.pendingOperations = require('./operation-state').forCurrentAccount().pending().map(pendingOperationView);
         if (view === 'bag')
             state.bag = inventory(raw);
         if (view === 'shop')
