@@ -250,18 +250,19 @@ async function commitSteal(host, ranches, plan) {
             notice: completed < plan.count ? `${notice}；已完成 ${completed} / ${plan.count} 个货架，请刷新核对` : notice };
     });
 }
-// 每位好友只进出一次，各动作仍使用手动入口的资格检查和回包确认。
-async function automateFriend(hostGid, enabled) {
+// 各动作复用手动入口的检查；农场到期时，完成当前操作并离场，下次刷新后续跑。
+async function automateFriend(hostGid, enabled, shouldYield = () => false) {
     return visit(hostGid, async (_entry, ranches, host) => {
         const results = [];
         const times = enabled('stroke') || enabled('putMosquito') ? await getInteractionTimes() : {};
+        const pause = () => results.length > 0 && shouldYield();
         async function act(action, run) {
             if (!enabled(action))
                 return null;
             const parent = getAmbientSendContext();
             const outcome = await runWithSendContext({ ...parent,
                 check: (service, method) => parent?.check(service, method) || (enabled(action) ? null
-                    : error('BUILTIN_PAUSED', '好友互动开关已关闭')),
+                    : error('RANCH_AUTOMATION_DISABLED', '好友互动开关已关闭')),
                 onSent: (service, method) => parent?.onSent(service, method),
             }, run);
             if (outcome.status === 'confirmed')
@@ -270,6 +271,8 @@ async function automateFriend(hostGid, enabled) {
         }
         if (enabled('cleanFriend')) {
             const cleaned = await act('cleanFriend', () => commitInteraction(interactionPlan('cleanFriend', {}, ranches, host, null)));
+            if (pause())
+                return { results, times, yielded: true };
             if (cleaned?.status === 'confirmed')
                 ranches = (await rpc('animals', { host_gid: host })).ranches;
         }
@@ -282,6 +285,8 @@ async function automateFriend(hostGid, enabled) {
                     break;
                 if (!canStroke(animal))
                     continue;
+                if (pause())
+                    return { results, times, yielded: true };
                 const input = { ranchId: quantity(ranch.ranch_inst_id), animalId: animal.animal_inst_id };
                 const outcome = await act('stroke', () => commitInteraction(interactionPlan('stroke', input, ranches, host, times)));
                 if (outcome)
@@ -289,11 +294,15 @@ async function automateFriend(hostGid, enabled) {
             }
             const toPlace = Math.min(times.putMosquito || 0, mosquitoState(ranch).mosquitoRoom);
             for (let count = 0; count < toPlace && enabled('putMosquito') && times.putMosquito > 0 && mosquitoState(ranch).mosquitoRoom > 0; count++) {
+                if (pause())
+                    return { results, times, yielded: true };
                 const input = { ranchId: quantity(ranch.ranch_inst_id) };
                 const outcome = await act('putMosquito', () => commitInteraction(interactionPlan('putMosquito', input, ranches, host, times)));
                 if (!outcome)
                     break;
                 times.putMosquito = outcome.remainingTimes;
+                if (pause())
+                    return { results, times, yielded: true };
                 const latest = (await rpc('animals', { host_gid: host })).ranches.find((row) => quantity(row.ranch_inst_id) === input.ranchId);
                 if (!latest)
                     break;
