@@ -12,6 +12,8 @@ const reservations = require('./operation-state');
 const { getAmbientSendContext, runWithSendContext } = require('./context');
 const daily = require('./daily');
 let nextCheckAt = 0;
+let nextFriendIndex = 0;
+const FRIEND_CONTROLS = { stroke: 'ranch_stroke', steal: 'ranch_friend_steal', cleanFriend: 'ranch_friend_clean', putMosquito: 'ranch_friend_mosquito' };
 const enabled = (key) => getAutomation()[key] === true;
 const due = (state) => !state.doneToday && Date.now() >= (state.nextCheckAt || 0);
 function getRoutineState() {
@@ -150,6 +152,32 @@ async function run() {
                 await act('ranch_feed_normal', 'feed', { all: true, bucketType: 2 });
             if (enabled('ranch_feed_organic') && available(7004) > 0n)
                 await act('ranch_feed_organic', 'feed', { all: true, bucketType: 1 });
+            if (Object.values(FRIEND_CONTROLS).some(enabled)) {
+                const interactions = require('./friends');
+                const times = await interactions.getInteractionTimes();
+                const wanted = (action) => enabled(FRIEND_CONTROLS[action])
+                    && (!['stroke', 'putMosquito'].includes(action) || times[action] > 0);
+                if (Object.keys(FRIEND_CONTROLS).some(wanted)) {
+                    const friends = await require('../friend').getFriendsList();
+                    // 沿用本轮巡查，每轮最多拜访三位，避免长期占用农牧场共用连接。
+                    for (let visited = 0; visited < Math.min(3, friends.length) && Object.keys(FRIEND_CONTROLS).some(wanted); visited++) {
+                        const friend = friends[nextFriendIndex++ % friends.length];
+                        try {
+                            const result = await interactions.automateFriend(friend.gid, wanted);
+                            Object.assign(times, result.times);
+                            for (const outcome of result.results) {
+                                daily.markTasksChanged();
+                                log('牧场', `${friend.name}：${outcome.notice}`, { module: 'ranch', event: `ranch_${outcome.action}`, result: 'ok' });
+                            }
+                        }
+                        catch (error) {
+                            if (error.name !== 'GatewayError' || error.methodName !== 'EnterHomestead')
+                                throw error;
+                            log('牧场', `暂不能拜访 ${friend.name}：${error.message}`, { module: 'ranch', event: 'ranch_friend', result: 'skipped' });
+                        }
+                    }
+                }
+            }
             if (changed)
                 daily.markTasksChanged();
             if (enabled('ranch_task') && due(daily.getTaskRoutineState()))

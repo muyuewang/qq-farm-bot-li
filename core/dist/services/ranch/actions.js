@@ -13,6 +13,7 @@ const LABELS = {
     claimIllustrated: '领取牧场图鉴奖励',
     claimDailyShare: '领取每日首次分享礼包',
     buyCan: '购买牧场罐头',
+    release: '放生动物',
 };
 function selectedAnimals(raw, input, eligible) {
     const all = raw.cells.facilities.flatMap((facility) => facility.ranch?.animals || []);
@@ -132,6 +133,20 @@ async function planAction(action, input, raw) {
         plan.bucketId = bucketId;
         plan.marker = animals.map(animal => [quantity(animal.ranch_inst_id), animal.animal_inst_id, animal.stage, animal.limited_can_used, quantity(animal.grow_ready_at_ms), quantity(animal.mature_ready_at_ms)]);
         plan.count = animals.length;
+    }
+    else if (action === 'release') {
+        if (input.all === true)
+            throw error('INVALID_ARGUMENT', '请逐只确认需要放生的动物');
+        const animals = selectedAnimals(raw, input, animal => animal.can_donate);
+        if ((await require('./friends').getInteractionTimes()).release <= 0)
+            throw error('RANCH_INTERACTION_LIMIT', '今日放生次数已用完');
+        const animal = animals[0];
+        const name = `${animal.mutation?.mutation_type ? '巨大' : ''}${animalMap.get(Number(animal.animal_id))?.name || '动物'}`;
+        plan.payload = { targets: animalRefs(animals) };
+        plan.marker = { animalId: quantity(animal.animal_id), stage: animal.stage, mutation: animal.mutation?.mutation_type || 0 };
+        plan.label = `放生${name}`;
+        plan.message = `确定放生「${name}」吗？放生后动物将离开栏舍，已产出的产物会保留。`;
+        plan.resultKeys = [`${quantity(animal.ranch_inst_id)}:1:${animal.animal_inst_id}`];
     }
     else if (action === 'produce' || action === 'harvest') {
         const animals = selectedAnimals(raw, input, animal => action === 'produce' ? animal.can_deliver : animal.can_harvest);
@@ -257,16 +272,20 @@ async function planAction(action, input, raw) {
 async function prepareAction(action, input = {}) {
     if (action === 'steal')
         return require('./friends').prepareSteal(input);
+    if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
+        return require('./friends').prepareInteraction(action, input);
     return inScene(async (cells) => {
         const plan = await planAction(action, input, await loadRaw(cells));
         return { action, label: plan.label, costs: plan.costs, costItems: plan.costItems, rewards: plan.expectedRewards, count: plan.count,
-            expected: { signature: plan.signature }, skipped: plan.count === 0 };
+            expected: { signature: plan.signature }, skipped: plan.count === 0, message: plan.message };
     });
 }
 function unknown(action, reason) {
     throw error('RANCH_RESULT_UNKNOWN', `${LABELS[action]}结果未能确认：${reason}，请刷新核对，勿重复提交`);
 }
 async function operate(action, input = {}) {
+    if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
+        return require('./friends').interact(action, input);
     if (action === 'acknowledge')
         return inScene(async () => {
             reservations.forCurrentAccount().acknowledge(String(input.id));
@@ -363,6 +382,17 @@ async function operate(action, input = {}) {
                     if (!taskList(reply).find((task) => task.id === '300008')?.canClaim)
                         unknown(action, '引导任务未完成');
                 }
+                else if (action === 'release') {
+                    const target = plan.payload.targets[0];
+                    const result = reply.op_results[0];
+                    const ranch = reply.ranches.find((row) => quantity(row.ranch_inst_id) === target.ranch_inst_id);
+                    if (reply.op_results.length !== 1 || !result || result.kind !== 1 || quantity(result.facility_inst_id) !== target.ranch_inst_id
+                        || quantity(result.target_id) !== String(target.animal_inst_id) || result.costs.length
+                        || !ranch || ranch.animals.some((animal) => animal.animal_inst_id === target.animal_inst_id)
+                        || result.rewards.some((item) => BigInt(quantity(item.count)) <= 0n))
+                        unknown(action, '放生目标或栏位变化不匹配');
+                    rewards = result.rewards;
+                }
                 else if (reply.op_results) {
                     rewards = reply.op_results.flatMap((result) => result.rewards);
                     if (action === 'place' && reply.op_results.length !== plan.count)
@@ -417,7 +447,8 @@ async function operate(action, input = {}) {
                     unknown(action, '罐头桶增加时长不匹配');
             }
             const completed = reply.op_results?.length ?? plan.count;
-            const notice = plan.resultKeys && completed < plan.count ? `已完成 ${completed} / ${plan.count} 项，其余状态已变化，请刷新核对` : undefined;
+            const notice = action === 'release' ? `${plan.label}完成${rewards.length ? `，获得 ${sumItems(rewards).map((item) => `${item.name} ×${item.count}`).join('、')}` : ''}`
+                : plan.resultKeys && completed < plan.count ? `已完成 ${completed} / ${plan.count} 项，其余状态已变化，请刷新核对` : undefined;
             return { status: reply.alreadyClaimed ? 'skipped' : 'confirmed', snapshot: after ? snapshot(after) : null, refreshRequired: !after, costs: actualCosts, notice,
                 rewards: sumItems(rewards), completed: reply.op_results?.length ?? plan.count };
         });
