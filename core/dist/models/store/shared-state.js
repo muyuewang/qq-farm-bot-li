@@ -5,6 +5,7 @@ const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { createConfigStorage } = require('./config-storage');
 const { storageError } = require('../../services/json-db');
 const { parseHourOfDay } = require('../../utils/hour-of-day');
+const { RANCH_AUTOMATION_DEFAULTS, normalizeRanchSetting } = require('../../config/ranch-automation');
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
 const configStorage = createConfigStorage(STORE_FILE);
@@ -44,6 +45,7 @@ const DEFAULT_LOGIN_SETTINGS = {
 };
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
+        ...RANCH_AUTOMATION_DEFAULTS,
         farm: true,
         farm_harvest_tiangong: true,
         farm_push: true,
@@ -359,6 +361,9 @@ function normalizeAutomationValue(key, value, current) {
     }
     if (key === 'fertilizer_land_types') {
         return normalizeFertilizerLandTypes(value, current);
+    }
+    if (key.startsWith('ranch_')) {
+        return normalizeRanchSetting(key, value);
     }
     if (key === 'fertilizer_smart_seconds') {
         return Math.max(30, Math.min(3600, Number(value) || 300));

@@ -1,5 +1,9 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+const Goods_json_1 = __importDefault(require("../gameConfig/Goods.json"));
 /**
  * 游戏配置数据模块
  * 从 gameConfig 目录加载配置数据
@@ -19,6 +23,7 @@ const fruitToPlant = new Map();
 let itemInfoConfig = null;
 const itemInfoMap = new Map();
 const seedItemMap = new Map();
+const shopGoodsMap = new Map(Goods_json_1.default.map(goods => [goods.id, goods]));
 const itemImageIds = new Set();
 const iconImageIds = new Map();
 const assetImageIds = new Map();
@@ -330,6 +335,9 @@ function getItemImageById(itemId) {
 function getItemById(itemId) {
     return itemInfoMap.get(Number(itemId) || 0);
 }
+function getShopGoodsById(goodsId) {
+    return shopGoodsMap.get(goodsId);
+}
 /**
  * 解析 sells 字段，格式为 "货币ID:价格" 或 "货币ID1:价格1;货币ID2:价格2"
  * 返回 [{ currencyId, price }, ...]
@@ -568,6 +576,7 @@ module.exports = {
     getFruitName,
     getPlantByFruitId,
     getItemById,
+    getShopGoodsById,
     getItemImageById,
     getSeedPrice,
     getFruitPrice,

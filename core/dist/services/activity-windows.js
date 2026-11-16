@@ -29,7 +29,7 @@ async function refreshActivityWindows() {
     if (pendingRefresh)
         return pendingRefresh;
     pendingRefresh = (async () => {
-        const body = types.ActivityListRequest.encode(types.ActivityListRequest.create({})).finish();
+        const body = types.ActivityListRequest.encode(types.ActivityListRequest.create({ game_scene_id: 1 })).finish();
         const { body: replyBody } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'List', body);
         const reply = types.ActivityListReply.decode(replyBody);
         const nextWindows = decodeActivityWindows(reply);

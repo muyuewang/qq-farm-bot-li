@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const share_reward_instances_json_1 = __importDefault(require("../activity-data/share-reward-instances.json"));
+const pending_content_json_1 = __importDefault(require("../activity-data/pending-content.json"));
 const LongModule = require('long');
 const { sendMsgAsync, GatewayError } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -333,7 +334,8 @@ function buildActivityDirectory(windows, season, shop, solarTerms, constellation
         if (!id)
             continue;
         const shareInstance = share_reward_instances_json_1.default.find(entry => entry.activityId === id);
-        const name = shareInstance?.title || String(window?.name || '').trim() || `活动 ${id}`;
+        const placeholder = pending_content_json_1.default.activities.find(entry => entry.activityIds.includes(id));
+        const name = shareInstance?.title || String(window?.name || '').trim() || placeholder?.name || `活动 ${id}`;
         const startTime = Number(window?.beginTime) || 0;
         const endTime = Number(window?.endTime) || 0;
         const group = groups.find((entry) => ((!shareInstance || entry.id === id)

@@ -13,7 +13,7 @@ function createCharityActivityService(deps) {
     const CHARITY_FLOW_DAILY_GIFT_CLAIMED = '3';
     const lastCharityRedFlowerState = new Map();
     async function queryActivityListReply() {
-        const body = Buffer.from(types.ActivityListRequest.encode(types.ActivityListRequest.create({})).finish());
+        const body = Buffer.from(types.ActivityListRequest.encode(types.ActivityListRequest.create({ game_scene_id: 1 })).finish());
         const { body: replyBody } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'List', body);
         return types.ActivityListReply.decode(replyBody);
     }
