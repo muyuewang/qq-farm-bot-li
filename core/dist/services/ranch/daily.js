@@ -52,12 +52,12 @@ async function claimShare() {
         const outcome = await operate('claimDailyShare', { expected: quote.expected });
         share = { ...share, doneToday: true, lastAt: Date.now(), result: outcome.status === 'skipped' ? 'already_claimed' : 'ok', lastError: '' };
         if (outcome.status !== 'skipped')
-            log('牧场', `每日首次分享礼包已领取：${rewardText(outcome.rewards)}`, { module: 'task', event: 'ranch_daily_share', result: 'ok' });
+            log('牧场', `每日首次分享礼包已领取：${rewardText(outcome.rewards)}`, { module: 'ranch', event: 'ranch_daily_share', result: 'ok' });
     }
     catch (error) {
         const unknown = isUnknown(error);
         share = { ...share, doneToday: unknown, lastAt: now, nextCheckAt: unknown ? 0 : now + RETRY_MS, result: 'error', lastError: String(error?.message || error) };
-        log('牧场', `每日首次分享礼包领取失败：${share.lastError}`, { module: 'task', event: 'ranch_daily_share', result: 'error' });
+        log('牧场', `每日首次分享礼包领取失败：${share.lastError}`, { module: 'ranch', event: 'ranch_daily_share', result: 'error' });
     }
 }
 async function claimTasks() {
@@ -75,12 +75,12 @@ async function claimTasks() {
         }
         const outcome = await operate('claimTasks', { all: true, expected: quote.expected });
         tasks = { ...tasks, lastAt: Date.now(), nextCheckAt: Date.now() + taskCheckMs(), result: 'ok', lastError: '' };
-        log('牧场', `领取牧场任务奖励 ${outcome.completed ?? quote.count} 项：${rewardText(outcome.rewards)}`, { module: 'task', event: 'ranch_task_claim', result: 'ok' });
+        log('牧场', `领取牧场任务奖励 ${outcome.completed ?? quote.count} 项：${rewardText(outcome.rewards)}`, { module: 'ranch', event: 'ranch_task_claim', result: 'ok' });
     }
     catch (error) {
         const unknown = isUnknown(error);
         tasks = { ...tasks, doneToday: unknown, lastAt: now, nextCheckAt: unknown ? 0 : now + RETRY_MS, result: 'error', lastError: String(error?.message || error) };
-        log('牧场', `牧场任务奖励领取失败：${tasks.lastError}`, { module: 'task', event: 'ranch_task_claim', result: 'error' });
+        log('牧场', `牧场任务奖励领取失败：${tasks.lastError}`, { module: 'ranch', event: 'ranch_task_claim', result: 'error' });
     }
 }
 /** 供每日例程判断是否到期：分享以游戏端领取标记为准，任务按复查间隔。 */
