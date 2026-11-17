@@ -384,6 +384,40 @@ const ranchStrategies = [
 
         <section class="farm-card rounded-2xl p-4">
           <div class="mb-4 flex items-start gap-3">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
+              <span class="i-carbon-gift text-xl" />
+            </div>
+            <div>
+              <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                牧歌初启
+              </h4>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                都在服务端判定「这一步可做」时才发请求，默认开
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.muge_claim_rewards" label="自动领取四类奖励（全服档位 / 好友助力 / 手册任务 / 手册积分档位）" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.muge_finish_survey" label="答完题后自动结算人格并领首次分享奖励" />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            半小时检查一次，一轮只读一次活动状态，四类领取排队执行、笔间隔 800ms，每类一次写就领完该类全部可领项。手册任务排在积分档位之前，这样同一轮里积分就能达标。不在开放窗口、或者这一步已经做过，只按天记一行跳过日志，不发写请求；某一笔写入回包未确认就中止本轮、绝不重试，剩下的下一轮重新读。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            人格测试<strong>不会替你选答案</strong>：10 题全部作答是服务端结算的前置条件，只有你已经在游戏里答完、却没按结算时才会结算，随后领一次性的首次分享奖励。没答完就一行跳过，留给你在「牧歌初启」页面自己选——答案决定你的牧场人格，属于你的偏好。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            牧歌是农场场景的活动（与节令同侧），全程不切场景；整个任务串进和农场/牧场同一把全局锁，任务之间留 1500ms 缝，不会并发抢连接。
+          </p>
+        </section>
+
+        <section class="farm-card rounded-2xl p-4">
+          <div class="mb-4 flex items-start gap-3">
             <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
               <span class="i-carbon-store text-xl" />
             </div>

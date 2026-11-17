@@ -48,6 +48,8 @@ export interface AutomationConfig extends RanchAutomationConfig {
   solar_calendar_claim_events: boolean;
   solar_calendar_claim_seasons: boolean;
   solar_calendar_answer_quiz: boolean;
+  muge_claim_rewards: boolean;
+  muge_finish_survey: boolean;
 }
 
 export interface IntervalConfig {
