@@ -92,15 +92,19 @@ async function perform(action, input) {
         if (!state.personality)
             fail('MUGE_UNAVAILABLE', '牧场人格数据暂不可用');
         if (action === 'saveAnswers') {
-            if (!input.answers || typeof input.answers !== 'object' || Array.isArray(input.answers) || !Object.keys(input.answers).length)
+            if (!input.answers || typeof input.answers !== 'object' || Array.isArray(input.answers))
+                fail('INVALID_MUGE_ANSWERS', '请选择题目答案');
+            if (input.clear !== undefined && typeof input.clear !== 'boolean')
+                fail('INVALID_MUGE_ANSWERS', '重答标记无效');
+            if (input.clear === true && Object.keys(input.answers).length)
+                fail('INVALID_MUGE_ANSWERS', '清空进度和保存答案需要分开提交，请刷新页面重新测试');
+            if (input.clear !== true && !Object.keys(input.answers).length)
                 fail('INVALID_MUGE_ANSWERS', '请选择题目答案');
             for (const [questionId, value] of Object.entries(input.answers)) {
                 const question = muge_20261117_json_1.default.questions.find(v => String(v.id) === questionId);
                 if (!question?.options.some(option => option.value === value))
                     fail('INVALID_MUGE_ANSWERS', '题目或答案无效');
             }
-            if (input.clear !== undefined && typeof input.clear !== 'boolean')
-                fail('INVALID_MUGE_ANSWERS', '重答标记无效');
             params = { answers: input.answers, clear: input.clear === true };
         }
         else if (action === 'settle') {
@@ -121,7 +125,9 @@ async function perform(action, input) {
     if ((['claimTask', 'claimHandbook', 'claimCelebration', 'claimFriends'].includes(action) && !result.claimed_ids.length)
         || (action === 'claimShare' && !reply.activity.survey?.share_reward_claimed)
         || (action === 'settle' && toNum(reply.activity.survey?.personality_id) <= 0)
-        || (action === 'saveAnswers' && !Object.entries(input.answers).every(([key, value]) => answersDto(reply.activity.survey?.answers || {})[key] === value))) {
+        || (action === 'saveAnswers' && (!reply.activity.survey || (params.clear
+            ? Object.values(answersDto(reply.activity.survey.answers)).some(value => value > 0)
+            : !Object.entries(input.answers).every(([key, value]) => answersDto(reply.activity.survey.answers)[key] === value))))) {
         fail('MUGE_RESULT_UNKNOWN', '操作状态未能确认，请刷新核对，勿重复提交');
     }
     const rewards = (result.awards || []).map(itemDto);
