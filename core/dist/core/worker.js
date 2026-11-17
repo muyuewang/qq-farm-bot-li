@@ -21,6 +21,7 @@ const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/s
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { createSolarCalendarAutomation, isSolarCalendarAutomationEnabled, SOLAR_CALENDAR_CHECK_INTERVAL_MS } = require('../services/solar-calendar-auto');
+const { startMugeTimer } = require('../services/muge-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -437,6 +438,7 @@ async function runStartupSequence(canContinue = () => loginReady) {
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
         startSolarCalendarTimer();
+        startMugeTimer(workerScheduler, () => loginReady);
     }
     catch (e) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
@@ -574,6 +576,7 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
             }
             startMysteryShopTimer();
             startSolarCalendarTimer();
+            startMugeTimer(workerScheduler, () => loginReady);
         }
     }
     if (syncNow)

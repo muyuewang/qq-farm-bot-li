@@ -78,6 +78,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
+        muge_claim_rewards: true,
+        muge_finish_survey: true,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
