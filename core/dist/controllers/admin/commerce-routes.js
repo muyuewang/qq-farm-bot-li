@@ -53,6 +53,8 @@ function mountCommerceRoutes(app, ctx) {
     app.post('/api/solar-calendar/:action', withAccount((accountId, req) => ctx.provider.operateSolarCalendar(accountId, req.params.action, req.body)));
     app.post('/api/illustrated/claim', withAccount((accountId, req) => ctx.provider.claimIllustratedRewards(accountId, req.body?.type)));
     app.get('/api/activities/milk-tea', withAccount((accountId, req) => ctx.provider.getMilkTeaActivity(accountId, req.query.page || 'shop', req.query)));
+    app.get('/api/activities/muge', withAccount((accountId) => ctx.provider.getMugeActivity(accountId)));
+    app.post('/api/activities/muge/:action', withAccount((accountId, req) => ctx.provider.operateMugeActivity(accountId, req.params.action, req.body)));
     app.post('/api/activities/milk-tea/:action', withAccount((accountId, req) => ctx.provider.operateMilkTeaActivity(accountId, req.params.action, req.body)));
     app.get('/api/activities/share-reward/:activityId', withAccount((accountId, req) => (ctx.provider.getShareRewardActivity(accountId, req.params.activityId))));
     app.post('/api/activities/share-reward/:activityId/:action', withAccount((accountId, req) => (ctx.provider.operateShareRewardActivity(accountId, req.params.activityId, req.params.action, req.body))));

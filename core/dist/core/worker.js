@@ -1036,6 +1036,9 @@ async function handleApiCall(msg) {
                     case 'getDailyGiftOverview':
                         result = await getDailyGiftOverview(args[0] === true);
                         break;
+                    case 'getRanchActivityDirectorySnapshot':
+                        result = await require('../services/activity-center').getRanchActivityDirectorySnapshot();
+                        break;
                     case 'getActivityDirectorySnapshot':
                         result = await require('../services/activity-center').getActivityDirectorySnapshot();
                         break;
@@ -1159,6 +1162,12 @@ async function handleApiCall(msg) {
                     case 'getAutumnActivity':
                         result = await require('../services/autumn-activities').getAutumnActivity(args[0]);
                         break;
+                    case 'getMugeActivity':
+                        result = await require('../services/muge-activity').getMugeActivity();
+                        break;
+                    case 'operateMugeActivity':
+                        result = await require('../services/muge-activity').operateMugeActivity(args[0], args[1]);
+                        break;
                     case 'getMilkTeaActivity':
                         result = await require('../services/milk-tea').getMilkTeaActivity(args[0], args[1]);
                         break;
@@ -1236,7 +1245,7 @@ async function getDailyGiftOverview(propagateErrors = false) {
             currentTask: growthTask.currentTask || null,
             tasks: Array.isArray(growthTask.tasks) ? growthTask.tasks : [],
         },
-        ranch: require('../services/ranch/daily').getOverview(!!auto.ranch_task, !!auto.ranch_share),
+        ranch: require('../services/ranch/daily').getOverview(!!auto.ranch_task, !!auto.ranch_share, !!auto.ranch_daily_benefit),
         gifts: [
             {
                 key: 'task_claim',

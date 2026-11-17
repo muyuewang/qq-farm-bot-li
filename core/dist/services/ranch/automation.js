@@ -34,8 +34,8 @@ const enabled = (key) => getAutomation()[key] === true;
 const due = (state) => !state.doneToday && Date.now() >= (state.nextCheckAt || 0);
 function getRoutineState() {
     const auto = getAutomation();
-    const work = RANCH_SWITCH_KEYS.some((key) => !['ranch_task', 'ranch_share', 'ranch_grass_buy'].includes(key) && auto[key]);
-    return { doneToday: !isUnlocked() || !(work || auto.ranch_task && due(daily.getTaskRoutineState()) || auto.ranch_share && due(daily.getShareRoutineState())), nextCheckAt };
+    const work = RANCH_SWITCH_KEYS.some((key) => !['ranch_task', 'ranch_share', 'ranch_daily_benefit', 'ranch_grass_buy'].includes(key) && auto[key]);
+    return { doneToday: !isUnlocked() || !(work || auto.ranch_task && due(daily.getTaskRoutineState()) || auto.ranch_share && due(daily.getShareRoutineState()) || auto.ranch_daily_benefit && due(daily.getBenefitRoutineState())), nextCheckAt };
 }
 function selectAnimal(goods, settings, kind) {
     const strategy = settings.ranch_strategy === 'bag_priority' ? settings.ranch_bag_fallback : settings.ranch_strategy;
@@ -272,6 +272,11 @@ async function run(options = {}) {
             await phase('share', async () => { if (enabled('ranch_share') && due(daily.getShareRoutineState())) {
                 checkpoint();
                 await daily.claimShare();
+                steps++;
+            } });
+            await phase('benefit', async () => { if (enabled('ranch_daily_benefit') && due(daily.getBenefitRoutineState())) {
+                checkpoint();
+                await daily.claimBenefit();
                 steps++;
             } });
             nextCheckAt = Math.max(Date.now() + SCENE_REENTRY_MS, Math.min(nextCheckAt, nextActionAt, cycleChanged ? Date.now() + 30_000 : Infinity));

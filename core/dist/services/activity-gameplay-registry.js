@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const GAMEPLAY_ADAPTERS = [
+    { gameplayKey: 'muge', detailTarget: 'muge', priority: 1, activityIds: () => ['2026111700', '2026111702', '2026111703', '2026111704', '2026111705'] },
     { gameplayKey: 'wish', detailTarget: 'wish', priority: 1, activityIds: () => ['2026092400', '2026092401'] },
     { gameplayKey: 'happy', detailTarget: 'happy', priority: 2, activityIds: () => ['2026092500', '2026092501', '2026110104'] },
     { gameplayKey: 'milk', detailTarget: 'milk', priority: 1, activityIds: () => ['2026110100', '2026110101', '2026110102', '2026110103'] },
