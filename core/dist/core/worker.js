@@ -114,11 +114,18 @@ let shutdownStarted = false;
 let runtimeGeneration = 0;
 let lastDailyRunDate = '';
 let ranchRoutineQueued = false;
+let onRanchMarketStockReady = null;
 function ranchNextRunAt() {
     if (ranchRoutineQueued)
         return Infinity;
     const state = ranchAutomation.getRoutineState();
     return state.doneToday ? Infinity : state.nextCheckAt;
+}
+function wakeRanchMarketExchange() {
+    if (!loginReady || !getAutomation().ranch_market_organic)
+        return;
+    ranchAutomation.resetMarketSchedule();
+    scheduleUnifiedNextTick();
 }
 function runRanchRoutine(detached = false) {
     if (!loginReady || Date.now() < ranchNextRunAt())
@@ -711,6 +718,10 @@ async function startBot(config) {
             }
         };
         networkEvents.on('farmHarvested', onFarmHarvested);
+        if (onRanchMarketStockReady)
+            networkEvents.off('ranchMarketStockReady', onRanchMarketStockReady);
+        onRanchMarketStockReady = wakeRanchMarketExchange;
+        networkEvents.on('ranchMarketStockReady', onRanchMarketStockReady);
         if (onDogSkillGiftPending) {
             networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
         }
@@ -792,6 +803,10 @@ function detachRuntimeListeners() {
     if (onFarmHarvested) {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
+    }
+    if (onRanchMarketStockReady) {
+        networkEvents.off('ranchMarketStockReady', onRanchMarketStockReady);
+        onRanchMarketStockReady = null;
     }
     if (onDogSkillGiftPending) {
         networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
