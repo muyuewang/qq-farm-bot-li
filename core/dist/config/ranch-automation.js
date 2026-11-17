@@ -36,6 +36,7 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_illustrated: true,
     ranch_share: true,
     ranch_daily_benefit: true,
+    ranch_muge: true,
     ranch_check_minutes: 5,
     ranch_strategy: 'level',
     ranch_bag_fallback: 'level',

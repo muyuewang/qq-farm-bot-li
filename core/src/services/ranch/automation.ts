@@ -17,6 +17,7 @@ const reservations = require('./operation-state');
 const { getAmbientSendContext, runWithSendContext } = require('./context');
 const daily = require('./daily');
 const interactions = require('./friends');
+const muge = require('./muge');
 
 let nextCheckAt = 0;
 let lastCycleEndAt = 0;
@@ -491,6 +492,7 @@ async function run(options: { farmDeadline?: () => number; canContinue?: () => b
                 await phase('tasks', async () => { if (enabled('ranch_task') && due(daily.getTaskRoutineState())) { checkpoint(); await daily.claimTasks(); markStep(); } });
                 await phase('share', async () => { if (enabled('ranch_share') && due(daily.getShareRoutineState())) { checkpoint(); await daily.claimShare(); markStep(); } });
                 await phase('benefit', async () => { if (enabled('ranch_daily_benefit') && due(daily.getBenefitRoutineState())) { checkpoint(); await daily.claimBenefit(); markStep(); } });
+                await phase('muge', async () => { if (enabled('ranch_muge') && muge.mugeDue()) { checkpoint(); await muge.claimMuge(); markStep(); } });
             }
             // 大名单会跨多个切片，到期的每日奖励在继续巡查前先执行。
             if (pendingFriend || friendVisits > 0) await claimDailyRewards();

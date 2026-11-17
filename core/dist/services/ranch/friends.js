@@ -40,7 +40,7 @@ function targets(ranches) {
         .map((shelf) => ({ ranchId: quantity(ranch.ranch_inst_id), slot: shelf.slot_index,
         itemIds: shelf.lots.filter((lot) => lot.can_steal && !lot.stealers.some((id) => quantity(id) === gid)).map((lot) => quantity(lot.item_id)) })));
 }
-async function visit(hostGid, run) {
+async function withFriendVisit(hostGid, run) {
     const host = positiveId(hostGid, '好友GID');
     if (host === quantity(network.getUserState().gid))
         throw error('INVALID_ARGUMENT', '请选择好友牧场');
@@ -52,8 +52,7 @@ async function visit(hostGid, run) {
             const entry = await rpc('enterFriend', { host_gid: host, reason: 2 });
             if (quantity(entry.basic?.gid) !== host || !entry.homestead_cells)
                 throw error('RANCH_RESPONSE_MISMATCH', '好友牧场回包与目标不匹配');
-            const detail = await rpc('animals', { host_gid: host });
-            result = await run(entry, detail.ranches, host);
+            result = await run(entry, host);
             return result;
         }
         catch (error) {
@@ -75,12 +74,20 @@ async function visit(hostGid, run) {
         }
     });
 }
+function visit(hostGid, run) {
+    return withFriendVisit(hostGid, async (entry, host) => {
+        const detail = await rpc('animals', { host_gid: host });
+        return run(entry, detail.ranches, host);
+    });
+}
 async function getFriend(hostGid) {
     return visit(hostGid, async (entry, ranches, host) => {
         const eligible = targets(ranches);
         const times = await getInteractionTimes();
+        const machine = entry.homestead_cells.facilities.find((facility) => facility.module_type === 8 && facility.state === 1 && facility.feed_machine);
         return { gid: host, name: entry.basic.name, level: Number(entry.basic.big_farm_level),
             career: await ranchCareer(Number(host)),
+            feedMachine: machine ? { id: quantity(machine.instance_id), count: machine.feed_machine.feed_count, capacity: machine.capacity } : null,
             canSteal: eligible.length > 0, stealableShelves: eligible.length,
             cleanableHazards: ranches.reduce((sum, ranch) => sum + cleanableHazards(ranch).length, 0),
             strokeRemaining: times.stroke, mosquitoRemaining: times.putMosquito,
@@ -399,5 +406,5 @@ async function automateFriend(hostGid, enabled, shouldYield = () => false, onOut
         return { results, times };
     });
 }
-module.exports = { getFriend, prepareSteal, steal, getInteractionTimes, getInteractionQuotaResetAt, prepareInteraction, interact, automateFriend };
+module.exports = { getFriend, withFriendVisit, prepareSteal, steal, getInteractionTimes, getInteractionQuotaResetAt, prepareInteraction, interact, automateFriend };
 //# sourceMappingURL=friends.js.map

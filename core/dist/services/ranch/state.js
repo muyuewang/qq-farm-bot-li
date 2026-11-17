@@ -86,12 +86,14 @@ function facilityDto(facility, level) {
         } : null,
     };
 }
-async function loadRaw(cells) {
-    const currentCells = cells || await rpc('cells');
+async function loadBag() {
     const bag = await rpc('bag', { global_scene_id: 2 });
     if (bag.global_scene_id !== 2)
         throw error('RANCH_RESPONSE_MISMATCH', '牧场背包场景不匹配');
-    return { cells: currentCells, bag };
+    return bag;
+}
+async function loadRaw(cells) {
+    return { cells: cells || await rpc('cells'), bag: await loadBag() };
 }
 function shedAwaitingActivation(raw) {
     // 达到开放条件后，服务器下发待激活的一级棚和正式实例 ID。
@@ -264,8 +266,11 @@ async function getState(view = 'animals', shopId, hostGid) {
                 startTime: Number(group.activity.begin_time) * 1000, endTime: Number(group.activity.end_time) * 1000 }));
         }
         if (view === 'friends') {
-            if (hostGid !== undefined)
+            if (hostGid !== undefined) {
+                const grass = balance(raw.bag, 7001);
                 state.friendRanch = await require('./friends').getFriend(hostGid);
+                state.friendRanch.grassAvailable = (BigInt(grass.total) - BigInt(grass.locked)).toString();
+            }
             else {
                 const blacklist = new Set(require('../../models/store').getRanchFriendBlacklist());
                 state.friends = (await (0, friend_roster_1.getRanchFriendList)(undefined, true)).map(friend => ({ ...friend, gid: String(friend.gid), blacklisted: blacklist.has(friend.gid) }));
@@ -285,5 +290,5 @@ async function resourceBalances(keys) {
         return keys.map(key => ({ ...balance(raw.bag, Number(key.slice(5))), name: itemDto({ id: key.slice(5), count: 0 }).name, source: 'ranch-bag', asOfMs: Date.now() }));
     });
 }
-module.exports = { getState, loadRaw, isPendingShed, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, ranchMallCatalog, canLockRanchItem, ranchCareer, resourceBalance, isRanchResource, resourceBalances, animalDto };
+module.exports = { getState, loadBag, loadRaw, isPendingShed, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, ranchMallCatalog, canLockRanchItem, ranchCareer, resourceBalance, isRanchResource, resourceBalances, animalDto };
 //# sourceMappingURL=state.js.map

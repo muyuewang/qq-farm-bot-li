@@ -31,6 +31,7 @@ export interface AutomationConfig {
   ranch_illustrated?: boolean
   ranch_share?: boolean
   ranch_daily_benefit?: boolean
+  ranch_muge?: boolean
   ranch_check_minutes?: number
   ranch_strategy?: string
   ranch_bag_fallback?: string

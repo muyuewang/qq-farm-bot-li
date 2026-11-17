@@ -28,6 +28,7 @@ export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_illustrated: boolean;
     ranch_share: boolean;
     ranch_daily_benefit: boolean;
+    ranch_muge: boolean;
     ranch_check_minutes: number;
     ranch_strategy: "level" | "preferred" | "bag_priority";
     ranch_bag_fallback: "level" | "preferred";

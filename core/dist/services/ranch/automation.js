@@ -14,6 +14,7 @@ const reservations = require('./operation-state');
 const { getAmbientSendContext, runWithSendContext } = require('./context');
 const daily = require('./daily');
 const interactions = require('./friends');
+const muge = require('./muge');
 let nextCheckAt = 0;
 let lastCycleEndAt = 0;
 let retryAt = 0;
@@ -458,7 +459,7 @@ async function run(options = {}) {
                     for (const original of raw.cells.facilities.filter((f) => f.state === 1 && f.feed_machine)) {
                         const id = quantity(original.instance_id);
                         let room = original.capacity - original.feed_machine.feed_count;
-                        if (room <= 0 || original.feed_machine.feed_count * 100 >= original.capacity * auto.ranch_grass_threshold_percent)
+                        if (room <= 0 || original.feed_machine.feed_count * 100 > original.capacity * auto.ranch_grass_threshold_percent)
                             continue;
                         let stock = Math.max(0, Number(available(7001)));
                         if (stock < room && enabled('ranch_grass_buy')) {
@@ -528,6 +529,11 @@ async function run(options = {}) {
                 await phase('benefit', async () => { if (enabled('ranch_daily_benefit') && due(daily.getBenefitRoutineState())) {
                     checkpoint();
                     await daily.claimBenefit();
+                    markStep();
+                } });
+                await phase('muge', async () => { if (enabled('ranch_muge') && muge.mugeDue()) {
+                    checkpoint();
+                    await muge.claimMuge();
                     markStep();
                 } });
             }
