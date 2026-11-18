@@ -231,7 +231,7 @@ async function checkAndClaimIllustratedRewards() {
     }
 }
 // ============ 客户端上报类成长任务 ============
-const CLIENT_REPORT_COND_TYPES = new Set([15]);
+const CLIENT_REPORT_COND_TYPES = new Set([15, 25]);
 function pickClientReportedTasks(tasks) {
     const picked = [];
     for (const task of (Array.isArray(tasks) ? tasks : [])) {

@@ -62,6 +62,17 @@ async function claimShare() {
         log('牧场', `每日首次分享礼包领取失败：${share.lastError}`, { module: 'ranch', event: 'ranch_daily_share', result: 'error' });
     }
 }
+/**
+ * 牧场成长任务里由客户端上报进度完成的任务直接调用上报接口。
+ */
+async function reportProgressTasks() {
+    const quote = await prepareAction('reportEntry', { entry: 'friends' });
+    if (quote.skipped)
+        return;
+    const outcome = await operate('reportEntry', { entry: 'friends', expected: quote.expected });
+    if (outcome.status === 'confirmed')
+        log('牧场', `牧场成长任务进度已上报 ${quote.count} 项`, { module: 'ranch', event: 'ranch_task_report', result: 'ok', count: quote.count });
+}
 async function claimTasks() {
     tasks = today(tasks);
     if (!isUnlocked()) {
@@ -70,6 +81,12 @@ async function claimTasks() {
     }
     const now = Date.now();
     try {
+        try {
+            await reportProgressTasks();
+        }
+        catch (error) {
+            log('牧场', `牧场成长任务进度上报失败：${String(error?.message || error)}`, { module: 'ranch', event: 'ranch_task_report', result: 'error' });
+        }
         const quote = await prepareAction('claimTasks', { all: true });
         if (quote.skipped) {
             tasks = { ...tasks, nextCheckAt: now + taskCheckMs(), result: tasks.result === 'error' ? 'none' : (tasks.result || 'none'), lastError: '' };

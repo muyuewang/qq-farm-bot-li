@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const { rpc, inScene } = require('./transport');
 const { loadRaw, snapshot, balance, taskList, catalog, market, canCatalog, resourceBalance } = require('./state');
-const { animalMap, cubMap, canMap, facilityMap, itemMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
+const { animalMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
 const reservations = require('./operation-state');
 const { getServerTimeSec } = require('../../utils/utils');
 const { ACTIONS } = require('./contract');
@@ -28,6 +28,13 @@ function selectedAnimals(raw, input, eligible) {
 }
 function animalRefs(animals) {
     return animals.map(animal => ({ ranch_inst_id: quantity(animal.ranch_inst_id), animal_inst_id: animal.animal_inst_id }));
+}
+function isClientReportedTask(task) {
+    if (!task?.unlocked || task.claimed)
+        return false;
+    if (BigInt(task.total) <= 0n || BigInt(task.progress) >= BigInt(task.total))
+        return false;
+    return taskMap.get(Number(task.id))?.condition === '客户端上报进度';
 }
 async function planAction(action, input, raw) {
     if (!ACTIONS.includes(action))
@@ -227,11 +234,12 @@ async function planAction(action, input, raw) {
         if (input.entry !== 'friends')
             throw error('INVALID_ARGUMENT', '该任务入口尚未验证');
         const tasks = taskList(await rpc('tasks', { global_scene_id: 2 }));
-        const task = tasks.find((entry) => entry.id === '300008');
-        plan.count = task?.unlocked && !task.claimed && BigInt(task.progress) < BigInt(task.total) ? 1 : 0;
-        plan.payload = { task_id: '300008', progress: task?.total || '1' };
+        plan.reportTasks = tasks.filter((task) => isClientReportedTask(task))
+            .map((task) => ({ id: task.id, progress: task.total }));
+        plan.payload = plan.reportTasks.map((task) => ({ task_id: task.id, progress: task.progress }));
         plan.route = 'reportTask';
-        plan.marker = 'friends';
+        plan.marker = plan.reportTasks.map((task) => task.id);
+        plan.count = plan.reportTasks.length;
     }
     else if (action === 'claimIllustrated') {
         plan.bookClaim = await require('./book').prepareBookClaim(input.kind);
@@ -315,6 +323,13 @@ async function operate(action, input = {}) {
                 rewards = await require('./book').claimBook(plan.bookClaim);
                 reply = {};
             }
+            else if (action === 'reportEntry') {
+                for (const entry of plan.reportTasks) {
+                    reply = await rpc('reportTask', { task_id: entry.id, progress: entry.progress }, true);
+                    if (!taskList(reply).find((task) => task.id === entry.id)?.canClaim)
+                        unknown(action, '引导任务未完成');
+                }
+            }
             else if (action === 'claimTasks') {
                 const allOrdinary = plan.marker.every((task) => task.multiple === 1);
                 if (plan.tasks.length > 1 && allOrdinary) {
@@ -379,10 +394,6 @@ async function operate(action, input = {}) {
                 else if (action === 'completeUpgrade') {
                     if (quantity(reply.facility?.instance_id) !== plan.payload.inst_id || reply.facility.level !== plan.next.level || reply.facility.facility_id !== plan.next.facility_id)
                         unknown(action, '建筑等级不匹配');
-                }
-                else if (action === 'reportEntry') {
-                    if (!taskList(reply).find((task) => task.id === '300008')?.canClaim)
-                        unknown(action, '引导任务未完成');
                 }
                 else if (action === 'release') {
                     const target = plan.payload.targets[0];

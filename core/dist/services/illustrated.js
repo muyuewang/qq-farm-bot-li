@@ -5,7 +5,7 @@ const { getAvailableSeeds } = require('./farm');
 const protobuf = require('protobufjs');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toNum } = require('../utils/utils');
+const { toLong, toNum } = require('../utils/utils');
 const SERVICE = 'gamepb.illustratedpb.IllustratedService';
 function getMutantGroup(seedId) {
     const type = getIllustratedTypeByParam(seedId);
@@ -43,6 +43,7 @@ function itemDto(input) {
     const name = String(item && item.name || plant && plant.name || getPlantNameBySeedId(seedId));
     return {
         seedId,
+        fruitId: toNum(input && input.fruit_id),
         name,
         image: getItemImageById(seedId),
         rewardCategory: toNum(input && input.rarity),
@@ -164,8 +165,19 @@ function claimIllustratedRewards(type) {
     claimTail = request.catch(() => { });
     return request;
 }
+async function clearIllustratedNew(fruitIds) {
+    const ids = (Array.isArray(fruitIds) ? fruitIds : []).map((id) => toNum(id)).filter((id) => id > 0);
+    if (!ids.length)
+        return { cleared: [] };
+    const body = types.ClearNewUnlockedFruitsV2Request.encode(types.ClearNewUnlockedFruitsV2Request.create({
+        fruit_ids: ids.map((id) => toLong(id)),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync(SERVICE, 'ClearNewUnlockedFruitsV2', body);
+    return { cleared: (types.ClearNewUnlockedFruitsV2Reply.decode(replyBody).cleared_fruit_ids || []).map((id) => toNum(id)) };
+}
 module.exports = {
     getIllustratedSnapshot,
     claimIllustratedRewards,
+    clearIllustratedNew,
 };
 //# sourceMappingURL=illustrated.js.map
