@@ -1,11 +1,8 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RANCH_ANIMAL_OPTIONS = exports.RANCH_SWITCH_KEYS = exports.RANCH_AUTOMATION_DEFAULTS = void 0;
 exports.normalizeRanchSetting = normalizeRanchSetting;
-const MCAnimalConfig_json_1 = __importDefault(require("../gameConfig/ranch/MCAnimalConfig.json"));
+const ranch_animals_1 = require("./ranch-animals");
 exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_harvest: true,
     ranch_produce: true,
@@ -32,9 +29,11 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_bag_fallback: 'level',
     ranch_coop_animal: 0,
     ranch_shed_animal: 0,
+    ranch_coop_cub_priority: [],
+    ranch_shed_cub_priority: [],
 };
 exports.RANCH_SWITCH_KEYS = Object.keys(exports.RANCH_AUTOMATION_DEFAULTS).filter(key => typeof exports.RANCH_AUTOMATION_DEFAULTS[key] === 'boolean');
-exports.RANCH_ANIMAL_OPTIONS = MCAnimalConfig_json_1.default.filter(animal => animal.enable_flag).map(animal => ({ value: animal.id, label: animal.name, kind: animal.husbandry_type }));
+exports.RANCH_ANIMAL_OPTIONS = [...ranch_animals_1.animalMap.values()].filter(animal => animal.enable_flag).map(animal => ({ value: animal.id, label: animal.name, kind: animal.husbandry_type }));
 function normalizeRanchSetting(key, value) {
     if (key === 'ranch_strategy' || key === 'ranch_bag_fallback') {
         const allowed = key === 'ranch_strategy' ? ['level', 'preferred', 'bag_priority'] : ['level', 'preferred'];
@@ -48,6 +47,13 @@ function normalizeRanchSetting(key, value) {
             throw Object.assign(new Error('所选动物不适用于当前窝或棚'), { code: 'INVALID_CONFIG' });
         }
         return id;
+    }
+    if (key === 'ranch_coop_cub_priority' || key === 'ranch_shed_cub_priority') {
+        const housing = key === 'ranch_coop_cub_priority' ? '窝' : '棚';
+        if (!Array.isArray(value) || value.some(id => ranch_animals_1.cubMap.get(id)?.husbandry_type !== housing)) {
+            throw Object.assign(new Error(`${housing}的背包顺序只能包含适用于${housing}的幼崽`), { code: 'INVALID_CONFIG' });
+        }
+        return [...new Set(value)];
     }
     if (key === 'ranch_check_minutes') {
         const number = Number(value);

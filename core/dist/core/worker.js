@@ -568,7 +568,9 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
     const appliedSnapshot = applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
     configureEmailClaim({ hour: appliedSnapshot.emailClaimHour, accountId });
     const nextRanchAuto = getAutomation();
-    if (Object.keys(nextRanchAuto).some(key => key.startsWith('ranch_') && nextRanchAuto[key] !== prevAuto[key]))
+    const ranchChanged = Object.keys(nextRanchAuto).some(key => key.startsWith('ranch_')
+        && JSON.stringify(nextRanchAuto[key]) !== JSON.stringify(prevAuto[key]));
+    if (ranchChanged)
         ranchAutomation.resetSchedule();
     if (rev > appliedConfigRevision)
         appliedConfigRevision = rev;

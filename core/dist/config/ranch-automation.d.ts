@@ -24,6 +24,8 @@ export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_bag_fallback: "level" | "preferred";
     ranch_coop_animal: number;
     ranch_shed_animal: number;
+    ranch_coop_cub_priority: number[];
+    ranch_shed_cub_priority: number[];
 };
 export type RanchAutomationConfig = typeof RANCH_AUTOMATION_DEFAULTS;
 export declare const RANCH_SWITCH_KEYS: string[];
@@ -32,5 +34,5 @@ export declare const RANCH_ANIMAL_OPTIONS: {
     label: string;
     kind: string;
 }[];
-export declare function normalizeRanchSetting(key: string, value: unknown): boolean | number | string;
+export declare function normalizeRanchSetting(key: string, value: unknown): boolean | number | string | number[];
 //# sourceMappingURL=ranch-automation.d.ts.map

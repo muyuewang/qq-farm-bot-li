@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const MCAnimalConfig_json_1 = __importDefault(require("../../gameConfig/ranch/MCAnimalConfig.json"));
+const ranch_animals_1 = require("../../config/ranch-animals");
 const MCCanConfig_json_1 = __importDefault(require("../../gameConfig/ranch/MCCanConfig.json"));
 const MCFacilityConfig_json_1 = __importDefault(require("../../gameConfig/ranch/MCFacilityConfig.json"));
 const MCItemInfo_json_1 = __importDefault(require("../../gameConfig/ranch/MCItemInfo.json"));
@@ -11,14 +11,11 @@ const MCTask_json_1 = __importDefault(require("../../gameConfig/ranch/MCTask.jso
 const BigFarmLevel_json_1 = __importDefault(require("../../gameConfig/ranch/BigFarmLevel.json"));
 const MCAnimalMutation_json_1 = __importDefault(require("../../gameConfig/ranch/MCAnimalMutation.json"));
 const { getItemById, getItemImageById, getShopGoodsById } = require('../../config/gameConfig');
-const animalMap = new Map(MCAnimalConfig_json_1.default.map(row => [row.id, row]));
 const canMap = new Map(MCCanConfig_json_1.default.map(row => [row.id, row]));
 const facilityMap = new Map(MCFacilityConfig_json_1.default.map(row => [row.facility_id, row]));
 const itemMap = new Map(MCItemInfo_json_1.default.map(row => [row.id, row]));
 const taskMap = new Map(MCTask_json_1.default.map(row => [row.id, row]));
 const mutationMap = new Map(MCAnimalMutation_json_1.default.map(row => [row.animal_id, row]));
-const cubMap = new Map([...MCAnimalConfig_json_1.default.map(row => [row.cub_item_id, { ...row, giantCubItemId: 0 }]),
-    ...MCAnimalMutation_json_1.default.map(row => [row.giant_cub_item_id, { ...animalMap.get(row.animal_id), giantCubItemId: row.giant_cub_item_id }])]);
 function error(code, message) {
     return Object.assign(new Error(message), { code });
 }
@@ -71,5 +68,5 @@ function levelInfo(exp) {
     const next = BigFarmLevel_json_1.default.find(row => row.level === current.level + 1);
     return { level: current.level, exp, currentExp: exp - current.exp, neededExp: next ? next.exp - current.exp : null };
 }
-module.exports = { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, pendingOperationView, sumItems, signature, levelInfo };
+module.exports = { animalMap: ranch_animals_1.animalMap, mutationMap, cubMap: ranch_animals_1.cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, pendingOperationView, sumItems, signature, levelInfo };
 //# sourceMappingURL=model.js.map
