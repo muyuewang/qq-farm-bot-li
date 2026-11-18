@@ -75,6 +75,10 @@ const ranchStrategies = [
   { label: '指定动物', value: 'preferred' },
   { label: '优先背包幼崽', value: 'bag_priority' },
 ]
+const ranchFeedNormalStages = [
+  { label: '任意阶段（买来就用）', value: 'any' },
+  { label: '仅最长阶段（延后使用）', value: 'longest' },
+]
 </script>
 
 <template>
@@ -98,6 +102,9 @@ const ranchStrategies = [
           <div v-if="panel === 'automation'" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div v-for="[key, label] in ranchSwitches" :key="key" class="automation-setting-item">
               <BaseSwitch v-model="settings.automation[key]" :label="label" :disabled="key === 'ranch_grass_buy' && !settings.automation.ranch_grass" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSelect v-model="settings.automation.ranch_feed_normal_stage" label="普通罐头使用阶段" :options="ranchFeedNormalStages" :disabled="!settings.automation.ranch_feed_normal" />
             </div>
             <div class="col-span-full text-xs text-gray-500 dark:text-gray-400">
               两种兑换可独立开启；松果按 8 小时、4 小时、1 小时兑换，粑粑按 4 小时、1 小时兑换。到访或货币到账后排队，登录、重连和日常巡查时核对集市状态。
