@@ -23,6 +23,7 @@ const { PlantPhase } = require('../../config/config');
 const { getPlantName, getPlantById } = require('../../config/gameConfig');
 const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getPlantBlacklist, getFriendsListCacheTtlSec, } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
+const { isGatewayYieldError } = require('../../utils/low-priority-gate');
 const { toNum, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { getCurrentPhase, buildLandMap, buildLandDetail, getPlantStatusFlags, isOccupiedSlaveLand, } = require('../farm');
 const { getCareerInfoOrNull } = require('../career');
@@ -712,6 +713,9 @@ async function visitFriend(friend, totalActions, myGid, accountId, options = {})
         enterReply = await enterFriendFarm(gid);
     }
     catch (e) {
+        // 连接异常交给整轮巡查处理，不能当作单个好友失败后继续扫名单。
+        if (isGatewayYieldError(e) || String(e.message).includes('stage=pending'))
+            throw e;
         const handled = handleFriendEnterError(gid, name, e);
         if (handled.handled && handled.kind === 'blacklist') {
             return { acted: false, entered: false };

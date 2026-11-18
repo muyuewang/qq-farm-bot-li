@@ -25,7 +25,8 @@ exports.onFriendApplicationReceived = onFriendApplicationReceived;
 exports.isHelpExpLimitReached = isHelpExpLimitReached;
 const { CONFIG } = require('../../config/config');
 const crypto = require('node:crypto');
-const { getUserState, networkEvents } = require('../../utils/network');
+const { getUserState, getGatewayLoad, networkEvents } = require('../../utils/network');
+const { isGatewayHealthyForBusiness, isGatewayYieldError } = require('../../utils/low-priority-gate');
 const { toNum, getSystemDateKey, log, logWarn, randomDelay, sleep } = require('../../utils/utils');
 const { getDataFile } = require('../../config/runtime-paths');
 const { createScheduler } = require('../scheduler');
@@ -281,7 +282,7 @@ async function checkFriends(options = {}) {
     const roundDate = getSystemDateKey();
     const canContinue = () => generation === friendLoopGeneration
         && !!getUserState().gid && isAutomationOn('friend') && !inFriendQuietHours()
-        && getSystemDateKey() === roundDate;
+        && getSystemDateKey() === roundDate && isGatewayHealthyForBusiness(getGatewayLoad());
     async function waitStealGap(target) {
         let remainingMs = getStealDelaySeconds(accountId) * 1000;
         while (remainingMs > 0 && canContinue() && isAutomationOn('friend_steal')
@@ -391,6 +392,8 @@ async function checkFriends(options = {}) {
                 }, { detached: true });
             }
             catch (e) {
+                if (isGatewayYieldError(e) || String(e.message).includes('stage=pending'))
+                    throw e;
                 log('好友', `巡查好友失败: ${target.name}, 错误: ${e.message}`, {
                     module: 'friend', event: '好友巡查失败', friendName: target.name, error: e.message,
                 });

@@ -67,12 +67,26 @@ async function run(options = {}) {
         cycleStartedAt = Date.now();
     nextCheckAt = cycleStartedAt + auto.ranch_check_minutes * 60_000;
     try {
+        // 名单只用作拜访索引，实际资格由进好友牧场后的回包确认；复用农场已同步的名单。
+        let friends = [];
+        if (!completedPhases.has('friends') && Object.values(FRIEND_CONTROLS).some(enabled)) {
+            const friendService = require('../friend');
+            friends = friendService.getFriendsListCacheOnly();
+            if (!friends.length)
+                friends = await friendService.getFriendsList(false, 'normal', true);
+        }
+        // 首次名单读取可能较久，仍留在农场，等下一次空档再切换。
+        if (options.canContinue?.() === false || Date.now() >= (options.farmDeadline?.() ?? Infinity)) {
+            nextCheckAt = Date.now() + SCENE_REENTRY_MS;
+            return;
+        }
         await inScene(async (cells) => {
             const startedAt = Date.now();
             let steps = 0;
-            const shouldYield = () => Date.now() >= Math.min(startedAt + PATROL_SLICE_MS, options.farmDeadline?.() ?? Infinity);
+            const shouldYield = () => options.canContinue?.() === false
+                || Date.now() >= Math.min(startedAt + PATROL_SLICE_MS, options.farmDeadline?.() ?? Infinity);
             const checkpoint = () => {
-                if (steps > 0 && shouldYield())
+                if (options.canContinue?.() === false || steps > 0 && shouldYield())
                     throw Object.assign(new Error('牧场巡查让路'), { code: 'RANCH_PATROL_YIELD' });
             };
             async function phase(name, work) {
@@ -81,6 +95,7 @@ async function run(options = {}) {
                 await work();
                 completedPhases.add(name);
             }
+            checkpoint();
             let raw = await loadRaw(cells);
             let nextActionAt = Infinity;
             const updateDeadline = () => {
@@ -289,7 +304,6 @@ async function run(options = {}) {
                     const wanted = (action) => enabled(FRIEND_CONTROLS[action])
                         && (!['stroke', 'putMosquito'].includes(action) || times[action] > 0);
                     if (Object.keys(FRIEND_CONTROLS).some(wanted)) {
-                        const friends = await require('../friend').getFriendsList();
                         // 沿用本轮巡查，每轮最多拜访三位，避免长期占用农牧场共用连接。
                         for (; friendVisits < Math.min(3, friends.length) && Object.keys(FRIEND_CONTROLS).some(wanted); friendVisits++) {
                             checkpoint();

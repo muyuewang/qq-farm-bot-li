@@ -83,6 +83,7 @@ let quotaRampLocked = false;
 let pacingDateKey = '';
 // 轮次链是否还在跑，停表之后不再自我续期
 let syncTimerActive = false;
+let syncGeneration = 0;
 function isSyncEnabled() {
     if (!isAutomationOn('friend'))
         return { enabled: false, reason: 'friend_off' };
@@ -162,7 +163,7 @@ async function probeFriendDog(gid, name) {
     }
     catch (e) {
         // 网关没余力或连接已断：这不是这位好友的问题，整轮让路，不逐个刷超时日志
-        if (isGatewayYieldError(e))
+        if (isGatewayYieldError(e) || String(e.message).includes('stage=pending'))
             return 'yield';
         // 复用已有的封禁加黑、失效好友清理逻辑
         const handled = visitStrategyRef().handleFriendEnterError(gid, name, e);
@@ -209,6 +210,7 @@ function runFriendPetSync() {
 async function runFriendPetSyncRound() {
     if (syncRunning)
         return { outcome: 'skipped', reason: 'running' };
+    const generation = syncGeneration;
     const gate = isSyncEnabled();
     if (!gate.enabled)
         return { outcome: 'skipped', reason: gate.reason };
@@ -232,12 +234,29 @@ async function runFriendPetSyncRound() {
     }
     syncRunning = true;
     try {
+        if (schedulerRef().isFriendCheckRunning())
+            return { outcome: 'deferred', reason: 'friend_task_busy' };
         // 好友列表也是后台请求：网关正忙的时候连它都不该排队
         if (!await waitForGatewayIdle(GATEWAY_IDLE_WAIT_MAX_MS)) {
             return { outcome: 'deferred', reason: classifyGatewayDefer() };
         }
-        const reply = await getAllFriends(false, 'low');
-        const friends = extractReplyFriends(reply);
+        if (generation !== syncGeneration)
+            return { outcome: 'skipped', reason: 'session_changed' };
+        // 这里只需要 GID 和名称，复用农场巡查的名单，不为宠物同步重读几百位好友详情。
+        let friends = visitStrategyRef().getFriendsListCacheOnly();
+        if (!friends.length) {
+            const reply = await runExclusiveAutomationTask('friend_pet_list', () => {
+                if (generation !== syncGeneration || schedulerRef().isFriendCheckRunning())
+                    return null;
+                return getAllFriends(false, 'low');
+            });
+            if (generation !== syncGeneration)
+                return { outcome: 'skipped', reason: 'session_changed' };
+            if (!reply)
+                return { outcome: 'deferred', reason: 'friend_task_busy' };
+            visitStrategyRef().cacheFriendsListFromReply(reply);
+            friends = extractReplyFriends(reply);
+        }
         const accountId = process.env.FARM_ACCOUNT_ID || '';
         const blacklist = new Set(getFriendBlacklist(accountId));
         const invalid = getInvalidKnownFriendGidSet();
@@ -259,6 +278,8 @@ async function runFriendPetSyncRound() {
             const batch = targets.slice(index, index + SYNC_BATCH_SIZE);
             let yielded = false;
             for (const friend of batch) {
+                if (generation !== syncGeneration)
+                    return { outcome: 'skipped', reason: 'session_changed' };
                 if (!isSyncEnabled().enabled) {
                     deferred = pending.length - checked - failed;
                     deferReason = 'switch_off';
@@ -281,7 +302,22 @@ async function runFriendPetSyncRound() {
                     yielded = true;
                     break;
                 }
-                const outcome = await probeFriendDog(friend.gid, friend.name);
+                // 只对 Enter/Leave 这一对操作持锁，等待和批次间隔留给农场巡查。
+                const outcome = await runExclusiveAutomationTask('friend_pet_visit', async () => {
+                    if (generation !== syncGeneration || !isSyncEnabled().enabled || !getUserState().gid)
+                        return 'switch_off';
+                    if (schedulerRef().isFriendCheckRunning())
+                        return 'friend_task_busy';
+                    if (!isGatewayHealthyForBusiness(getGatewayLoad()))
+                        return 'yield';
+                    return probeFriendDog(friend.gid, friend.name);
+                });
+                if (outcome === 'friend_task_busy' || outcome === 'switch_off') {
+                    deferred = pending.length - checked - failed;
+                    deferReason = outcome;
+                    yielded = true;
+                    break;
+                }
                 if (outcome === 'yield') {
                     // 请求排到一半网关就忙起来了：本轮到此为止，剩下的等下一轮
                     deferred = pending.length - checked - failed;
@@ -301,6 +337,8 @@ async function runFriendPetSyncRound() {
                 await sleep(SYNC_BATCH_GAP_MS);
         }
         // 只有真正跑完才标记当日完成，否则下一次定时检查继续补剩下的
+        if (generation !== syncGeneration)
+            return { outcome: 'skipped', reason: 'session_changed' };
         if (deferred === 0)
             markFullSyncDone();
         const stats = getFriendPetCacheStats();
@@ -346,10 +384,13 @@ async function runFriendPetSyncRound() {
 function scheduleNextSyncRound(delayMs) {
     if (!syncTimerActive)
         return;
+    const generation = syncGeneration;
     petSyncScheduler.setTimeoutTask('friend_pet_sync_round', Math.max(1000, delayMs), async () => {
         let nextDelayMs = SYNC_CHECK_INTERVAL_MS;
         try {
-            const result = await runExclusiveAutomationTask('friend_pet_sync', runFriendPetSync);
+            const result = await runFriendPetSync();
+            if (generation !== syncGeneration)
+                return;
             const pacing = planNextSyncPacing(result, { quota: roundQuota, rampLocked: quotaRampLocked });
             roundQuota = pacing.quota;
             quotaRampLocked = pacing.rampLocked;
@@ -358,7 +399,8 @@ function scheduleNextSyncRound(delayMs) {
         catch {
             // 同步内部已经兜住了自己的异常，这里只保证轮次链不断
         }
-        scheduleNextSyncRound(nextDelayMs);
+        if (generation === syncGeneration)
+            scheduleNextSyncRound(nextDelayMs);
     });
 }
 function startFriendPetSyncTimer() {
@@ -367,6 +409,7 @@ function startFriendPetSyncTimer() {
     scheduleNextSyncRound(SYNC_STARTUP_DELAY_MS);
 }
 function stopFriendPetSyncTimer() {
+    syncGeneration++;
     syncTimerActive = false;
     petSyncScheduler.clearAll();
     // 掉线重连后重新开始，不把上一条连接的冷却和退避带过来
