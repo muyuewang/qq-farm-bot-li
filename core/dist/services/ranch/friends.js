@@ -281,8 +281,9 @@ async function commitSteal(host, ranches, plan) {
 }
 // 按本轮剩余动作续跑，每次进入都重新核对目标资格和剩余次数。
 async function automateFriend(hostGid, enabled, shouldYield = () => false, onOutcome, progress = {}) {
-    return visit(hostGid, async (_entry, ranches, host) => {
+    return visit(hostGid, async (entry, ranches, host) => {
         const results = [];
+        const nickname = entry.basic.name.trim();
         const times = {};
         let acted = false;
         const pause = () => shouldYield(acted);
@@ -309,13 +310,13 @@ async function automateFriend(hostGid, enabled, shouldYield = () => false, onOut
                     throw error;
                 if (rejected)
                     acted = true;
-                onOutcome?.({ action, status: 'skipped', notice: `${label}暂未执行：${error.message}` });
+                onOutcome?.({ action, status: 'skipped', notice: `${label}暂未执行：${error.message}` }, nickname);
                 return null;
             }
             if (outcome.status === 'confirmed')
                 results.push(outcome);
             if (outcome.status === 'confirmed' || action === 'steal')
-                onOutcome?.(outcome);
+                onOutcome?.(outcome, nickname);
             return outcome;
         }
         // 可偷产物可能被好友收走，先处理当前货架再做清理和需要查询次数的互动。

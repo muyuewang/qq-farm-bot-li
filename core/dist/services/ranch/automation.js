@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const friend_roster_1 = require("./friend-roster");
 const { RANCH_SWITCH_KEYS } = require('../../config/ranch-automation');
-const { getAutomation } = require('../../models/store');
+const { getAutomation, getFriendBlacklist } = require('../../models/store');
 const { inScene, isUnlocked } = require('./transport');
 const { loadRaw, snapshot, inventory, catalog, market, readMarketRotation, balance } = require('./state');
 const { cubMap, quantity } = require('./model');
@@ -16,6 +17,7 @@ let nextCheckAt = 0;
 let nextFriendIndex = 0;
 let friendVisits = 0;
 let pendingFriend = null;
+let patrolFriends = null;
 let cycleStartedAt = 0;
 let cycleChanged = false;
 let ownRecheckUsed = false;
@@ -37,6 +39,7 @@ function resetCycle(keepFriendProgress = false) {
     if (!keepFriendProgress) {
         friendVisits = 0;
         pendingFriend = null;
+        patrolFriends = null;
     }
     cycleStartedAt = 0;
     cycleChanged = false;
@@ -111,15 +114,6 @@ async function run(options = {}) {
         cycleStartedAt = Date.now();
     nextCheckAt = cycleStartedAt + auto.ranch_check_minutes * 60_000;
     try {
-        // 名单只用作拜访索引，实际资格由进好友牧场后的回包确认；复用农场已同步的名单。
-        let friends = [];
-        if (!completedPhases.has('friends') && Object.keys(FRIEND_CONTROLS).some(canInteract)) {
-            const friendService = require('../friend');
-            friends = friendService.getFriendsListCacheOnly();
-            if (!friends.length)
-                friends = await friendService.getFriendsList(false, 'normal', true);
-        }
-        // 首次名单读取可能较久，仍留在农场，等下一次空档再切换。
         if (options.canContinue?.() === false || Date.now() >= (options.farmDeadline?.() ?? Infinity)) {
             nextCheckAt = Date.now() + SCENE_REENTRY_MS;
             return;
@@ -413,8 +407,17 @@ async function run(options = {}) {
             if (pendingFriend || friendVisits > 0)
                 await claimDailyRewards();
             await phase('friends', async () => {
-                if (friends.length && Object.keys(FRIEND_CONTROLS).some(canInteract)) {
+                if (Object.keys(FRIEND_CONTROLS).some(canInteract)) {
                     checkpoint();
+                    patrolFriends ??= await (0, friend_roster_1.getRanchFriendList)(completedBatch => {
+                        if (completedBatch)
+                            markStep();
+                        checkpoint();
+                    });
+                    const blacklist = new Set(getFriendBlacklist(process.env.FARM_ACCOUNT_ID));
+                    const friends = patrolFriends.filter(friend => !blacklist.has(friend.gid));
+                    if (!friends.length)
+                        return;
                     const hasBulkWork = enabled('ranch_friend_steal') || enabled('ranch_friend_clean');
                     const times = hasBulkWork ? {} : await interactions.getInteractionTimes();
                     const wanted = (action) => canInteract(action) && times[action] !== 0;
@@ -427,12 +430,12 @@ async function run(options = {}) {
                             if (pendingFriend?.gid !== gid)
                                 pendingFriend = { gid, progress: {} };
                             try {
-                                const result = await interactions.automateFriend(friend.gid, wanted, shouldYield, (outcome) => {
+                                const result = await interactions.automateFriend(friend.gid, wanted, shouldYield, (outcome, nickname) => {
                                     const confirmed = outcome.status === 'confirmed';
                                     if (confirmed)
                                         daily.markTasksChanged();
                                     ownRecheckUsed = false;
-                                    log('牧场', `${friend.name}：${outcome.notice}`, {
+                                    log('牧场', `${nickname || friend.name}：${outcome.notice}`, {
                                         module: 'ranch', event: `ranch_${outcome.action}`, result: confirmed ? 'ok' : 'skipped',
                                     });
                                 }, pendingFriend.progress);

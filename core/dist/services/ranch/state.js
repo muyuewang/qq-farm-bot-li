@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const friend_roster_1 = require("./friend-roster");
 const { rpc, inScene, isUnlocked } = require('./transport');
 const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, pendingOperationView, quantity, levelInfo, error } = require('./model');
 const { getServerTimeSec } = require('../../utils/utils');
@@ -223,7 +224,7 @@ async function getState(view = 'animals', shopId, hostGid) {
             if (hostGid !== undefined)
                 state.friendRanch = await require('./friends').getFriend(hostGid);
             else
-                state.friends = (await require('../friend').getFriendsList()).map((friend) => ({ gid: String(friend.gid), name: friend.name, avatarUrl: friend.avatarUrl }));
+                state.friends = (await (0, friend_roster_1.getRanchFriendList)()).map(friend => ({ ...friend, gid: String(friend.gid) }));
         }
         return state;
     });

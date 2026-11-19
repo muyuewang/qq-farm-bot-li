@@ -3,6 +3,7 @@
  * 已知好友 GID 管理 + QQ 好友列表获取
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.QQ_FRIEND_LIST_BATCH_SIZE = void 0;
 exports.postToMaster = postToMaster;
 exports.pruneInvalidKnownFriendGidCooldown = pruneInvalidKnownFriendGidCooldown;
 exports.clearInvalidKnownFriendGidMarks = clearInvalidKnownFriendGidMarks;
@@ -17,6 +18,8 @@ exports.syncKnownFriendGidsFromFriends = syncKnownFriendGidsFromFriends;
 exports.getEffectiveKnownQqFriendGids = getEffectiveKnownQqFriendGids;
 exports.syncKnownFriendGidsFromRecentVisitors = syncKnownFriendGidsFromRecentVisitors;
 exports.removeKnownFriendGid = removeKnownFriendGid;
+exports.fetchFriendsByGids = fetchFriendsByGids;
+exports.fetchAllFriendsForScene = fetchAllFriendsForScene;
 exports.fetchQqFriendsByKnownGids = fetchQqFriendsByKnownGids;
 exports.fetchQqFriendsByLegacyMethod = fetchQqFriendsByLegacyMethod;
 const { parentPort } = require('node:worker_threads');
@@ -31,7 +34,7 @@ function shouldStopFriendRead(error) {
         || !isGatewayHealthyForBusiness(getGatewayLoad());
 }
 // ============ 内部常量与状态 ============
-const QQ_FRIEND_LIST_BATCH_SIZE = 35;
+exports.QQ_FRIEND_LIST_BATCH_SIZE = 35;
 const DEFAULT_QQ_VISITOR_GID_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MIN_QQ_VISITOR_GID_SYNC_RETRY_MS = 30 * 1000;
 const MAX_QQ_VISITOR_GID_SYNC_RETRY_MS = 2 * 60 * 1000;
@@ -242,6 +245,22 @@ function removeKnownFriendGid(friendGid, friendName, reason = '') {
     });
     return true;
 }
+async function fetchFriendsByGids(gids, sceneId, priority = 'normal') {
+    if (!isGatewayHealthyForBusiness(getGatewayLoad())) {
+        throw new GatewayBusyError('好友列表读取已让路，等待连接恢复');
+    }
+    const body = types.GetGameFriendsRequest.encode(types.GetGameFriendsRequest.create({
+        gids: gids.map((gid) => toLong(gid)),
+        global_scene_id: sceneId,
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetGameFriends', body, { priority });
+    return extractReplyFriends(types.GetAllFriendsReply.decode(replyBody));
+}
+async function fetchAllFriendsForScene(sceneId, priority = 'normal') {
+    const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({ global_scene_id: sceneId })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body, { priority });
+    return types.GetAllFriendsReply.decode(replyBody);
+}
 async function fetchQqFriendsByKnownGids(priority = 'normal') {
     if (!types.GetGameFriendsRequest || !types.GetAllFriendsReply) {
         throw new Error('GetGameFriends 接口类型未加载');
@@ -251,18 +270,10 @@ async function fetchQqFriendsByKnownGids(priority = 'normal') {
         return [];
     }
     const allFriends = [];
-    for (let i = 0; i < knownGids.length; i += QQ_FRIEND_LIST_BATCH_SIZE) {
-        if (!isGatewayHealthyForBusiness(getGatewayLoad())) {
-            throw new GatewayBusyError('好友列表读取已让路，等待连接恢复');
-        }
-        const batch = knownGids.slice(i, i + QQ_FRIEND_LIST_BATCH_SIZE);
-        const body = types.GetGameFriendsRequest.encode(types.GetGameFriendsRequest.create({
-            gids: batch.map((gid) => toLong(gid)),
-        })).finish();
+    for (let i = 0; i < knownGids.length; i += exports.QQ_FRIEND_LIST_BATCH_SIZE) {
+        const batch = knownGids.slice(i, i + exports.QQ_FRIEND_LIST_BATCH_SIZE);
         try {
-            const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetGameFriends', body, { priority });
-            const reply = types.GetAllFriendsReply.decode(replyBody);
-            allFriends.push(...extractReplyFriends(reply));
+            allFriends.push(...await fetchFriendsByGids(batch, 1, priority));
         }
         catch (e) {
             // 连接异常影响整份名单，不继续把剩余几百位好友逐批排到故障连接上。
@@ -276,7 +287,7 @@ async function fetchQqFriendsByKnownGids(priority = 'normal') {
                 batchSize: batch.length,
             });
         }
-        if (i + QQ_FRIEND_LIST_BATCH_SIZE < knownGids.length) {
+        if (i + exports.QQ_FRIEND_LIST_BATCH_SIZE < knownGids.length) {
             await randomDelay(500, 1000);
         }
     }
@@ -290,7 +301,7 @@ async function fetchQqFriendsByLegacyMethod(priority = 'normal') {
         const syncRep = types.SyncAllReply || types.SyncAllFriendsReply;
         if (!syncReq || !syncRep)
             throw new Error('SyncAll 接口类型未加载');
-        const body = syncReq.encode(syncReq.create({ open_ids: [] })).finish();
+        const body = syncReq.encode(syncReq.create({ open_ids: [], global_scene_id: 1 })).finish();
         const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body, { priority });
         return extractReplyFriends(syncRep.decode(replyBody));
     }
@@ -304,9 +315,7 @@ async function fetchQqFriendsByLegacyMethod(priority = 'normal') {
     try {
         if (!types.GetAllFriendsRequest || !types.GetAllFriendsReply)
             throw new Error('GetAll 接口类型未加载');
-        const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
-        const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body, { priority });
-        return extractReplyFriends(types.GetAllFriendsReply.decode(replyBody));
+        return extractReplyFriends(await fetchAllFriendsForScene(1, priority));
     }
     catch (e) {
         if (e instanceof GatewayError || e?.name === 'GatewayError' || typeof e?.errorMessage === 'string')

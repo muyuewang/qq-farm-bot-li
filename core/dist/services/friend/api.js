@@ -68,7 +68,7 @@ async function fetchAllFriends(forceSync, priority) {
             throw e;
         }
     }
-    const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
+    const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({ global_scene_id: 1 })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body, { priority });
     return types.GetAllFriendsReply.decode(replyBody);
 }
