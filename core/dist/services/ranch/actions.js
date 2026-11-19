@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const { rpc, inScene } = require('./transport');
 const { loadRaw, snapshot, balance, taskList, catalog, market, canCatalog, resourceBalance, salePrices, shedAwaitingActivation } = require('./state');
-const { animalMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
+const { animalMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature, isLongestAnimalStage } = require('./model');
 const reservations = require('./operation-state');
 const { getServerTimeSec } = require('../../utils/utils');
 const { ACTIONS } = require('./contract');
@@ -121,7 +121,9 @@ async function planAction(action, input, raw) {
         const bucketType = Number(input.bucketType);
         if (![1, 2].includes(bucketType))
             throw error('INVALID_ARGUMENT', '请选择有机或普通罐头');
-        const animals = selectedAnimals(raw, input, animal => animal.can_feed && (bucketType === 1 || !animal.limited_can_used));
+        const normalStage = input.normalStage === 'longest' ? 'longest' : 'any';
+        const animals = selectedAnimals(raw, input, animal => animal.can_feed
+            && (bucketType === 1 || !animal.limited_can_used && (normalStage === 'any' || isLongestAnimalStage(animal))));
         plan.payload = { targets: animalRefs(animals), bucket_type: bucketType };
         const maxSeconds = animals.reduce((sum, animal) => {
             const config = animalMap.get(Number(animal.animal_id));

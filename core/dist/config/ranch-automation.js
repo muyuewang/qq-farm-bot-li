@@ -20,6 +20,7 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_grass_threshold_percent: 20,
     ranch_fill_cans: true,
     ranch_feed_normal: true,
+    ranch_feed_normal_stage: 'any',
     ranch_feed_organic: true,
     ranch_clean: true,
     ranch_stroke: true,
@@ -41,10 +42,11 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
 exports.RANCH_SWITCH_KEYS = Object.keys(exports.RANCH_AUTOMATION_DEFAULTS).filter(key => typeof exports.RANCH_AUTOMATION_DEFAULTS[key] === 'boolean');
 exports.RANCH_ANIMAL_OPTIONS = [...ranch_animals_1.animalMap.values()].filter(animal => animal.enable_flag).map(animal => ({ value: animal.id, label: animal.name, kind: animal.husbandry_type }));
 function normalizeRanchSetting(key, value) {
-    if (key === 'ranch_strategy' || key === 'ranch_bag_fallback') {
-        const allowed = key === 'ranch_strategy' ? ['level', 'preferred', 'bag_priority'] : ['level', 'preferred'];
+    if (key === 'ranch_strategy' || key === 'ranch_bag_fallback' || key === 'ranch_feed_normal_stage') {
+        const allowed = key === 'ranch_strategy' ? ['level', 'preferred', 'bag_priority']
+            : key === 'ranch_bag_fallback' ? ['level', 'preferred'] : ['any', 'longest'];
         if (!allowed.includes(String(value)))
-            throw Object.assign(new Error('请选择有效的养殖策略'), { code: 'INVALID_CONFIG' });
+            throw Object.assign(new Error(key === 'ranch_feed_normal_stage' ? '请选择有效的普通罐头使用阶段' : '请选择有效的养殖策略'), { code: 'INVALID_CONFIG' });
         return String(value);
     }
     if (key === 'ranch_coop_animal' || key === 'ranch_shed_animal') {
