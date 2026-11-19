@@ -10,6 +10,7 @@ const {
     normalizeAccountConfig,
     normalizeAutomationValue,
     cloneAccountConfig,
+    normalizeFertilizerMode,
     normalizeFertilizerLandTypes,
     normalizeKnownFriendGids,
     normalizeKnownFriendGidSyncCooldownSec,
@@ -142,7 +143,7 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
     if (cfg.automation && typeof cfg.automation === 'object') {
         for (const [k, v] of Object.entries(cfg.automation)) {
             if ((next.automation as any)[k] === undefined) continue;
-            // 归一规则全在 shared-state.normalizeAutomationValue 里，两处写入路径共用一份：
+// 归一规则全在 shared-state.normalizeAutomationValue 里，两处写入路径共用一份：
             // 这里以前自己写了个 `!!v` 的兜底，把雇佣班次/特长这类数字选法折成 true，
             // 下次读回来就落回默认档（2026-10-19 用户报「选 24 小时刷新就变回去」）。
             (next.automation as any)[k] = normalizeAutomationValue(k, v, (next.automation as any)[k]);
