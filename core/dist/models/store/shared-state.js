@@ -105,6 +105,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     knownFriendGidSyncCooldownSec: DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC,
     friendsListCacheTtlSec: DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC,
     friendBlacklist: [],
+    ranchFriendBlacklist: [],
     plantBlacklist: [
         20002,
         20003,
@@ -298,6 +299,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             automation[key] = srcAutomation[key];
     }
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
+    const rawRanchFriendBlacklist = Array.isArray(base.ranchFriendBlacklist) ? base.ranchFriendBlacklist : [];
     const knownFriendGids = normalizeKnownFriendGids(base.knownFriendGids);
     const knownFriendGidSyncCooldownSec = normalizeKnownFriendGidSyncCooldownSec(base.knownFriendGidSyncCooldownSec);
     const friendsListCacheTtlSec = normalizeFriendsListCacheTtlSec(base.friendsListCacheTtlSec);
@@ -312,6 +314,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         knownFriendGidSyncCooldownSec,
         friendsListCacheTtlSec,
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
+        ranchFriendBlacklist: rawRanchFriendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
@@ -405,6 +408,9 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     }
     if (Array.isArray(src.friendBlacklist)) {
         cfg.friendBlacklist = src.friendBlacklist.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    }
+    if (Array.isArray(src.ranchFriendBlacklist)) {
+        cfg.ranchFriendBlacklist = src.ranchFriendBlacklist.map(Number).filter((n) => Number.isFinite(n) && n > 0);
     }
     if (src.knownFriendGids !== undefined) {
         cfg.knownFriendGids = normalizeKnownFriendGids(src.knownFriendGids, cfg.knownFriendGids);
