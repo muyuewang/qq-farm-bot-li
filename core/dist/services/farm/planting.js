@@ -15,8 +15,9 @@ const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getCareerInfoOrNull } = require('../career');
 const { getAllLands, buyGoods, removePlant, fertilizeOne, isFertilizerContainerEmpty } = require('./api');
+const { isRipeningOnlyMode, runRipeningFertilizer } = require('./ripening');
 const { selectFutureLayoutReservation, getRegisteredLayout, registerLayout, clearRegisteredLayout, } = require('./layout-reservation');
-const { ALL_FERTILIZER_LAND_TYPES, buildLandDetail, buildFarmSocialEventDetails, analyzeLands, buildLandMap, summarizeLandDetails, getOrganicFertilizerTargetsFromLands, filterLandIdsForNormalFertilizer, getFastMatureLands, normalizeFertilizerLandTypes, formatFertilizerLandTypes, filterLandIdsByTypes, getLandTypeByLevel, buildPlantingLayouts, selectNonOverlappingLayouts, resolveOccupiedLandIds, } = require('./land-analysis');
+const { ALL_FERTILIZER_LAND_TYPES, buildLandDetail, buildFarmSocialEventDetails, analyzeLands, buildLandMap, summarizeLandDetails, getOrganicFertilizerTargetsFromLands, filterLandIdsForNormalFertilizer, normalizeFertilizerLandTypes, formatFertilizerLandTypes, filterLandIdsByTypes, getLandTypeByLevel, buildPlantingLayouts, selectNonOverlappingLayouts, resolveOccupiedLandIds, } = require('./land-analysis');
 function getRemainingPlantDelayMs(pacing) {
     if (pacing.lastPlantAt === null)
         return 0;
@@ -932,6 +933,12 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
+    if (isRipeningOnlyMode(fertilizerConfig))
+        return { normal: 0, organic: 0 };
+    const { skipNormal = false } = options;
+    if (skipNormal && fertilizerConfig === 'smart') {
+        return { normal: 0, organic: await runRipeningFertilizer(automation, undefined, options.propagateErrors) };
+    }
     const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
     const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季节施肥' : '常规施肥';
@@ -948,7 +955,6 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
         });
         return { normal: 0, organic: 0 };
     }
-    const { skipNormal = false } = options;
     if (fertilizerConfig === 'none') {
         log('施肥', `${reasonLabel}：当前施肥策略为不施肥，跳过`, {
             module: 'farm',
@@ -1103,29 +1109,14 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
         }
     }
     else if (fertilizerConfig === 'smart') {
-        let organicTargets = [];
-        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
         try {
-            const latest = await getAllLands();
-            organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
+            const snapshot = normalTargets.length === 0 && latestLands.length > 0 ? latestLands : undefined;
+            fertilizedOrganic = await runRipeningFertilizer(automation, snapshot, options.propagateErrors);
         }
         catch (e) {
-            logWarn('施肥', `获取全农场地块失败 ${e.message}`);
+            logWarn('施肥', `临熟催熟失败: ${e.message}`);
             if (options.propagateErrors)
                 throw e;
-        }
-        if (organicTargets.length > 0) {
-            fertilizedOrganic = await fertilizeOrganicLoop(organicTargets, options.propagateErrors);
-            if (fertilizedOrganic > 0) {
-                log('施肥', `有机化肥循环施肥完成，共施${fertilizedOrganic} 次`, {
-                    module: 'farm',
-                    event: '施肥',
-                    result: 'ok',
-                    type: 'organic',
-                    count: fertilizedOrganic,
-                });
-                recordOperation('fertilize', fertilizedOrganic);
-            }
         }
     }
     return { normal: fertilizedNormal, organic: fertilizedOrganic };

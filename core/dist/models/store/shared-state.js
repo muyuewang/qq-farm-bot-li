@@ -19,6 +19,7 @@ const PUSHOO_CHANNELS = new Set([
     'discord', 'wxpusher', 'meow',
 ]);
 const DEFAULT_FERTILIZER_LAND_TYPES = ['purple-gold', 'gold', 'black', 'red', 'normal'];
+const FERTILIZER_MODES = new Set(['both', 'normal', 'organic', 'smart', 'none', 'normal_ripen', 'organic_ripen']);
 const ALL_FERTILIZER_LAND_TYPES = ['blue-crystal', ...DEFAULT_FERTILIZER_LAND_TYPES];
 const FERTILIZER_LAND_TYPE_SET = new Set(ALL_FERTILIZER_LAND_TYPES);
 const INTERVAL_MAX_SEC = 86400;
@@ -69,7 +70,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         mystery_shop_arrival_notify: false,
         mystery_shop_purchase_notify: false,
         sell: true,
-        fertilizer: 'smart',
+        fertilizer: 'none',
         fertilizer_multi_season: true,
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
         fertilizer_smart_seconds: 300,
@@ -340,6 +341,9 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         autoAcceptHarvestStealSteal: normalizeAutoAcceptHarvestStealSteal(base.autoAcceptHarvestStealSteal, DEFAULT_ACCOUNT_CONFIG.autoAcceptHarvestStealSteal),
     };
 }
+function normalizeFertilizerMode(value, fallback) {
+    return FERTILIZER_MODES.has(value) ? value : fallback;
+}
 /**
  * 单个 automation 键的归一。两处写入路径（`normalizeAccountConfig` 读账号存档、
  * `applyConfigSnapshot` 保存设置页）必须共用这一份，否则选法配置会被另一处 `!!v` 布尔化：
@@ -348,8 +352,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
  */
 function normalizeAutomationValue(key, value, current) {
     if (key === 'fertilizer') {
-        const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
-        return allowed.includes(value) ? value : current;
+        return normalizeFertilizerMode(value, current);
     }
     if (key === 'fertilizer_land_types') {
         return normalizeFertilizerLandTypes(value, current);
@@ -615,6 +618,7 @@ module.exports = {
     normalizeBagSeedPriority,
     normalizeBagSeedLandTypes,
     normalizeBagSeedFallbackStrategy,
+    normalizeFertilizerMode,
     normalizeFertilizerLandTypes,
     normalizeTimeString,
     normalizeIntervals,

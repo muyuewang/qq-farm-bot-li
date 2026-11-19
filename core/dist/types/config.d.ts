@@ -2,7 +2,7 @@ import type { RanchAutomationConfig } from '../config/ranch-automation';
 export {};
 export type PlantingStrategy = 'preferred' | 'level' | 'max_exp' | 'max_fert_exp' | 'max_profit' | 'max_fert_profit' | 'bag_priority';
 export type BagSeedFallbackStrategy = Exclude<PlantingStrategy, 'bag_priority'>;
-export type FertilizerMode = 'both' | 'normal' | 'organic' | 'smart' | 'none';
+export type FertilizerMode = 'both' | 'normal' | 'organic' | 'smart' | 'none' | 'normal_ripen' | 'organic_ripen';
 export type FertilizerLandType = 'blue-crystal' | 'purple-gold' | 'gold' | 'black' | 'red' | 'normal';
 export interface AutomationConfig extends RanchAutomationConfig {
     farm: boolean;

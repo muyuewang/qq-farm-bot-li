@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const sharedState = require('./shared-state');
 const { assertEmailClaimHour } = require('../../utils/hour-of-day');
 const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-cache');
-const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeEmailClaimHour, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
+const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerMode, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeEmailClaimHour, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
 function cloneBagSeedLandTypes(input) {
     const cloned = {};
     for (const [seedId, types] of Object.entries(input || {})) {

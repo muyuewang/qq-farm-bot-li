@@ -117,20 +117,25 @@ let ranchRoutineQueued = false;
 let initialFarmCheckDone = false;
 let initialFriendCheckDone = false;
 let ranchDeferredUntil = 0;
-let onRanchMarketStockReady = null;
 function ranchNextRunAt() {
     // 首轮农场和好友巡查先完成；长好友轮次的访问间隔也不插入场景切换。
     if (!unifiedSchedulerRunning || ranchRoutineQueued || farmTaskRunning || friendTaskRunning
         || !initialFarmCheckDone || !initialFriendCheckDone)
         return Infinity;
     const state = ranchAutomation.getRoutineState();
-    return state.doneToday ? Infinity : Math.max(state.nextCheckAt, ranchDeferredUntil);
+    return Math.max(state.nextCheckAt, ranchDeferredUntil);
 }
 function wakeRanchMarketExchange() {
     if (!loginReady || !getAutomation().ranch_market_organic)
         return;
-    ranchAutomation.resetMarketSchedule();
+    ranchAutomation.requestMarketCheck();
     scheduleUnifiedNextTick();
+}
+function onRanchMarketVisitChanged(rotation) {
+    if (!loginReady || !getAutomation().ranch_market_organic)
+        return;
+    if (ranchAutomation.noteMarketVisit(rotation))
+        scheduleUnifiedNextTick();
 }
 function runRanchRoutine(detached = false) {
     if (!loginReady || Date.now() < ranchNextRunAt())
@@ -715,6 +720,7 @@ async function startBot(config) {
         if (!canContinueLogin() || loginReady)
             return;
         loginReady = true;
+        ranchAutomation.resetSchedule();
         if (onSellGain) {
             networkEvents.off('sell', onSellGain);
         }
@@ -745,10 +751,10 @@ async function startBot(config) {
             }
         };
         networkEvents.on('farmHarvested', onFarmHarvested);
-        if (onRanchMarketStockReady)
-            networkEvents.off('ranchMarketStockReady', onRanchMarketStockReady);
-        onRanchMarketStockReady = wakeRanchMarketExchange;
-        networkEvents.on('ranchMarketStockReady', onRanchMarketStockReady);
+        networkEvents.off('ranchMarketStockReady', wakeRanchMarketExchange);
+        networkEvents.on('ranchMarketStockReady', wakeRanchMarketExchange);
+        networkEvents.off('ranchMarketVisitChanged', onRanchMarketVisitChanged);
+        networkEvents.on('ranchMarketVisitChanged', onRanchMarketVisitChanged);
         if (onDogSkillGiftPending) {
             networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
         }
@@ -831,10 +837,8 @@ function detachRuntimeListeners() {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
     }
-    if (onRanchMarketStockReady) {
-        networkEvents.off('ranchMarketStockReady', onRanchMarketStockReady);
-        onRanchMarketStockReady = null;
-    }
+    networkEvents.off('ranchMarketStockReady', wakeRanchMarketExchange);
+    networkEvents.off('ranchMarketVisitChanged', onRanchMarketVisitChanged);
     if (onDogSkillGiftPending) {
         networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
         onDogSkillGiftPending = null;
