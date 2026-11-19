@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const sharedState = require('./shared-state');
 const { assertEmailClaimHour } = require('../../utils/hour-of-day');
+// 集市兑换迁移只在写入路径跑；条目归一统一走 shared-state.normalizeAutomationValue
+// （它内部已委托 normalizeRanchSetting 处理 ranch 键，无需在此单独引入）。
+const { migrateRanchMarketAutomation } = require('../../config/ranch-automation');
 const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-cache');
 const { globalConfig, normalizeAccountConfig, normalizeAutomationValue, cloneAccountConfig, normalizeFertilizerMode, normalizeFertilizerLandTypes, normalizeKnownFriendGids, normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, normalizeEmailClaimHour, normalizeBagSeedPriority, normalizeBagSeedLandTypes, normalizeBagSeedFallbackStrategy, normalizeIntervals, normalizeTimeString, normalizeAutoAcceptFriendMinLevel, normalizeAutoAcceptHarvestStealHarvest, normalizeAutoAcceptHarvestStealSteal, ALLOWED_PLANTING_STRATEGIES, } = sharedState;
 function cloneBagSeedLandTypes(input) {
@@ -114,7 +117,7 @@ function applyConfigSnapshot(snapshot, options = {}) {
     const current = getAccountConfigSnapshot(accountId);
     const next = normalizeAccountConfig(current, sharedState.accountFallbackConfig);
     if (cfg.automation && typeof cfg.automation === 'object') {
-        for (const [k, v] of Object.entries(cfg.automation)) {
+        for (const [k, v] of Object.entries(migrateRanchMarketAutomation(cfg.automation))) {
             if (next.automation[k] === undefined)
                 continue;
             // 归一规则全在 shared-state.normalizeAutomationValue 里，两处写入路径共用一份：

@@ -17,6 +17,7 @@ const { performDailyMonthCardGift, getMonthCardDailyState } = require('../servic
 const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
 const { runExclusiveAutomationTask } = require('../services/automation-lock');
 const ranchAutomation = require('../services/ranch/automation');
+const { isRanchMarketEnabled } = require('../config/ranch-automation');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
@@ -126,13 +127,13 @@ function ranchNextRunAt() {
     return Math.max(state.nextCheckAt, ranchDeferredUntil);
 }
 function wakeRanchMarketExchange() {
-    if (!loginReady || !getAutomation().ranch_market_organic)
+    if (!loginReady || !isRanchMarketEnabled(getAutomation()))
         return;
     ranchAutomation.requestMarketCheck();
     scheduleUnifiedNextTick();
 }
 function onRanchMarketVisitChanged(rotation) {
-    if (!loginReady || !getAutomation().ranch_market_organic)
+    if (!loginReady || !isRanchMarketEnabled(getAutomation()))
         return;
     if (ranchAutomation.noteMarketVisit(rotation))
         scheduleUnifiedNextTick();

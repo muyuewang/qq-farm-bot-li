@@ -8,6 +8,12 @@ const { types } = require('../../utils/proto');
 function bagItems(bag) {
     return [...bag.physical_items, ...bag.virtual_items];
 }
+function salePrices(item) {
+    if (item.is_locked || !item.show || item.show.sell_cond.length || BigInt(quantity(item.count)) <= 0n)
+        return [];
+    const prices = item.show.sells;
+    return prices.every((price) => BigInt(quantity(price.id)) > 0n && BigInt(quantity(price.count)) > 0n) ? prices : [];
+}
 function balance(bag, id) {
     const entries = bagItems(bag).filter(item => Number(item.id) === id);
     const total = entries.reduce((sum, item) => sum + BigInt(quantity(item.count)), 0n);
@@ -78,6 +84,10 @@ async function loadRaw(cells) {
         throw error('RANCH_RESPONSE_MISMATCH', '牧场背包场景不匹配');
     return { cells: currentCells, bag };
 }
+function shedAwaitingActivation(raw) {
+    // 达到开放条件后，服务器下发待激活的一级棚和正式实例 ID。
+    return raw.cells.facilities.find((facility) => facility.module_type === 7 && facility.facility_id === 6002001 && facility.state === 3);
+}
 function snapshot(raw) {
     const info = levelInfo(Number(balance(raw.bag, 1102).total));
     return {
@@ -95,7 +105,7 @@ function inventory(raw) {
         return {
             ...itemDto(item), uid: quantity(item.uid), locked: item.is_locked, tabId: Number(item.tab_id) || Number(metadata?.show_tab_ids) || 0,
             type: metadata?.type || 0, sellPrices: item.show?.sells?.map(itemDto) || [],
-            canSell: !item.is_locked && !!item.show?.sells?.length && !item.show.sell_cond.length && [106, 107].includes(metadata?.type),
+            canSell: salePrices(item).length > 0,
             can: canMap.get(Number(item.id)) || null, animalId: animal?.id || null, giantCub: !!animal?.giantCubItemId,
             husbandryType: animal?.husbandry_type ?? null,
             product: item.item_detail?.ranch_product ? {
@@ -240,5 +250,5 @@ async function resourceBalances(keys) {
         return keys.map(key => ({ ...balance(raw.bag, Number(key.slice(5))), name: itemDto({ id: key.slice(5), count: 0 }).name, source: 'ranch-bag', asOfMs: Date.now() }));
     });
 }
-module.exports = { getState, loadRaw, snapshot, balance, bagItems, inventory, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
+module.exports = { getState, loadRaw, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
 //# sourceMappingURL=state.js.map

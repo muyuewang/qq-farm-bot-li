@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RANCH_ANIMAL_OPTIONS = exports.RANCH_SWITCH_KEYS = exports.RANCH_AUTOMATION_DEFAULTS = void 0;
+exports.RANCH_MARKET_SWITCH_KEYS = exports.RANCH_ANIMAL_OPTIONS = exports.RANCH_SWITCH_KEYS = exports.RANCH_AUTOMATION_DEFAULTS = void 0;
 exports.normalizeRanchSetting = normalizeRanchSetting;
+exports.migrateRanchMarketAutomation = migrateRanchMarketAutomation;
+exports.isRanchMarketEnabled = isRanchMarketEnabled;
 const ranch_animals_1 = require("./ranch-animals");
 exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_harvest: true,
@@ -9,7 +11,10 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_buy: true,
     ranch_upgrade: true,
     ranch_sell: true,
+    // 旧总开关仅用于兼容旧配置；运行时分别检查两种货币开关。
     ranch_market_organic: true,
+    ranch_market_organic_poop: true,
+    ranch_market_organic_pinecone: true,
     ranch_grass: true,
     ranch_grass_buy: true,
     ranch_grass_threshold_percent: 20,
@@ -22,6 +27,7 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_friend_clean: true,
     ranch_friend_mosquito: true,
     ranch_task: true,
+    ranch_illustrated: true,
     ranch_share: true,
     ranch_daily_benefit: true,
     ranch_check_minutes: 5,
@@ -72,5 +78,20 @@ function normalizeRanchSetting(key, value) {
     if (typeof value !== 'boolean')
         throw Object.assign(new Error('牧场开关必须为布尔值'), { code: 'INVALID_CONFIG' });
     return value;
+}
+exports.RANCH_MARKET_SWITCH_KEYS = ['ranch_market_organic_poop', 'ranch_market_organic_pinecone'];
+/** 旧配置的总开关只填充缺失的新字段，已明确设置的独立开关优先。 */
+function migrateRanchMarketAutomation(input) {
+    const result = { ...input };
+    if (typeof result.ranch_market_organic === 'boolean') {
+        for (const key of exports.RANCH_MARKET_SWITCH_KEYS) {
+            if (result[key] === undefined)
+                result[key] = result.ranch_market_organic;
+        }
+    }
+    return result;
+}
+function isRanchMarketEnabled(input) {
+    return exports.RANCH_MARKET_SWITCH_KEYS.some(key => (input[key] ?? input.ranch_market_organic) === true);
 }
 //# sourceMappingURL=ranch-automation.js.map

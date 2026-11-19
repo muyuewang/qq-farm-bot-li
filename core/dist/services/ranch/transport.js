@@ -10,6 +10,7 @@ const ROUTES = {
     cells: ['homesteadpb.HomesteadService', 'AllCells', 'RanchAllCells'],
     buildings: ['homesteadpb.HomesteadService', 'GetBuildingList', 'RanchGetBuildingList'],
     facility: ['homesteadpb.HomesteadService', 'GetFacilityDetail', 'RanchGetFacilityDetail'],
+    activateShed: ['homesteadpb.HomesteadService', 'ActivateFacility', 'RanchActivateFacility'],
     upgrade: ['homesteadpb.HomesteadService', 'UpgradeBuilding', 'RanchUpgradeBuilding'],
     completeUpgrade: ['homesteadpb.HomesteadService', 'CompleteBuildingUpgrade', 'RanchCompleteBuildingUpgrade'],
     addGrass: ['homesteadpb.FeedMachineService', 'AddFeed', 'RanchAddFeed'],
