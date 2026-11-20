@@ -48,20 +48,28 @@ function mountCommerceRoutes(app, ctx) {
     };
     app.get('/api/ranch/automation-options', (_req, res) => res.json({ ok: true, data: require('../../config/ranch-automation').RANCH_ANIMAL_OPTIONS }));
     app.get('/api/ranch', withAccount((accountId, req) => ctx.provider.getRanchState(accountId, String(req.query.view || 'animals'), req.query.shopId === undefined ? undefined : Number(req.query.shopId), req.query.hostGid === undefined ? undefined : String(req.query.hostGid))));
+    app.post('/api/ranch/illustrated/clear-new', withAccount((accountId) => ctx.provider.clearRanchIllustratedNew(accountId)));
     app.post('/api/ranch/:action/quote', withAccount((accountId, req) => ctx.provider.prepareRanchAction(accountId, String(req.params.action), req.body)));
     app.post('/api/ranch/:action', withAccount((accountId, req) => ctx.provider.operateRanch(accountId, String(req.params.action), req.body)));
     // 牧场拜访黑名单：非好友（服务端拒绝拜访）等不再巡查与展示。
     app.get('/api/ranch-friend-blacklist', withAccount(async (accountId) => ({ gids: store.getRanchFriendBlacklist(accountId) })));
     app.post('/api/ranch-friend-blacklist/toggle', withAccount(async (accountId, req) => {
-        const gid = Number((req.body || {}).gid);
-        if (!gid || gid <= 0)
+        const { gid: rawGid, blacklisted } = req.body || {};
+        const gid = Number(rawGid);
+        if (!Number.isSafeInteger(gid) || gid <= 0)
             throw Object.assign(new Error('缺少有效的 gid'), { code: 'MISSING_GID' });
+        if (blacklisted !== undefined && typeof blacklisted !== 'boolean') {
+            throw Object.assign(new Error('无效的黑名单状态'), { code: 'INVALID_ARGUMENT' });
+        }
         const current = store.getRanchFriendBlacklist(accountId);
-        const next = current.includes(gid) ? current.filter((item) => item !== gid) : [...current, gid];
-        store.setRanchFriendBlacklist(accountId, next);
+        const alreadyBlacklisted = current.includes(gid);
+        const wanted = blacklisted ?? !alreadyBlacklisted;
+        if (wanted === alreadyBlacklisted)
+            return { gids: current, blacklisted: wanted };
+        const next = store.setRanchFriendBlacklist(accountId, wanted ? [...current, gid] : current.filter((item) => item !== gid));
         if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function')
             ctx.provider.broadcastConfig(accountId);
-        return { gids: next, blacklisted: next.includes(gid) };
+        return { gids: next, blacklisted: wanted };
     }));
     app.get('/api/solar-calendar', withAccount((accountId) => ctx.provider.getSolarCalendar(accountId)));
     app.post('/api/solar-calendar/:action', withAccount((accountId, req) => ctx.provider.operateSolarCalendar(accountId, req.params.action, req.body)));

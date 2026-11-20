@@ -15,6 +15,7 @@ const API_CALL_TIMEOUTS_MS = {
     getPetDiaryFriend: 30000,
     scanWeatherFriends: 60000,
     getWeatherFriends: 30000,
+    clearRanchIllustratedNew: 40000,
 };
 function createWorkerManager(options) {
     const { fork, WorkerThread, runtimeMode = 'thread', processRef, mainEntryPath, workerScriptPath, workers, globalLogs, log, addAccountLog, normalizeStatusForPanel, buildConfigSnapshotForAccount, getOfflineAutoDeleteMs, triggerOfflineReminder, sendConfiguredPush, addOrUpdateAccount, deleteAccount, onStatusSync, onWorkerLog, codeRetryDelayMs = DEFAULT_CODE_RETRY_DELAY_MS, codeRetryMinIntervalMs = DEFAULT_CODE_RETRY_MIN_INTERVAL_MS, } = options;
@@ -440,6 +441,25 @@ function createWorkerManager(options) {
                 else
                     req.resolve(result);
                 worker.requests.delete(id);
+            }
+        }
+        else if (msg.type === 'ranch_friend_blacklist_add') {
+            const gid = Number(msg.gid);
+            if (!Number.isSafeInteger(gid) || gid <= 0)
+                return;
+            try {
+                const { addRanchFriendToBlacklist } = require('../models/store');
+                if (!addRanchFriendToBlacklist(accountId, gid))
+                    return;
+                worker.process.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(accountId) });
+                log('牧场', `${msg.friendName || `GID:${gid}`} 不是好友，已加入牧场黑名单`, {
+                    accountId: String(accountId), accountName: worker.name, module: 'ranch', event: 'ranch_friend_blacklist', result: 'ok',
+                });
+            }
+            catch (error) {
+                log('牧场', `同步牧场黑名单失败：${error.message}`, {
+                    accountId: String(accountId), accountName: worker.name, module: 'ranch', event: 'ranch_friend_blacklist', result: 'error',
+                });
             }
         }
         else if (msg.type === 'friend_blacklist_add') {

@@ -2,6 +2,7 @@ export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_harvest: boolean;
     ranch_produce: boolean;
     ranch_buy: boolean;
+    ranch_activate_shed: boolean;
     ranch_upgrade: boolean;
     ranch_sell: boolean;
     ranch_market_organic: boolean;
@@ -39,7 +40,11 @@ export declare const RANCH_ANIMAL_OPTIONS: {
     kind: string;
 }[];
 export declare function normalizeRanchSetting(key: string, value: unknown): boolean | number | string | number[];
-export declare const RANCH_MARKET_SWITCH_KEYS: readonly ["ranch_market_organic_poop", "ranch_market_organic_pinecone"];
+export declare const RANCH_MARKET_SWITCH_BY_CURRENCY: {
+    readonly 7002: "ranch_market_organic_poop";
+    readonly 1008: "ranch_market_organic_pinecone";
+};
+export declare const RANCH_MARKET_SWITCH_KEYS: ("ranch_market_organic_poop" | "ranch_market_organic_pinecone")[];
 /** 旧配置的总开关只填充缺失的新字段，已明确设置的独立开关优先。 */
 export declare function migrateRanchMarketAutomation(input: Record<string, any>): Record<string, any>;
 export declare function isRanchMarketEnabled(input: Partial<RanchAutomationConfig>): boolean;

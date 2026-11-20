@@ -49,6 +49,12 @@ function animalDto(animal) {
         mutation: mutation ? { type: mutation.mutation_type, source: mutation.source, weightX10: mutation.weight_display_x10, finalWeightX10: mutation.weight_final_x10, tier: mutation.tier, canStroke: mutation.strokable } : null,
     };
 }
+function isPendingShed(facility) {
+    return facility.module_type === 7 && facility.facility_id === 6002001 && facility.state === 3;
+}
+function canActivateShed(facility, level) {
+    return level >= 21 && isPendingShed(facility);
+}
 function facilityDto(facility, level) {
     const metadata = facilityMap.get(Number(facility.facility_id));
     const next = facilityMap.get(metadata?.next_facility_id);
@@ -60,7 +66,7 @@ function facilityDto(facility, level) {
     return {
         id: quantity(facility.instance_id), facilityId: facility.facility_id,
         name: metadata?.name || `设施${facility.facility_id}`, moduleType: facility.module_type,
-        state: facility.state, active: facility.state === 1,
+        state: facility.state, active: facility.state === 1, canActivate: canActivateShed(facility, level),
         level: facility.level, capacity: facility.capacity, upgradeState: facility.upgrade_state,
         upgradeEndTime: Number(facility.upgrade_end_time),
         next: next ? { level: next.level, capacity: next.capacity, durationSec: next.upgrade_secs, requiredLevel: requirement ? Number(requirement[1]) : null, costs,
@@ -87,7 +93,8 @@ async function loadRaw(cells) {
 }
 function shedAwaitingActivation(raw) {
     // 达到开放条件后，服务器下发待激活的一级棚和正式实例 ID。
-    return raw.cells.facilities.find((facility) => facility.module_type === 7 && facility.facility_id === 6002001 && facility.state === 3);
+    const { level } = levelInfo(Number(balance(raw.bag, 1102).total));
+    return raw.cells.facilities.find((facility) => canActivateShed(facility, level));
 }
 function snapshot(raw) {
     const info = levelInfo(Number(balance(raw.bag, 1102).total));
@@ -236,7 +243,7 @@ async function getState(view = 'animals', shopId, hostGid) {
                 state.friendRanch = await require('./friends').getFriend(hostGid);
             else {
                 const blacklist = new Set(require('../../models/store').getRanchFriendBlacklist());
-                state.friends = (await (0, friend_roster_1.getRanchFriendList)()).map(friend => ({ ...friend, gid: String(friend.gid), blacklisted: blacklist.has(friend.gid) }));
+                state.friends = (await (0, friend_roster_1.getRanchFriendList)()).map(({ gid, name, avatarUrl }) => ({ gid: String(gid), name, avatarUrl, blacklisted: blacklist.has(gid) }));
             }
         }
         return state;
@@ -253,5 +260,5 @@ async function resourceBalances(keys) {
         return keys.map(key => ({ ...balance(raw.bag, Number(key.slice(5))), name: itemDto({ id: key.slice(5), count: 0 }).name, source: 'ranch-bag', asOfMs: Date.now() }));
     });
 }
-module.exports = { getState, loadRaw, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
+module.exports = { getState, loadRaw, isPendingShed, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
 //# sourceMappingURL=state.js.map

@@ -174,7 +174,7 @@ async function prepareInteraction(action, input) {
             expected: { signature: plan.signature }, skipped: plan.count === 0 };
     });
 }
-async function commitInteraction(plan) {
+async function commitInteraction(plan, ranch) {
     if (!plan.count)
         return { action: plan.action, status: 'skipped', costs: [], rewards: [], completed: 0, snapshot: null };
     return reservations.forCurrentAccount().spend({ target: plan.target, label: plan.label, costs: [], balances: [] }, async () => {
@@ -222,6 +222,9 @@ async function commitInteraction(plan) {
             invalid();
         if (plan.action !== 'cleanFriend')
             rememberQuota(plan.action, remaining, reset);
+        // 放蚊子回包包含栏舍当前的全部污物，用它规划下一只。
+        if (plan.action === 'putMosquito' && ranch)
+            ranch.hazards = reply.hazards;
         const items = sumItems(rewards);
         return { action: plan.action, status: completed ? 'confirmed' : 'skipped', snapshot: null, costs: [], rewards: items, completed,
             remainingTimes: plan.action === 'cleanFriend' ? undefined : remaining, triggered: reply.triggered === true, refreshRequired: true,
@@ -378,13 +381,10 @@ async function automateFriend(hostGid, enabled, shouldYield = () => false, onOut
                 if (pause())
                     return { results, times, yielded: true };
                 const plan = interactionPlan(step.action, step, ranches, host, times);
-                const outcome = await act(plan, () => commitInteraction(plan));
+                const outcome = await act(plan, () => commitInteraction(plan, ranch));
                 if (outcome)
                     times[step.action] = outcome.remainingTimes;
                 if (outcome && step.action === 'putMosquito' && --step.remaining > 0 && times.putMosquito > 0) {
-                    if (pause())
-                        return { results, times, yielded: true };
-                    ranches = (await rpc('animals', { host_gid: host })).ranches;
                     continue;
                 }
             }

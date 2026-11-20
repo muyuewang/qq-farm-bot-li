@@ -592,6 +592,13 @@ function handleNotify(msg) {
                 networkEvents.emit('ranchMarketVisitChanged', rotation);
             return;
         }
+        if (type === 'gamepb.homesteadpb.FacilitiesNotify') {
+            const notify = types.RanchFacilitiesNotify.decode(eventBody);
+            const hostGid = toNum(notify.host_gid);
+            if (hostGid > 0 && hostGid === userState.gid)
+                networkEvents.emit('ranchFacilitiesChanged', notify.facilities);
+            return;
+        }
         // 物品变化通知
         if (type.includes('ItemNotify')) {
             try {
@@ -784,7 +791,9 @@ function handleNotify(msg) {
         // 图鉴奖励红点通知
         if (type.includes('IllustratedRewardRedDotNotifyV2')) {
             try {
-                networkEvents.emit('illustratedRewardRedDot');
+                const notify = types.IllustratedRewardRedDotNotifyV2.decode(eventBody);
+                networkEvents.emit('illustratedRewardRedDot', notify);
+                networkEvents.emit('ranchBookReward', 'normal', notify.ranch_reward_available);
             }
             catch { }
             return;

@@ -1,35 +1,44 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const friend_roster_1 = require("./friend-roster");
-const { RANCH_SWITCH_KEYS, RANCH_MARKET_SWITCH_KEYS, isRanchMarketEnabled } = require('../../config/ranch-automation');
-const { getAutomation, getRanchFriendBlacklist, addRanchFriendToBlacklist } = require('../../models/store');
+const gid_manager_1 = require("../friend/gid-manager");
+const { RANCH_SWITCH_KEYS, RANCH_MARKET_SWITCH_KEYS, RANCH_MARKET_SWITCH_BY_CURRENCY, isRanchMarketEnabled } = require('../../config/ranch-automation');
+const { getAutomation, getRanchFriendBlacklist } = require('../../models/store');
 const { inScene, isUnlocked } = require('./transport');
-const { loadRaw, shedAwaitingActivation, snapshot, inventory, catalog, market, readMarketRotation, balance } = require('./state');
+const { loadRaw, isPendingShed, shedAwaitingActivation, snapshot, inventory, catalog, market, readMarketRotation, balance } = require('./state');
 const { cubMap, quantity } = require('./model');
 const { prepareAction, operate } = require('./actions');
-const { getServerTimeSec, log } = require('../../utils/utils');
+const { getServerTimeSec, log, randomDelay } = require('../../utils/utils');
 const { getShopGoodsById } = require('../../config/gameConfig');
 const reservations = require('./operation-state');
 const { getAmbientSendContext, runWithSendContext } = require('./context');
 const daily = require('./daily');
 const interactions = require('./friends');
 let nextCheckAt = 0;
+let lastCycleEndAt = 0;
+let retryAt = 0;
 let nextFriendIndex = 0;
 let friendVisits = 0;
 let pendingFriend = null;
 let patrolFriends = null;
+let patrolStatusRefresh = { attempted: new Set(), lastAt: 0, rejected: false };
+const friendRetryAt = new Map();
 let cycleStartedAt = 0;
 let cycleChanged = false;
 let ownRecheckUsed = false;
 const completedPhases = new Set();
 const completedSteps = new Set();
 const pendingBookKinds = new Set();
+let shedCheckPending = true;
+let shedNotifyRevision = 0;
 const PATROL_SLICE_MS = 5000;
 const SCENE_REENTRY_MS = 20_000;
+const FRIEND_STATUS_FRESH_MS = 10_000;
+const FRIEND_ENTRY_RETRY_MS = 30 * 60_000;
 const MARKET_EXCHANGES = [
-    { key: 'ranch_market_organic_poop', currencyId: 7002, rewardPriority: [80012, 80011], minBalance: 3n },
-    { key: 'ranch_market_organic_pinecone', currencyId: 1008, rewardPriority: [80013, 80012, 80011], minBalance: 1n },
-];
+    { currencyId: 7002, rewardPriority: [80012, 80011], minBalance: 3n },
+    { currencyId: 1008, rewardPriority: [80013, 80012, 80011], minBalance: 1n },
+].map(exchange => ({ ...exchange, key: RANCH_MARKET_SWITCH_BY_CURRENCY[exchange.currencyId] }));
 let marketCheckPending = true;
 let marketRunId = 0;
 let lastMarketRotation = null;
@@ -37,11 +46,11 @@ const lastMarketBalances = new Map();
 function resetCycle(keepFriendProgress = false) {
     completedPhases.clear();
     completedSteps.clear();
-    pendingBookKinds.clear();
     if (!keepFriendProgress) {
         friendVisits = 0;
         pendingFriend = null;
         patrolFriends = null;
+        patrolStatusRefresh = { attempted: new Set(), lastAt: 0, rejected: false };
     }
     cycleStartedAt = 0;
     cycleChanged = false;
@@ -49,7 +58,38 @@ function resetCycle(keepFriendProgress = false) {
 }
 const FRIEND_CONTROLS = { stroke: 'ranch_stroke', steal: 'ranch_friend_steal', cleanFriend: 'ranch_friend_clean', putMosquito: 'ranch_friend_mosquito' };
 const enabled = (key) => getAutomation()[key] === true;
+function logLongestStageFeed(message, result) {
+    log('牧场', `普通罐头（仅最长阶段）：${message}`, {
+        module: 'ranch', event: 'ranch_feed', result, accountId: process.env.FARM_ACCOUNT_ID,
+    });
+}
 const canInteract = (action) => enabled(FRIEND_CONTROLS[action]) && !interactions.getInteractionQuotaResetAt(action);
+function wakeRanchCheck(key) {
+    if (enabled(key) && !cycleStartedAt && Date.now() >= retryAt) {
+        nextCheckAt = Math.min(nextCheckAt, lastCycleEndAt + SCENE_REENTRY_MS);
+    }
+}
+function noteRanchFacilities(facilities) {
+    if (!facilities.some(isPendingShed))
+        return false;
+    shedNotifyRevision++;
+    if (shedCheckPending)
+        return false;
+    shedCheckPending = true;
+    wakeRanchCheck('ranch_activate_shed');
+    return true;
+}
+function noteBookReward(kind, available) {
+    if (pendingBookKinds.has(kind) === available)
+        return false;
+    if (available) {
+        pendingBookKinds.add(kind);
+        wakeRanchCheck('ranch_illustrated');
+    }
+    else
+        pendingBookKinds.delete(kind);
+    return true;
+}
 function marketRotation(raw) {
     return { periodDay: quantity(raw.period_day), roundIndex: raw.round_index, startsAt: Number(raw.shop_start_time),
         endsAt: Number(raw.shop_end_time), present: raw.present };
@@ -89,9 +129,12 @@ function getRoutineState() {
     const mosquitoReset = auto.ranch_friend_mosquito ? interactions.getInteractionQuotaResetAt('putMosquito') : 0;
     const work = auto.ranch_stroke && !strokeReset || auto.ranch_friend_mosquito && !mosquitoReset
         || RANCH_SWITCH_KEYS.some((key) => ![
-            'ranch_task', 'ranch_illustrated', 'ranch_share', 'ranch_daily_benefit', 'ranch_grass_buy', 'ranch_market_organic', ...RANCH_MARKET_SWITCH_KEYS, 'ranch_stroke', 'ranch_friend_mosquito',
+            'ranch_task', 'ranch_illustrated', 'ranch_share', 'ranch_daily_benefit', 'ranch_activate_shed', 'ranch_grass_buy',
+            'ranch_market_organic', ...RANCH_MARKET_SWITCH_KEYS, 'ranch_stroke', 'ranch_friend_mosquito',
         ].includes(key) && auto[key]);
-    const routineDue = work || auto.ranch_task && due(daily.getTaskRoutineState()) || auto.ranch_share && due(daily.getShareRoutineState()) || auto.ranch_daily_benefit && due(daily.getBenefitRoutineState());
+    const routineDue = work || auto.ranch_activate_shed && shedCheckPending || auto.ranch_illustrated && pendingBookKinds.size > 0
+        || auto.ranch_task && due(daily.getTaskRoutineState()) || auto.ranch_share && due(daily.getShareRoutineState())
+        || auto.ranch_daily_benefit && due(daily.getBenefitRoutineState());
     const pending = routineDue || isRanchMarketEnabled(auto) && marketCheckPending;
     return {
         doneToday: !pending,
@@ -115,6 +158,7 @@ async function run(options = {}) {
     if (!cycleStartedAt)
         cycleStartedAt = Date.now();
     nextCheckAt = cycleStartedAt + auto.ranch_check_minutes * 60_000;
+    const shedNotifyAtStart = shedNotifyRevision;
     try {
         if (options.canContinue?.() === false || Date.now() >= (options.farmDeadline?.() ?? Infinity)) {
             nextCheckAt = Date.now() + SCENE_REENTRY_MS;
@@ -148,7 +192,7 @@ async function run(options = {}) {
             const updateDeadline = (reopenOwn = false) => {
                 const state = snapshot(raw);
                 const upcoming = state.facilities.flatMap((f) => [
-                    ...(auto.ranch_harvest || auto.ranch_produce ? (f.ranch?.animals || []).map((a) => a.nextAtMs) : []),
+                    ...(auto.ranch_harvest || auto.ranch_produce ? (f.ranch?.animals || []).flatMap((a) => [a.nextAtMs, auto.ranch_harvest ? a.deliveringUntilMs : 0]) : []),
                     auto.ranch_upgrade && f.upgradeState ? (f.upgradeEndTime < 100_000_000_000 ? f.upgradeEndTime * 1000 : f.upgradeEndTime) : 0,
                 ]).filter((at) => at > state.serverTime);
                 nextActionAt = upcoming.length ? Date.now() + Math.min(...upcoming) - state.serverTime : Infinity;
@@ -176,6 +220,7 @@ async function run(options = {}) {
                 return Number(count < BigInt(wanted) ? count : BigInt(wanted));
             };
             async function act(key, action, input = {}, currency, progress, expectedRewardId) {
+                const longestStageFeed = key === 'ranch_feed_normal' && input.normalStage === 'longest';
                 const isEnabled = () => enabled(key) && (key !== 'ranch_grass_buy' || enabled('ranch_grass'));
                 if (!isEnabled())
                     return false;
@@ -189,6 +234,8 @@ async function run(options = {}) {
                     label = quote.label;
                     if (quote.skipped || currency && quote.costItems.some((cost) => cost.id !== currency)
                         || expectedRewardId !== undefined && (quote.rewards.length !== 1 || Number(quote.rewards[0].id) !== expectedRewardId)) {
+                        if (longestStageFeed)
+                            logLongestStageFeed(quote.message || '本轮未找到喂养目标', 'skipped');
                         completedSteps.add(step);
                         markStep(action);
                         return false;
@@ -204,16 +251,18 @@ async function run(options = {}) {
                     }, () => operate(action, { ...input, expected: quote.expected }));
                     completedSteps.add(step);
                     markStep(action);
-                    if (result.status === 'skipped')
+                    if (result.status === 'skipped') {
+                        if (longestStageFeed)
+                            logLongestStageFeed(result.notice || '动物状态已变化，本轮未喂养', 'skipped');
                         return false;
-                    if (action === 'harvest' && result.harvestedAnimals > 0 && enabled('ranch_illustrated')) {
-                        for (const kind of ['normal', 'giant']) {
-                            pendingBookKinds.add(kind);
-                            completedSteps.delete(`claimIllustrated:${JSON.stringify({ kind })}`);
-                        }
                     }
                     cycleChanged = true;
-                    log('牧场', `${quote.label}${result.notice ? `：${result.notice}` : '完成'}`, { module: 'ranch', event: `ranch_${action}`, result: 'ok' });
+                    if (longestStageFeed) {
+                        logLongestStageFeed(`喂养完成，目标 ${quote.count} 只，消耗 ${result.costs[0].count} 秒，桶内剩余 ${result.bucketRemainingSeconds} 秒`, 'ok');
+                    }
+                    else {
+                        log('牧场', `${quote.label}${result.notice ? `：${result.notice}` : '完成'}`, { module: 'ranch', event: `ranch_${action}`, result: 'ok' });
+                    }
                     raw = await loadRaw();
                     updateDeadline();
                     return true;
@@ -221,9 +270,14 @@ async function run(options = {}) {
                 catch (error) {
                     // 状态或余额变化交给下一次巡查重新报价；已发出但结果未知的写入由持久账本保护。
                     if (['INSUFFICIENT_BALANCE', 'RESERVE_PROTECTED', 'PENDING_CONFIRMATION', 'RANCH_OFFER_CHANGED', 'RANCH_EXCHANGE_UNAVAILABLE', 'GOODS_UNAVAILABLE', 'RANCH_STATE_CHANGED'].includes(error.code)) {
+                        if (action === 'claimIllustrated' && error.code === 'RANCH_OFFER_CHANGED')
+                            pendingBookKinds.add(input.kind);
                         completedSteps.add(step);
                         markStep(action);
-                        log('牧场', `${label} 暂未执行：${error.message}`, { module: 'ranch', event: `ranch_${action}`, result: 'skipped' });
+                        if (longestStageFeed)
+                            logLongestStageFeed(`暂未执行：${error.message}`, 'skipped');
+                        else
+                            log('牧场', `${label} 暂未执行：${error.message}`, { module: 'ranch', event: `ranch_${action}`, result: 'skipped' });
                         return false;
                     }
                     throw error;
@@ -288,9 +342,16 @@ async function run(options = {}) {
                     marketCheckPending = false;
                 }
             });
-            const shed = enabled('ranch_upgrade') && shedAwaitingActivation(raw);
-            if (shed)
-                await act('ranch_upgrade', 'activateShed', { facilityId: quantity(shed.instance_id) });
+            if (enabled('ranch_activate_shed')) {
+                const shed = shedAwaitingActivation(raw);
+                if (shed) {
+                    shedCheckPending = true;
+                    if (await act('ranch_activate_shed', 'activateShed', { facilityId: quantity(shed.instance_id) }))
+                        shedCheckPending = false;
+                }
+                else if (shedNotifyAtStart === shedNotifyRevision)
+                    shedCheckPending = false;
+            }
             await phase('upgrade', async () => {
                 if (enabled('ranch_upgrade')) {
                     for (const facility of snapshot(raw).facilities) {
@@ -305,9 +366,20 @@ async function run(options = {}) {
                 }
             });
             // 成熟动物腾栏后，在补栏前核对一次。让路时保留尚未核对的图鉴。
-            for (const kind of pendingBookKinds) {
-                await act('ranch_illustrated', 'claimIllustrated', { kind });
-                pendingBookKinds.delete(kind);
+            for (const kind of ['normal', 'giant']) {
+                if (!enabled('ranch_illustrated') || !pendingBookKinds.delete(kind))
+                    continue;
+                completedSteps.delete(`claimIllustrated:${JSON.stringify({ kind })}`);
+                try {
+                    await act('ranch_illustrated', 'claimIllustrated', { kind });
+                }
+                catch (cause) {
+                    if (cause.outcomeUnknown || cause.code === 'RANCH_RESULT_UNKNOWN')
+                        pendingBookKinds.delete(kind);
+                    else
+                        pendingBookKinds.add(kind);
+                    throw cause;
+                }
             }
             if (enabled('ranch_buy')) {
                 const bagFirst = auto.ranch_strategy === 'bag_priority';
@@ -399,15 +471,13 @@ async function run(options = {}) {
                 }
             });
             await phase('feed-normal', async () => {
-                if (!enabled('ranch_feed_normal') || available(7003) <= 0n)
+                if (!enabled('ranch_feed_normal'))
                     return;
-                const normalStage = auto.ranch_feed_normal_stage === 'longest' ? 'longest' : 'any';
-                if (normalStage === 'longest') {
-                    const { isLongestAnimalStage } = require('./model');
-                    const hasLongest = snapshot(raw).facilities.some((f) => (f.ranch?.animals || [])
-                        .some((animal) => animal.canFeed && !animal.limitedCanUsed && isLongestAnimalStage(animal)));
-                    if (!hasLongest)
-                        return;
+                const normalStage = getAutomation().ranch_feed_normal_stage;
+                if (available(7003) <= 0n) {
+                    if (normalStage === 'longest')
+                        logLongestStageFeed('普通罐头桶没有可用时长', 'skipped');
+                    return;
                 }
                 await act('ranch_feed_normal', 'feed', { all: true, bucketType: 2, normalStage });
             });
@@ -450,16 +520,48 @@ async function run(options = {}) {
                     const hasBulkWork = enabled('ranch_friend_steal') || enabled('ranch_friend_clean');
                     const times = hasBulkWork ? {} : await interactions.getInteractionTimes();
                     const wanted = (action) => canInteract(action) && times[action] !== 0;
+                    const statusDecides = () => !wanted('stroke') && !wanted('putMosquito');
                     if (Object.keys(FRIEND_CONTROLS).some(wanted)) {
                         // 沿用本轮巡查，每轮最多拜访三位，避免长期占用农牧场共用连接。
-                        for (; friendVisits < Math.min(3, friends.length) && Object.keys(FRIEND_CONTROLS).some(wanted); friendVisits++) {
+                        for (let scanned = 0; scanned < friends.length && friendVisits < Math.min(3, friends.length)
+                            && Object.keys(FRIEND_CONTROLS).some(wanted); scanned++, nextFriendIndex++) {
                             checkpoint();
-                            const friend = friends.find((row) => String(row.gid) === pendingFriend?.gid) || friends[nextFriendIndex % friends.length];
+                            const friend = (pendingFriend && friends.find(row => String(row.gid) === pendingFriend?.gid)) || friends[nextFriendIndex % friends.length];
                             const gid = String(friend.gid);
+                            const canVisit = () => !getRanchFriendBlacklist(process.env.FARM_ACCOUNT_ID).includes(friend.gid);
+                            if (!canVisit() || (friendRetryAt.get(friend.gid) ?? 0) > Date.now()) {
+                                pendingFriend = null;
+                                continue;
+                            }
+                            if (pendingFriend?.gid !== gid && statusDecides() && !patrolStatusRefresh.rejected
+                                && !patrolStatusRefresh.attempted.has(friend.gid) && Date.now() - friend.statusAtMs > FRIEND_STATUS_FRESH_MS) {
+                                if (Date.now() - patrolStatusRefresh.lastAt < 1000)
+                                    await randomDelay(500, 1000);
+                                checkpoint(true);
+                                try {
+                                    const queried = await (0, friend_roster_1.refreshRanchFriendStatus)(friends, nextFriendIndex % friends.length);
+                                    for (const id of queried)
+                                        patrolStatusRefresh.attempted.add(id);
+                                }
+                                catch (error) {
+                                    if (error.name !== 'GatewayError')
+                                        throw error;
+                                    patrolStatusRefresh.rejected = true;
+                                    log('牧场', `好友状态刷新失败，本轮进门核对：${error.message}`, { module: 'ranch', event: 'ranch_friend', result: 'skipped' });
+                                }
+                                patrolStatusRefresh.lastAt = Date.now();
+                                markStep();
+                                checkpoint();
+                            }
+                            if (!canVisit() || (pendingFriend?.gid !== gid && statusDecides() && Date.now() - friend.statusAtMs <= FRIEND_STATUS_FRESH_MS
+                                && !(wanted('steal') && friend.canSteal) && !(wanted('cleanFriend') && friend.canHelp))) {
+                                pendingFriend = null;
+                                continue;
+                            }
                             if (pendingFriend?.gid !== gid)
                                 pendingFriend = { gid, progress: {} };
                             try {
-                                const result = await interactions.automateFriend(friend.gid, wanted, shouldYield, (outcome, nickname) => {
+                                const result = await interactions.automateFriend(friend.gid, action => wanted(action) && canVisit(), shouldYield, (outcome, nickname) => {
                                     const confirmed = outcome.status === 'confirmed';
                                     if (confirmed)
                                         daily.markTasksChanged();
@@ -472,30 +574,34 @@ async function run(options = {}) {
                                 if (result.yielded) {
                                     throw Object.assign(new Error('牧场好友巡查让路'), { code: 'RANCH_PATROL_YIELD' });
                                 }
+                                friendRetryAt.delete(friend.gid);
                                 markStep();
                             }
                             catch (error) {
-                                if (error.name !== 'GatewayError' || error.methodName !== 'EnterHomestead')
+                                if (error.name !== 'GatewayError' || error.serviceName !== 'gamepb.visitpb.VisitService'
+                                    || error.methodName !== 'EnterHomestead')
                                     throw error;
                                 markStep();
-                                // 服务端判定不是好友（code=1002002）：加入牧场黑名单，巡查与列表都不再处理。
-                                if (error.code === 1002002) {
-                                    if (addRanchFriendToBlacklist(process.env.FARM_ACCOUNT_ID, gid)) {
-                                        log('牧场', `${friend.name}（${gid}）不是好友，已加入牧场拜访黑名单`, { module: 'ranch', event: 'ranch_friend_blacklist', result: 'ok' });
-                                    }
-                                }
-                                else {
+                                friendRetryAt.set(friend.gid, Date.now() + FRIEND_ENTRY_RETRY_MS);
+                                // 仅在服务端明确给出非好友原因时请求主进程持久化。
+                                const nonFriend = error.code === 1002002 && /不是(?:你的)?好友|非好友|(?:没有|不存在)好友关系|\bnot (?:a |your )?friend\b/i.test(error.errorMessage);
+                                if (!nonFriend || !(0, gid_manager_1.postToMaster)({ type: 'ranch_friend_blacklist_add', gid: friend.gid, friendName: friend.name })) {
                                     log('牧场', `暂不能拜访 ${friend.name}：${error.message}`, { module: 'ranch', event: 'ranch_friend', result: 'skipped' });
                                 }
                             }
                             pendingFriend = null;
-                            nextFriendIndex++;
+                            friendVisits++;
                         }
                     }
                 }
             });
             await claimDailyRewards();
-            nextCheckAt = Math.max(Date.now() + SCENE_REENTRY_MS, Math.min(nextCheckAt, nextActionAt, cycleChanged ? Date.now() + 30_000 : Infinity));
+            lastCycleEndAt = Date.now();
+            const bookDue = enabled('ranch_illustrated') && pendingBookKinds.size > 0;
+            const shedDue = enabled('ranch_activate_shed') && shedCheckPending && shedNotifyAtStart !== shedNotifyRevision;
+            const nextRoutine = Math.min(nextCheckAt, nextActionAt, cycleChanged ? lastCycleEndAt + 30_000 : Infinity);
+            nextCheckAt = Math.max(lastCycleEndAt + SCENE_REENTRY_MS, bookDue || shedDue ? lastCycleEndAt : nextRoutine);
+            retryAt = 0;
             resetCycle();
         });
     }
@@ -508,16 +614,21 @@ async function run(options = {}) {
         if (error.code === 'RANCH_AUTOMATION_DISABLED')
             return;
         nextCheckAt = Date.now() + Math.max(auto.ranch_check_minutes, 10) * 60_000;
+        retryAt = nextCheckAt;
         log('牧场', `日常牧场巡查失败：${error.message}`, { module: 'ranch', event: 'ranch_automation', result: 'error' });
     }
 }
 module.exports = {
-    run, getRoutineState, selectAnimal, requestMarketCheck, noteMarketVisit,
+    run, getRoutineState, selectAnimal, requestMarketCheck, noteMarketVisit, noteBookReward, noteRanchFacilities,
     resetSchedule: () => {
         requestMarketCheck();
         nextCheckAt = 0;
         lastMarketRotation = null;
         lastMarketBalances.clear();
+        friendRetryAt.clear();
+        shedCheckPending = true;
+        shedNotifyRevision++;
+        retryAt = 0;
         resetCycle();
     },
 };
