@@ -110,13 +110,13 @@ async function planAction(action: string, input: any, raw: any, produceTargets?:
         if (![1, 2].includes(bucketType)) throw error('INVALID_ARGUMENT', '请选择有机或普通罐头');
 const normalStage = input.normalStage === 'longest' ? 'longest' : 'any';
         const feedable = selectedAnimals(raw, input, () => true).filter(animal => animal.can_feed);
-        const animals = feedable.filter(animal => bucketType === 1
-            || !animal.limited_can_used && (normalStage === 'any' || isLongestAnimalStage(animal)));
+        const unused = feedable.filter(animal => bucketType === 1 || !animal.limited_can_used);
+        const animals = bucketType === 2 && normalStage === 'longest' ? unused.filter(animal => isLongestAnimalStage(animal)) : unused;
         if (!animals.length) {
             // 空目标要分清是「没动物可喂」「本轮普通罐头已用完」还是「被最长阶段策略挡下」，提示才有指导性。
             if (!feedable.length) plan.message = '当前没有可喂养的动物';
-            else if (bucketType === 2 && normalStage === 'longest') plan.message = '普通罐头仅用于最长阶段，当前没有符合条件的动物';
-            else plan.message = '普通罐头本轮已使用';
+            else if (!unused.length) plan.message = '普通罐头本轮已使用';
+            else plan.message = '当前没有处于最长生长阶段的可喂养动物';
         }
         plan.payload = { targets: animalRefs(animals), bucket_type: bucketType };
         const maxSeconds = animals.reduce((sum, animal) => {
