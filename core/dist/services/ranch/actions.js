@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const ranch_automation_1 = require("../../config/ranch-automation");
 const { rpc, inScene } = require('./transport');
 const { loadRaw, snapshot, balance, taskList, catalog, market, canCatalog, ranchMallCatalog, canLockRanchItem, resourceBalance, salePrices, shedAwaitingActivation } = require('./state');
 const { animalMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
@@ -33,6 +34,26 @@ function selectedAnimals(raw, input, eligible) {
 function animalRefs(animals) {
     return animals.map(animal => ({ ranch_inst_id: quantity(animal.ranch_inst_id), animal_inst_id: animal.animal_inst_id }));
 }
+function feedDurations(config) {
+    return [0, config.infant_sec, config.grow_sec, config.product_round_sec, config.mature_sec];
+}
+function matchesFeedStage(animal, stage, nowMs) {
+    if (stage === 'to_production')
+        return animal.stage === 2;
+    if (stage === 'near_harvest') {
+        const remaining = Number(animal.mature_ready_at_ms) - nowMs;
+        return animal.stage === 4 && remaining > 0 && remaining <= ranch_automation_1.RANCH_NEAR_HARVEST_MS;
+    }
+    if (stage === 'longest') {
+        const config = animalMap.get(Number(animal.animal_id));
+        if (!config)
+            return false;
+        const durations = feedDurations(config);
+        const current = durations[animal.stage];
+        return current > 0 && current === Math.max(...durations);
+    }
+    return true;
+}
 function isClientReportedTask(task) {
     if (!task?.unlocked || task.claimed)
         return false;
@@ -47,7 +68,7 @@ function upgradeEndMs(value) {
 function remainingUpgradeSeconds(endMs) {
     return Math.max(0, Math.ceil(endMs / 1000) - getServerTimeSec());
 }
-async function planAction(action, input, raw, produceTargets) {
+async function planAction(action, input, raw, produceTargets, feedStage) {
     if (!ACTIONS.includes(action))
         throw error('INVALID_ARGUMENT', '不支持的牧场操作');
     const plan = { action, label: LABELS[action], route: action, payload: {}, costItems: [], marker: null, expectedRewards: [], count: 1 };
@@ -158,31 +179,26 @@ async function planAction(action, input, raw, produceTargets) {
             throw error('INVALID_ARGUMENT', '请选择有机或普通罐头');
         const feedable = selectedAnimals(raw, input, () => true).filter(animal => animal.can_feed);
         const unused = feedable.filter(animal => bucketType === 1 || !animal.limited_can_used);
-        const animals = bucketType === 2 && input.normalStage === 'longest' ? unused.filter((animal) => {
-            const config = animalMap.get(Number(animal.animal_id));
-            if (!config)
-                return false;
-            const durations = [0, config.infant_sec, config.grow_sec, config.product_round_sec, config.mature_sec];
-            const current = durations[animal.stage];
-            return current > 0 && current === Math.max(...durations);
-        }) : unused;
+        const strategy = feedStage ?? (bucketType === 2 && input.normalStage === 'longest' ? 'longest' : 'any');
+        const nowSeconds = getServerTimeSec();
+        const animals = unused.filter(animal => matchesFeedStage(animal, strategy, nowSeconds * 1000));
         if (!animals.length) {
-            // 空目标要分清是「没动物可喂」「本轮普通罐头已用完」还是「被最长阶段策略挡下」，提示才有指导性。
+            // 空目标要分清是「没动物可喂」「本轮罐头已用完」还是「被使用时机策略挡下」，提示才有指导性。
             if (!feedable.length)
                 plan.message = '当前没有可喂养的动物';
             else if (!unused.length)
-                plan.message = '普通罐头本轮已使用';
+                plan.message = '罐头本轮已使用';
             else
-                plan.message = '当前没有处于最长生长阶段的可喂养动物';
+                plan.message = strategy === 'longest' ? '当前没有处于最长生长阶段的可喂养动物' : '当前没有符合罐头使用时机的动物';
         }
         plan.payload = { targets: animalRefs(animals), bucket_type: bucketType };
         const maxSeconds = animals.reduce((sum, animal) => {
             const config = animalMap.get(Number(animal.animal_id));
             if (!config)
                 throw error('RANCH_CONFIG_UNKNOWN', '动物阶段配置尚未同步');
-            const durations = [0, config.infant_sec, config.grow_sec, config.product_round_sec, config.mature_sec];
+            const durations = feedDurations(config);
             const deadlines = [0, animal.infant_ready_at_ms, animal.grow_ready_at_ms, animal.produce_ready_at_ms, animal.mature_ready_at_ms];
-            const remaining = Math.max(0, Math.ceil(Number(deadlines[animal.stage]) / 1000) - getServerTimeSec());
+            const remaining = Math.max(0, Math.ceil(Number(deadlines[animal.stage]) / 1000) - nowSeconds);
             const upperBound = Math.max(durations[animal.stage] || 0, Math.ceil(remaining / 3600) * 3600);
             if (!upperBound)
                 throw error('RANCH_PRICE_UNKNOWN', '当前阶段的罐头消耗无法确认');
@@ -377,13 +393,13 @@ async function planAction(action, input, raw, produceTargets) {
     plan.signature = JSON.stringify({ action, payload: plan.payload, costs: plan.costs, rewards: plan.expectedRewards, marker: plan.marker });
     return plan;
 }
-async function prepareAction(action, input = {}) {
+async function prepareAction(action, input = {}, feedStage) {
     if (action === 'steal')
         return require('./friends').prepareSteal(input);
     if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
         return require('./friends').prepareInteraction(action, input);
     return inScene(async (cells) => {
-        const plan = await planAction(action, input, action === 'claimIllustrated' ? null : await loadRaw(cells));
+        const plan = await planAction(action, input, action === 'claimIllustrated' ? null : await loadRaw(cells), undefined, feedStage);
         return { action, label: plan.label, costs: plan.costs, costItems: plan.costItems, rewards: plan.expectedRewards, count: plan.count,
             expected: { signature: plan.signature }, skipped: plan.count === 0, message: plan.message };
     });
@@ -409,7 +425,7 @@ function animalsInResults(ranches, rows) {
     const ids = new Set(rows.filter(row => row.kind === 1).map(row => `${quantity(row.facility_inst_id)}:${quantity(row.target_id)}`));
     return ranches.flatMap(ranch => ranch.animals.filter((animal) => ids.has(`${quantity(ranch.ranch_inst_id)}:${animal.animal_inst_id}`)));
 }
-async function operate(action, input = {}) {
+async function operate(action, input = {}, feedStage) {
     if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
         return require('./friends').interact(action, input);
     if (action === 'acknowledge')
@@ -422,7 +438,7 @@ async function operate(action, input = {}) {
         return require('./friends').steal(input);
     async function run(action, input, before, produceTargets) {
         const direct = input.direct === true && input.expected === undefined && DIRECT_ACTIONS.has(action);
-        const plan = await planAction(action, input, before, produceTargets);
+        const plan = await planAction(action, input, before, produceTargets, feedStage);
         if (plan.count === 0)
             return { status: 'skipped', snapshot: snapshot(before), costs: [], rewards: [], notice: plan.message };
         if (!direct && input.expected?.signature !== plan.signature)

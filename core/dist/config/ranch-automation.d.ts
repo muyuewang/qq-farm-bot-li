@@ -1,3 +1,6 @@
+declare const RANCH_FEED_STAGES: readonly ["any", "longest", "to_production", "near_harvest"];
+export type RanchFeedStage = typeof RANCH_FEED_STAGES[number];
+export declare const RANCH_NEAR_HARVEST_MS: number;
 export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_harvest: boolean;
     ranch_produce: boolean;
@@ -13,8 +16,9 @@ export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_grass_threshold_percent: number;
     ranch_fill_cans: boolean;
     ranch_feed_normal: boolean;
-    ranch_feed_normal_stage: "any" | "longest";
+    ranch_feed_normal_stage: RanchFeedStage;
     ranch_feed_organic: boolean;
+    ranch_feed_organic_stage: RanchFeedStage;
     ranch_clean: boolean;
     ranch_stroke: boolean;
     ranch_friend_steal: boolean;
@@ -48,4 +52,5 @@ export declare const RANCH_MARKET_SWITCH_KEYS: ("ranch_market_organic_poop" | "r
 /** 旧配置的总开关只填充缺失的新字段，已明确设置的独立开关优先。 */
 export declare function migrateRanchMarketAutomation(input: Record<string, any>): Record<string, any>;
 export declare function isRanchMarketEnabled(input: Partial<RanchAutomationConfig>): boolean;
+export {};
 //# sourceMappingURL=ranch-automation.d.ts.map

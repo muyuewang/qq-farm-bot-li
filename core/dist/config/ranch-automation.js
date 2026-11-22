@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RANCH_MARKET_SWITCH_KEYS = exports.RANCH_MARKET_SWITCH_BY_CURRENCY = exports.RANCH_ANIMAL_OPTIONS = exports.RANCH_SWITCH_KEYS = exports.RANCH_AUTOMATION_DEFAULTS = void 0;
+exports.RANCH_MARKET_SWITCH_KEYS = exports.RANCH_MARKET_SWITCH_BY_CURRENCY = exports.RANCH_ANIMAL_OPTIONS = exports.RANCH_SWITCH_KEYS = exports.RANCH_AUTOMATION_DEFAULTS = exports.RANCH_NEAR_HARVEST_MS = void 0;
 exports.normalizeRanchSetting = normalizeRanchSetting;
 exports.migrateRanchMarketAutomation = migrateRanchMarketAutomation;
 exports.isRanchMarketEnabled = isRanchMarketEnabled;
 const ranch_animals_1 = require("./ranch-animals");
+const RANCH_FEED_STAGES = ['any', 'longest', 'to_production', 'near_harvest'];
+exports.RANCH_NEAR_HARVEST_MS = 10 * 60_000;
 exports.RANCH_AUTOMATION_DEFAULTS = {
     ranch_harvest: true,
     ranch_produce: true,
@@ -24,6 +26,7 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
     // 默认仅在最长生长阶段使用普通罐头，避免把时长浪费在产出最短的阶段。
     ranch_feed_normal_stage: 'longest',
     ranch_feed_organic: true,
+    ranch_feed_organic_stage: 'near_harvest',
     ranch_clean: true,
     ranch_stroke: true,
     ranch_friend_steal: true,
@@ -44,10 +47,11 @@ exports.RANCH_AUTOMATION_DEFAULTS = {
 exports.RANCH_SWITCH_KEYS = Object.keys(exports.RANCH_AUTOMATION_DEFAULTS).filter(key => typeof exports.RANCH_AUTOMATION_DEFAULTS[key] === 'boolean');
 exports.RANCH_ANIMAL_OPTIONS = [...ranch_animals_1.animalMap.values()].filter(animal => animal.enable_flag).map(animal => ({ value: animal.id, label: animal.name, kind: animal.husbandry_type }));
 function normalizeRanchSetting(key, value) {
-    if (key === 'ranch_feed_normal_stage') {
-        if (value === 'any' || value === 'longest')
-            return value;
-        throw Object.assign(new Error('请选择有效的普通罐头使用阶段'), { code: 'INVALID_CONFIG' });
+    if (key === 'ranch_feed_normal_stage' || key === 'ranch_feed_organic_stage') {
+        if (typeof value !== 'string' || !RANCH_FEED_STAGES.includes(value)) {
+            throw Object.assign(new Error('请选择有效的罐头使用时机'), { code: 'INVALID_CONFIG' });
+        }
+        return value;
     }
     if (key === 'ranch_strategy' || key === 'ranch_bag_fallback') {
         const allowed = key === 'ranch_strategy' ? ['level', 'preferred', 'bag_priority'] : ['level', 'preferred'];
