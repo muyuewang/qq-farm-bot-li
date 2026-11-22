@@ -17,6 +17,7 @@ const { mountFarmRoutes } = require('./farm-routes');
 const { mountFriendRoutes } = require('./friend-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
 const { mountCommerceRoutes } = require('./commerce-routes');
+const { mountDebugRoutes } = require('./debug-routes');
 const { mountWxLoginRoutes } = require('./wx-login-routes');
 const { mountQqLoginRoutes } = require('./qq-login-routes');
 const { setupSocketIO, emitRealtimeStatus: _emitStatus, emitRealtimeLog: _emitLog, emitRealtimeAccountLog: _emitAccountLog, } = require('./socket');
@@ -65,6 +66,7 @@ function startAdminServer(dataProvider) {
     mountAccountRoutes(app, ctx);
     mountActivityCenterRoutes(app, ctx);
     mountCommerceRoutes(app, ctx);
+    mountDebugRoutes(app, ctx);
     // SPA fallback
     app.get('*', (req, res) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/game-config')) {
