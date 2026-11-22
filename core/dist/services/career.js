@@ -12,12 +12,19 @@ async function getCareerInfo(gid) {
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.careerpb.CareerService', 'CareerInfoGet', body);
     const reply = types.CareerInfoGetReply.toObject(types.CareerInfoGetReply.decode(replyBody), { longs: Number, defaults: true });
+    const ranch = reply.ranch;
     return {
         gid: toNum(reply.gid) || numericGid,
         harvest: toNum(reply.total_harvest_count ?? reply.totalHarvestCount),
         steal: toNum(reply.total_steal_count ?? reply.totalStealCount),
         level: toNum(reply.level),
         name: String(reply.name || ''),
+        ranch: ranch ? {
+            harvest: toNum(ranch.total_harvest_count),
+            mature: toNum(ranch.total_mature_count),
+            steal: toNum(ranch.total_steal_count),
+            products: ranch.harvest_items.map((item) => ({ id: toNum(item.item_id), count: toNum(item.harvest_count) })),
+        } : null,
     };
 }
 async function getCareerInfoOrNull(gid, propagateErrors = false) {

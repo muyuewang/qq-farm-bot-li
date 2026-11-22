@@ -391,7 +391,7 @@ class TsdkRuntime {
         const referenceValue = view[referencePtr + nodeMismatchIndex];
         if (mismatches.length !== 1
             || mismatches[0] !== nodeMismatchIndex
-            || currentValue !== referenceValue + 1) {
+            || currentValue !== ((referenceValue + 1) & 0xFF)) {
             throw new Error('TSDK QQ 宿主特征布局与已验证版本不一致');
         }
         view[currentPtr + nodeMismatchIndex] = referenceValue;

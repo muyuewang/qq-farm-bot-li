@@ -114,7 +114,7 @@ function target(animal: any) {
             <small class="ranch-head__count">{{ animals.length }} / {{ capacity }}</small>
           </h3>
           <div class="ranch-actions">
-<NButton :disabled="disabled || !hazards" :title="cleanHint" @click="requestDirect('clean')">
+            <NButton :disabled="disabled || !hazards" :title="cleanHint" @click="requestDirect('clean')">
               <span class="i-carbon-clean" />一键清理
             </NButton>
             <RanchFeedMenu :buckets="buckets" :limited-can-used="normalCanUsed" :disabled="!!feedHint" @feed="(bucketType, produceAfterFeed) => requestDirect('feed', { all: true, bucketType, produceAfterFeed })">

@@ -12,7 +12,7 @@ let cache = null;
 let sync = null;
 // 实包核对：can_steal 按当前账号计算，偷过后变为 false；can_help 排除当前账号自己投放的蚊子。
 function farmStatus(status, statusAtMs) {
-    return { canSteal: status.can_steal, canHelp: status.can_help, statusAtMs };
+    return { canSteal: status.can_steal, canHelp: status.can_help, stealLotCount: status.steal_lot_count, helpCount: status.help_count, statusAtMs };
 }
 function assertRanchSession(socket) {
     if (getWs() !== socket || getUserState().globalSceneId !== 2) {
@@ -42,7 +42,7 @@ async function refreshRanchFriendStatus(friends, start) {
     return [...byGid.keys()];
 }
 // 调用方持有牧场场景任务。同步分批保留进度，让路后从下一批继续。
-async function getRanchFriendList(checkpoint) {
+async function getRanchFriendList(checkpoint, fresh = false) {
     const state = getUserState();
     if (state.globalSceneId !== 2)
         throw error('RANCH_SCENE_REQUIRED', '同步好友需要先进入牧场场景');
@@ -50,9 +50,9 @@ async function getRanchFriendList(checkpoint) {
     const socket = getWs();
     const gids = CONFIG.platform === 'qq' ? getKnownFriendGids().filter((gid) => gid !== self) : [];
     const key = `${CONFIG.platform}:${self}:${gids.join(',')}`;
-    if (cache && cache.socket === socket && cache.key === key && Date.now() < cache.expiresAt)
+    if (!fresh && cache && cache.socket === socket && cache.key === key && Date.now() < cache.expiresAt)
         return cache.friends;
-    if (!sync || sync.socket !== socket || sync.key !== key) {
+    if (fresh || !sync || sync.socket !== socket || sync.key !== key) {
         sync = { socket, key, offset: 0, friends: new Map() };
     }
     const current = sync;

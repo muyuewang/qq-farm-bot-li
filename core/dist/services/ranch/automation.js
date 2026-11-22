@@ -58,8 +58,8 @@ function resetCycle(keepFriendProgress = false) {
 }
 const FRIEND_CONTROLS = { stroke: 'ranch_stroke', steal: 'ranch_friend_steal', cleanFriend: 'ranch_friend_clean', putMosquito: 'ranch_friend_mosquito' };
 const enabled = (key) => getAutomation()[key] === true;
-function logLongestStageFeed(message, result) {
-    log('牧场', `普通罐头（仅最长阶段）：${message}`, {
+function logCanFeed(canLabel, message, result) {
+    log('牧场', `${canLabel}：${message}`, {
         module: 'ranch', event: 'ranch_feed', result, accountId: process.env.FARM_ACCOUNT_ID,
     });
 }
@@ -220,7 +220,8 @@ async function run(options = {}) {
                 return Number(count < BigInt(wanted) ? count : BigInt(wanted));
             };
             async function act(key, action, input = {}, currency, progress, expectedRewardId) {
-                const longestStageFeed = key === 'ranch_feed_normal' && input.normalStage === 'longest';
+                const canLabel = key === 'ranch_feed_organic' ? '有机罐头'
+                    : key === 'ranch_feed_normal' ? (input.normalStage === 'longest' ? '普通罐头（仅最长阶段）' : '普通罐头') : '';
                 const isEnabled = () => enabled(key) && (key !== 'ranch_grass_buy' || enabled('ranch_grass'));
                 if (!isEnabled())
                     return false;
@@ -234,8 +235,8 @@ async function run(options = {}) {
                     label = quote.label;
                     if (quote.skipped || currency && quote.costItems.some((cost) => cost.id !== currency)
                         || expectedRewardId !== undefined && (quote.rewards.length !== 1 || Number(quote.rewards[0].id) !== expectedRewardId)) {
-                        if (longestStageFeed)
-                            logLongestStageFeed(quote.message || '本轮未找到喂养目标', 'skipped');
+                        if (canLabel)
+                            logCanFeed(canLabel, quote.message || '本轮未找到喂养目标', 'skipped');
                         completedSteps.add(step);
                         markStep(action);
                         return false;
@@ -252,13 +253,13 @@ async function run(options = {}) {
                     completedSteps.add(step);
                     markStep(action);
                     if (result.status === 'skipped') {
-                        if (longestStageFeed)
-                            logLongestStageFeed(result.notice || '动物状态已变化，本轮未喂养', 'skipped');
+                        if (canLabel)
+                            logCanFeed(canLabel, result.notice || '动物状态已变化，本轮未喂养', 'skipped');
                         return false;
                     }
                     cycleChanged = true;
-                    if (longestStageFeed) {
-                        logLongestStageFeed(`喂养完成，目标 ${quote.count} 只，消耗 ${result.costs[0].count} 秒，桶内剩余 ${result.bucketRemainingSeconds} 秒`, 'ok');
+                    if (canLabel) {
+                        logCanFeed(canLabel, `喂养完成，目标 ${quote.count} 只，消耗 ${result.costs[0].count} 秒，桶内剩余 ${result.bucketRemainingSeconds} 秒`, 'ok');
                     }
                     else {
                         log('牧场', `${quote.label}${result.notice ? `：${result.notice}` : '完成'}`, { module: 'ranch', event: `ranch_${action}`, result: 'ok' });
@@ -269,13 +270,15 @@ async function run(options = {}) {
                 }
                 catch (error) {
                     // 状态或余额变化交给下一次巡查重新报价；已发出但结果未知的写入由持久账本保护。
-                    if (['INSUFFICIENT_BALANCE', 'RESERVE_PROTECTED', 'PENDING_CONFIRMATION', 'RANCH_OFFER_CHANGED', 'RANCH_EXCHANGE_UNAVAILABLE', 'GOODS_UNAVAILABLE', 'RANCH_STATE_CHANGED'].includes(error.code)) {
+                    const canBucketFull = action === 'useCan' && error.code === 1003002
+                        && /罐头容器已(?:达到上限|满)/.test(error.errorMessage ?? error.message);
+                    if (canBucketFull || ['INSUFFICIENT_BALANCE', 'RESERVE_PROTECTED', 'PENDING_CONFIRMATION', 'RANCH_OFFER_CHANGED', 'RANCH_EXCHANGE_UNAVAILABLE', 'GOODS_UNAVAILABLE', 'RANCH_STATE_CHANGED'].includes(error.code)) {
                         if (action === 'claimIllustrated' && error.code === 'RANCH_OFFER_CHANGED')
                             pendingBookKinds.add(input.kind);
                         completedSteps.add(step);
                         markStep(action);
-                        if (longestStageFeed)
-                            logLongestStageFeed(`暂未执行：${error.message}`, 'skipped');
+                        if (canLabel)
+                            logCanFeed(canLabel, `暂未执行：${error.message}`, 'skipped');
                         else
                             log('牧场', `${label} 暂未执行：${error.message}`, { module: 'ranch', event: `ranch_${action}`, result: 'skipped' });
                         return false;
@@ -475,14 +478,20 @@ async function run(options = {}) {
                     return;
                 const normalStage = getAutomation().ranch_feed_normal_stage;
                 if (available(7003) <= 0n) {
-                    if (normalStage === 'longest')
-                        logLongestStageFeed('普通罐头桶没有可用时长', 'skipped');
+                    logCanFeed(normalStage === 'longest' ? '普通罐头（仅最长阶段）' : '普通罐头', '罐头桶没有可用时长，本轮未喂养', 'skipped');
                     return;
                 }
                 await act('ranch_feed_normal', 'feed', { all: true, bucketType: 2, normalStage });
             });
-            await phase('feed-organic', async () => { if (enabled('ranch_feed_organic') && available(7004) > 0n)
-                await act('ranch_feed_organic', 'feed', { all: true, bucketType: 1 }); });
+            await phase('feed-organic', async () => {
+                if (!enabled('ranch_feed_organic'))
+                    return;
+                if (available(7004) <= 0n) {
+                    logCanFeed('有机罐头', '罐头桶没有可用时长，本轮未喂养', 'skipped');
+                    return;
+                }
+                await act('ranch_feed_organic', 'feed', { all: true, bucketType: 1 });
+            });
             async function claimDailyRewards() {
                 if (cycleChanged && !completedPhases.has('tasks'))
                     daily.markTasksChanged();

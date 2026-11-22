@@ -5,6 +5,8 @@ const { rpc, inScene, isUnlocked } = require('./transport');
 const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, pendingOperationView, quantity, levelInfo, error } = require('./model');
 const { getServerTimeSec } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
+const { getUserState } = require('../../utils/network');
+const { getCareerInfoOrNull } = require('../career');
 function bagItems(bag) {
     return [...bag.physical_items, ...bag.virtual_items];
 }
@@ -103,15 +105,20 @@ function snapshot(raw) {
         currencies: [1007, 1002, 1005, 1008, 7002].map(id => ({ ...itemDto({ id, count: balance(raw.bag, id).total }), locked: balance(raw.bag, id).locked })),
         buckets: [7003, 7004].map(id => ({ id, seconds: balance(raw.bag, id).total })),
         grass: balance(raw.bag, 7001).total,
+        hourglassSeconds: balance(raw.bag, 1006).total,
         facilities: raw.cells.facilities.filter((facility) => [6, 7, 8].includes(facility.module_type)).map((facility) => facilityDto(facility, info.level)),
     };
+}
+function canLockRanchItem(item) {
+    const type = itemMap.get(Number(item.id))?.type;
+    return BigInt(quantity(item.uid)) > 0n && (item.is_locked || type === 106 || type === 107);
 }
 function inventory(raw) {
     return raw.bag.physical_items.map((item) => {
         const metadata = itemMap.get(Number(item.id));
         const animal = cubMap.get(Number(item.id));
         return {
-            ...itemDto(item), uid: quantity(item.uid), locked: item.is_locked, tabId: Number(item.tab_id) || Number(metadata?.show_tab_ids) || 0,
+            ...itemDto(item), uid: quantity(item.uid), locked: item.is_locked, lockable: canLockRanchItem(item), tabId: Number(item.tab_id) || Number(metadata?.show_tab_ids) || 0,
             type: metadata?.type || 0, sellPrices: item.show?.sells?.map(itemDto) || [],
             canSell: salePrices(item).length > 0,
             can: canMap.get(Number(item.id)) || null, animalId: animal?.id || null, giantCub: !!animal?.giantCubItemId,
@@ -184,14 +191,14 @@ async function market(raw) {
         }),
     };
 }
-async function canCatalog(raw, slotType = 6) {
+async function ranchMallCatalog(raw, slotType = 6, cansOnly = false) {
     if (![6, 7].includes(slotType))
-        throw error('INVALID_ARGUMENT', '未知牧场罐头商城');
+        throw error('INVALID_ARGUMENT', '未知牧场商城');
     const reply = await rpc('canShop', { slot_type: slotType, is_manual_open: true, global_scene_id: 2 });
     const now = getServerTimeSec();
     const goods = [];
     for (const good of reply.goods_list) {
-        if (!good.reward_items.length || good.reward_items.some((item) => !canMap.has(Number(item.id))))
+        if (!good.reward_items.length || good.reward_items.some((item) => !canMap.has(Number(item.id)) && (cansOnly || Number(item.id) !== 1006)))
             continue;
         const promotion = Number(good.discount_price) > 0 && Number(good.promotion_start_time) <= now && now < Number(good.promotion_end_time);
         const price = itemDto({ id: good.price.id, count: promotion ? good.discount_price : good.price.count });
@@ -207,8 +214,22 @@ async function canCatalog(raw, slotType = 6) {
     }
     return { slotType, goods };
 }
+function canCatalog(raw, slotType = 6) {
+    return ranchMallCatalog(raw, slotType, true);
+}
+async function ranchCareer(gid) {
+    const career = (await getCareerInfoOrNull(gid))?.ranch;
+    if (!career)
+        return null;
+    return {
+        ...career,
+        products: career.products.filter((item) => item.count > 0).map((item) => ({
+            ...itemDto(item), type: itemMap.get(item.id)?.type,
+        })),
+    };
+}
 async function getState(view = 'animals', shopId, hostGid) {
-    if (!['animals', 'facilities', 'bag', 'shop', 'market', 'tasks', 'friends', 'illustrated', 'activities', 'cans'].includes(view))
+    if (!['animals', 'facilities', 'bag', 'shop', 'market', 'tasks', 'friends', 'illustrated', 'activities', 'cans', 'overview', 'mall'].includes(view))
         throw error('INVALID_ARGUMENT', '未知牧场页面');
     if (!isUnlocked())
         return { unlocked: false, sceneId: 2, reason: '牧场尚未解锁，请先在游戏中完成开启条件' };
@@ -216,6 +237,8 @@ async function getState(view = 'animals', shopId, hostGid) {
         const raw = await loadRaw(cells);
         const state = snapshot(raw);
         state.pendingOperations = require('./operation-state').forCurrentAccount().pending().map(pendingOperationView);
+        if (view === 'overview')
+            state.career = await ranchCareer(getUserState().gid);
         if (view === 'bag')
             state.bag = inventory(raw);
         if (view === 'shop')
@@ -224,6 +247,8 @@ async function getState(view = 'animals', shopId, hostGid) {
             state.market = await market(raw);
         if (view === 'cans')
             state.canShop = await canCatalog(raw, Number(shopId ?? 6));
+        if (view === 'mall')
+            state.mall = await ranchMallCatalog(raw, Number(shopId ?? 6));
         if (view === 'tasks') {
             state.tasks = taskList(await rpc('tasks', { global_scene_id: 2 }));
             // 每日首次分享状态随任务和活动页面返回。
@@ -243,7 +268,7 @@ async function getState(view = 'animals', shopId, hostGid) {
                 state.friendRanch = await require('./friends').getFriend(hostGid);
             else {
                 const blacklist = new Set(require('../../models/store').getRanchFriendBlacklist());
-                state.friends = (await (0, friend_roster_1.getRanchFriendList)()).map(({ gid, name, avatarUrl }) => ({ gid: String(gid), name, avatarUrl, blacklisted: blacklist.has(gid) }));
+                state.friends = (await (0, friend_roster_1.getRanchFriendList)(undefined, true)).map(friend => ({ ...friend, gid: String(friend.gid), blacklisted: blacklist.has(friend.gid) }));
             }
         }
         return state;
@@ -260,5 +285,5 @@ async function resourceBalances(keys) {
         return keys.map(key => ({ ...balance(raw.bag, Number(key.slice(5))), name: itemDto({ id: key.slice(5), count: 0 }).name, source: 'ranch-bag', asOfMs: Date.now() }));
     });
 }
-module.exports = { getState, loadRaw, isPendingShed, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
+module.exports = { getState, loadRaw, isPendingShed, shedAwaitingActivation, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, ranchMallCatalog, canLockRanchItem, ranchCareer, resourceBalance, isRanchResource, resourceBalances, animalDto };
 //# sourceMappingURL=state.js.map

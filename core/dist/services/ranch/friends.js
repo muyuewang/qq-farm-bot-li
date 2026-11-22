@@ -7,8 +7,9 @@ const MCRanchFacilityConfig_json_1 = __importDefault(require("../../gameConfig/r
 const { rpc, inScene } = require('./transport');
 const network = require('../../utils/network');
 const { error, positiveId, positiveCount, quantity, itemDto, sumItems } = require('./model');
-const { animalDto } = require('./state');
+const { animalDto, ranchCareer } = require('./state');
 const reservations = require('./operation-state');
+const { recordOperation } = require('../stats');
 const { getAmbientSendContext, runWithSendContext } = require('./context');
 const { getServerTimeSec, logWarn } = require('../../utils/utils');
 // 每个账号 Worker 仅记住服务端确认已经用完的次数，按游戏日（北京时间）失效。
@@ -79,6 +80,7 @@ async function getFriend(hostGid) {
         const eligible = targets(ranches);
         const times = await getInteractionTimes();
         return { gid: host, name: entry.basic.name, level: Number(entry.basic.big_farm_level),
+            career: await ranchCareer(Number(host)),
             canSteal: eligible.length > 0, stealableShelves: eligible.length,
             cleanableHazards: ranches.reduce((sum, ranch) => sum + cleanableHazards(ranch).length, 0),
             strokeRemaining: times.stroke, mosquitoRemaining: times.putMosquito,
@@ -226,6 +228,8 @@ async function commitInteraction(plan, ranch) {
         if (plan.action === 'putMosquito' && ranch)
             ranch.hazards = reply.hazards;
         const items = sumItems(rewards);
+        if (plan.action === 'cleanFriend' && completed > 0)
+            recordOperation('helpFarming', completed, 'ranch');
         return { action: plan.action, status: completed ? 'confirmed' : 'skipped', snapshot: null, costs: [], rewards: items, completed,
             remainingTimes: plan.action === 'cleanFriend' ? undefined : remaining, triggered: reply.triggered === true, refreshRequired: true,
             notice: `${plan.label}${completed ? '完成' : '当前已无可清理项目'}${reply.triggered ? '，触发巨大变异' : ''}${items.length ? `，获得 ${items.map((item) => `${item.name} ×${item.count}`).join('、')}` : ''}` };
@@ -276,6 +280,8 @@ async function commitSteal(host, ranches, plan) {
         }
         const completed = reply.op_results.length;
         const rewards = sumItems(reply.op_results.flatMap((row) => row.rewards));
+        if (completed > 0)
+            recordOperation('steal', completed, 'ranch');
         const notice = rewards.length ? `获得 ${rewards.map((item) => `${item.name} ×${item.count}`).join('、')}` : '当前没有可偷取的产物';
         return { action: 'steal', status: completed ? 'confirmed' : 'skipped', snapshot: null, costs: [],
             rewards, completed, refreshRequired: true,

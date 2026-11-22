@@ -16,7 +16,7 @@ export const RANCH_AUTOMATION_DEFAULTS = {
     ranch_grass_threshold_percent: 20,
     ranch_fill_cans: true,
     ranch_feed_normal: true,
-// 默认仅在最长生长阶段使用普通罐头，避免把时长浪费在产出最短的阶段。
+    // 默认仅在最长生长阶段使用普通罐头，避免把时长浪费在产出最短的阶段。
     ranch_feed_normal_stage: 'longest' as 'any' | 'longest',
     ranch_feed_organic: true,
     ranch_clean: true,
@@ -42,7 +42,7 @@ export const RANCH_SWITCH_KEYS = Object.keys(RANCH_AUTOMATION_DEFAULTS).filter(k
 export const RANCH_ANIMAL_OPTIONS = [...animalMap.values()].filter(animal => animal.enable_flag).map(animal => ({ value: animal.id, label: animal.name, kind: animal.husbandry_type }));
 
 export function normalizeRanchSetting(key: string, value: unknown): boolean | number | string | number[] {
-if (key === 'ranch_feed_normal_stage') {
+    if (key === 'ranch_feed_normal_stage') {
         if (value === 'any' || value === 'longest') return value;
         throw Object.assign(new Error('请选择有效的普通罐头使用阶段'), { code: 'INVALID_CONFIG' });
     }

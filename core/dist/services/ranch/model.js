@@ -68,15 +68,5 @@ function levelInfo(exp) {
     const next = BigFarmLevel_json_1.default.find(row => row.level === current.level + 1);
     return { level: current.level, exp, currentExp: exp - current.exp, neededExp: next ? next.exp - current.exp : null };
 }
-function isLongestAnimalStage(animal) {
-    const config = ranch_animals_1.animalMap.get(Number(animal?.animal_id ?? animal?.animalId));
-    if (!config)
-        return false;
-    const durations = [config.infant_sec, config.grow_sec, config.product_round_sec, config.mature_sec].map(Number);
-    const current = Number(animal.stage) - 1;
-    if (!Number.isInteger(current) || current < 0 || current >= durations.length)
-        return false;
-    return Number.isFinite(durations[current]) && durations[current] === Math.max(...durations.filter(Number.isFinite));
-}
-module.exports = { animalMap: ranch_animals_1.animalMap, mutationMap, cubMap: ranch_animals_1.cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, pendingOperationView, sumItems, signature, levelInfo, isLongestAnimalStage };
+module.exports = { animalMap: ranch_animals_1.animalMap, mutationMap, cubMap: ranch_animals_1.cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, pendingOperationView, sumItems, signature, levelInfo };
 //# sourceMappingURL=model.js.map
