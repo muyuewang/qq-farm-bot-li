@@ -1,13 +1,10 @@
 import type { Application } from 'express';
 import type { Server } from 'node:http';
 import type { Server as SocketIOServer } from 'socket.io';
+import type { PersistentTokenSet } from './session-tokens';
 export {};
-/**
- * AdminContext factory
- * Creates and holds all shared state for the admin server.
- */
 export interface AdminContext {
-    tokens: Set<string>;
+    tokens: Set<string> | PersistentTokenSet;
     app: Application | null;
     server: Server | null;
     io: SocketIOServer | null;

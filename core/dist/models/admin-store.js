@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const security = require('./auth-security');
@@ -50,6 +51,10 @@ function getAdminInfo() {
     const current = loadAdmin();
     return { username: current.username, role: 'admin', mustChangePassword: current.mustChangePassword === true };
 }
+function getCredentialFingerprint() {
+    const current = loadAdmin();
+    return crypto.createHash('sha256').update(`${current.username}:${current.password}`).digest('hex');
+}
 function validateAdmin(username, password, ip = 'unknown') {
     security.loadLoginAttempts();
     const rateLimit = security.checkRateLimit(ip);
@@ -85,5 +90,5 @@ function changePassword(oldPassword, newPassword) {
     return { ok: true, message: '密码修改成功' };
 }
 loadAdmin();
-module.exports = { getAdminInfo, validateAdmin, changePassword };
+module.exports = { getAdminInfo, getCredentialFingerprint, validateAdmin, changePassword };
 //# sourceMappingURL=admin-store.js.map

@@ -5,6 +5,7 @@ const { getRuntimeConfig } = require('../../config/config');
 const { getSchedulerRegistrySnapshot } = require('../../services/scheduler');
 const { createModuleLogger } = require('../../services/logger');
 const adminStore = require('../../models/admin-store');
+const { getActiveWebBuildId } = require('./web-version');
 const { getClientIp, issueToken, createAuthRequired, getAccId, handleApiError, } = require('./middleware');
 const adminLogger = createModuleLogger('admin');
 function mountAuthRoutes(app, ctx) {
@@ -45,8 +46,10 @@ function mountAuthRoutes(app, ctx) {
             return res.status(400).json({ ok: false, error: '请提供原密码和新密码' });
         }
         const result = adminStore.changePassword(String(oldPassword), String(newPassword));
-        if (result.ok)
+        if (result.ok) {
             ctx.tokens.clear();
+            ctx.io?.disconnectSockets(true);
+        }
         return res.json(result);
     });
     app.use('/api', (req, res, next) => {
@@ -55,7 +58,7 @@ function mountAuthRoutes(app, ctx) {
         return authRequired(req, res, next);
     });
     app.get('/api/ping', (_req, res) => {
-        res.json({ ok: true, data: { ok: true, uptime: process.uptime(), version } });
+        res.json({ ok: true, data: { ok: true, uptime: process.uptime(), version, webBuildId: getActiveWebBuildId() } });
     });
     app.get('/api/game-version', async (_req, res) => {
         const { clientVersion, wxClientVersion } = getRuntimeConfig();

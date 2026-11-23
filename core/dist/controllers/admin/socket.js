@@ -1,7 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const fs = require('node:fs');
+const path = require('node:path');
 const { Server } = require('socket.io');
 const SocketIOServer = Server;
+const { getRuntimePaths } = require('../../config/runtime-paths');
+const { getActiveWebBuildId } = require('./web-version');
 const { resolveAccId, } = require('./middleware');
 function applySocketSubscription(ctx, socket, accountRef = '') {
     const incoming = String(accountRef || '').trim();
@@ -70,13 +74,60 @@ function setupSocketIO(ctx) {
         socket.data.adminToken = token;
         return next();
     });
+    let lastNotifiedBuildId = getActiveWebBuildId();
+    let webWatchTimer = null;
+    let webWatcher = null;
+    const notifyIfWebChanged = () => {
+        const nextBuildId = getActiveWebBuildId();
+        if (nextBuildId && nextBuildId !== lastNotifiedBuildId) {
+            lastNotifiedBuildId = nextBuildId;
+            ctx.io?.emit('panel:version', { webBuildId: nextBuildId, ts: Date.now() });
+        }
+    };
+    try {
+        const pointerFile = getRuntimePaths().webRootPointerFile;
+        const pointerDir = path.dirname(pointerFile);
+        const pointerName = path.basename(pointerFile);
+        if (fs.existsSync(pointerDir)) {
+            webWatcher = fs.watch(pointerDir, (_eventType, filename) => {
+                if (filename && String(filename) !== pointerName)
+                    return;
+                if (webWatchTimer)
+                    clearTimeout(webWatchTimer);
+                webWatchTimer = setTimeout(notifyIfWebChanged, 150);
+                webWatchTimer.unref?.();
+            });
+            webWatcher.unref?.();
+            webWatcher.on?.('error', () => {
+                // ignore watcher errors on ephemeral filesystems
+            });
+        }
+    }
+    catch {
+        // ignore fs.watch unsupported environments
+    }
+    ctx.server?.once('close', () => {
+        if (webWatchTimer) {
+            clearTimeout(webWatchTimer);
+            webWatchTimer = null;
+        }
+        try {
+            webWatcher?.close?.();
+        }
+        catch {
+            // ignore close error
+        }
+        webWatcher = null;
+    });
     ctx.io.on('connection', (socket) => {
         const initialAccountRef = (socket.handshake.auth && socket.handshake.auth.accountId)
             || (socket.handshake.query && socket.handshake.query.accountId)
             || '';
         applySocketSubscription(ctx, socket, initialAccountRef);
-        socket.emit('ready', { ok: true, ts: Date.now() });
+        socket.emit('ready', { ok: true, ts: Date.now(), webBuildId: getActiveWebBuildId() });
         socket.on('subscribe', (payload) => {
+            if (!ctx.tokens.has(socket.data.adminToken))
+                return socket.disconnect(true);
             const body = (payload && typeof payload === 'object') ? payload : {};
             applySocketSubscription(ctx, socket, body.accountId || '');
         });
