@@ -1,6 +1,6 @@
 services:
   qq-farm-bot-muyue:
-    build:
+    build: &app-build
       context: .
       dockerfile: core/Dockerfile
       args:
@@ -12,7 +12,11 @@ services:
     restart: unless-stopped
     ports:
       - "3007:3007"
+    depends_on:
+      session-host:
+        condition: service_healthy
     volumes:
+      - qq-farm-runtime:/app/runtime
       -  ../data:/app/core/data
       -  ../data/logs:/app/core/data/logs
       - ../data/napcat/auth:/app/napcat-auth:ro
@@ -21,6 +25,8 @@ services:
       - NODE_ENV=production
       - ADMIN_PORT=3007
       - FARM_DATA_DIR=/app/core/data
+      - FARM_RUNTIME_DIR=/app/runtime
+      - FARM_SESSION_SOCKET=/app/runtime/session-host.sock
       - CAPTURE_ADVERTISE_IPS=${CAPTURE_ADVERTISE_IPS:-auto}
       - NAPCAT_LOGIN_ENABLED=${NAPCAT_LOGIN_ENABLED:-false}
       - NAPCAT_WEBUI_URL=http://napcat:6099/api
@@ -31,6 +37,30 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  session-host:
+    image: qq-farm-bot-muyue:latest
+    build: *app-build
+    command: ["node", "dist/session/host.js"]
+    container_name: qq-farm-bot-muyue-session
+    restart: unless-stopped
+    volumes:
+      - qq-farm-runtime:/app/runtime
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - FARM_HOST_DATA_DIR=/app/runtime/session-host-data
+      - FARM_RUNTIME_DIR=/app/runtime
+      - FARM_SESSION_SOCKET=/app/runtime/session-host.sock
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('./dist/session/ipc').SessionClient.open('control').then(c => c.close()).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 5
     logging:
       driver: "json-file"
       options:
@@ -64,6 +94,8 @@ services:
         max-file: "3"
 
 volumes:
+  qq-farm-runtime:
+    name: qq-farm-runtime
   qq-farm-data:
     name: qq-farm-data
   qq-farm-logs:

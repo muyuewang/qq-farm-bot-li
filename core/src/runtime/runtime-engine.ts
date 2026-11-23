@@ -3,7 +3,7 @@ const { fork } = require('node:child_process');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const store = require('../models/store');
-const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = require('../config/config');
+const { updateRuntimeConfig } = require('../config/config');
 const { sendPushooMessage } = require('../services/push');
 const { createDataProvider } = require('./data-provider');
 const { createReloginReminderService } = require('./relogin-reminder');
@@ -11,6 +11,8 @@ const { createRuntimeState } = require('./runtime-state');
 const { createWorkerManager } = require('./worker-manager');
 const { startWxKeepAlive, stopWxKeepAlive, applyWxKeepAliveConfig, notifyAccountOffline, cancelPendingRelogin } = require('../services/wx-keepalive');
 const { recordAutoRefreshSuccess, recordAutoRefreshFailure } = require('../services/preflight-stats');
+
+const { listHostedSessions, findAccountSession } = require('../session/ipc');
 
 const OPERATION_KEYS = ['harvest', 'farming', 'fertilize', 'plant', 'steal', 'helpFarming', 'taskClaim', 'sell', 'upgrade'];
 
@@ -71,7 +73,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
     // 保活回调要在 workerManager 之后才能拿到 restartWorker，这里用一层间接引用避免循环依赖。
     const wxKeepAliveBridge: { notify?: (accountId: string, accountName: string, reason: string) => void } = {};
 
-    const { startWorker, stopWorker, restartWorker, callWorkerApi } = createWorkerManager({
+    const { startWorker, stopWorker, restartWorker, callWorkerApi, startAccountWorker, stopAccountWorker, detachAllWorkers } = createWorkerManager({
         fork,
         WorkerThread: Worker,
         runtimeMode,
@@ -140,8 +142,8 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         broadcastConfigToWorkers,
         buildConfigSnapshotForAccount,
         broadcastGameConfigReload,
-        startWorker,
-        stopWorker,
+        startWorker: startAccountWorker,
+        stopWorker: stopAccountWorker,
         restartWorker,
         // 手动停止 / 启动 / 重启要先撤掉「等待重登」，否则定时器到点会把账号拉回来。
         cancelPendingRelogin,
@@ -201,7 +203,13 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             startAdminServer(dataProvider);
         }
 
-        if (shouldAutoStartAccounts) {
+        if (processRef.env.FARM_SESSION_SOCKET) {
+            const sessions = await listHostedSessions();
+            for (const account of store.getAccounts().accounts) {
+                const session = findAccountSession(sessions, account);
+                if (session || shouldAutoStartAccounts) startWorker(account, session?.sessionId);
+            }
+        } else if (shouldAutoStartAccounts) {
             startAllAccounts();
         }
 
@@ -225,6 +233,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         stopAllAccounts,
         startAccountKeepAlive,
         applyAccountKeepAliveConfig,
+        detachAllWorkers,
         broadcastConfigToWorkers,
         broadcastGameConfigReload,
         startWorker,

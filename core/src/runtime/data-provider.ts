@@ -18,9 +18,9 @@ interface DataProviderOptions {
     broadcastConfigToWorkers: (accountId?: string) => void;
     buildConfigSnapshotForAccount: (accountId: string) => any;
     broadcastGameConfigReload?: () => void;
-    startWorker: (account: any) => boolean;
-    stopWorker: (accountId: string) => void;
-    restartWorker: (account: any) => void;
+    startWorker: (account: any) => boolean | Promise<boolean>;
+    stopWorker: (account: any) => void | Promise<void>;
+    restartWorker: (account: any) => void | Promise<void>;
     /**
      * 撤销账号「掉线后等待重登」的定时器，由 runtime-engine 注入
      * （`wx-keepalive.cancelPendingRelogin`）。用注入而不是在这里 require，
@@ -462,17 +462,17 @@ function createDataProvider(options: DataProviderOptions) {
             return data;
         },
 
-        startAccount: (accountRef: string) => {
+        startAccount: async (accountRef: string) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
             // 用户点了「启动」：自动重登的等待应当立即作废，改走这次人工启动。
             cancelPendingReloginSafe(String(acc.id || accountId || ''));
-            startWorker(acc);
+            await startWorker(acc);
             return true;
         },
 
-        stopAccount: (accountRef: string) => {
+        stopAccount: async (accountRef: string) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
@@ -481,7 +481,7 @@ function createDataProvider(options: DataProviderOptions) {
                 // 只靠 stopWorker 停不掉那条定时器，到点会把它重新启动。
                 cancelPendingReloginSafe(accountId);
                 const hadWorker = !!workers[accountId];
-                stopWorker(accountId);
+                await stopWorker(acc);
                 if (!hadWorker) {
                     // 本来就没在跑：不会有进程退出事件来收尾，直接把状态落成「已停止」。
                     setAccountRuntimeState(accountId, 'stopped');
@@ -490,14 +490,14 @@ function createDataProvider(options: DataProviderOptions) {
             return true;
         },
 
-        restartAccount: (accountRef: string) => {
+        restartAccount: async (accountRef: string) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
             // 手动重启要走确定的路径，别让一条还没到点的自动重登定时器在背后
             // 再来一次「换码 + 重启」，把刚起来的连接又打断。
             cancelPendingReloginSafe(accountId);
-            restartWorker(acc);
+            await restartWorker(acc);
             return true;
         },
 
