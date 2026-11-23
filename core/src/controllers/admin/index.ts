@@ -21,6 +21,8 @@ const { mountFriendRoutes } = require('./friend-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
 const { mountCommerceRoutes } = require('./commerce-routes');
 const { mountDebugRoutes } = require('./debug-routes');
+const { mountSystemUpdateRoutes } = require('./system-update-routes');
+const { readWebBuildInfo } = require('./web-version');
 const { mountWxLoginRoutes } = require('./wx-login-routes');
 const { mountQqLoginRoutes } = require('./qq-login-routes');
 const {
@@ -70,6 +72,10 @@ function startAdminServer(dataProvider: any): void {
         return [webRoot, ...fallbackRoots];
     };
     const staticMiddlewareCache = new Map<string, any>();
+    const setNoStoreHeaders = (res: any) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+    };
     const serveDynamicWeb = (req: any, res: any, next: any) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/game-config') || req.path.startsWith('/socket.io')) return next();
         const dirs = resolveActiveWebDirs();
@@ -83,7 +89,14 @@ function startAdminServer(dataProvider: any): void {
             const dir = dirs[idx++];
             let mw = staticMiddlewareCache.get(dir);
             if (!mw) {
-                mw = express.static(dir);
+                mw = express.static(dir, {
+                    setHeaders: (staticRes: any, filePath: string) => {
+                        const base = path.basename(filePath).toLowerCase();
+                        if (base === 'index.html' || base === 'version.json') {
+                            setNoStoreHeaders(staticRes);
+                        }
+                    },
+                });
                 staticMiddlewareCache.set(dir, mw);
             }
             mw(req, res, step);
@@ -93,11 +106,23 @@ function startAdminServer(dataProvider: any): void {
     const sendDynamicIndex = (res: any, fallbackStatus: number) => {
         for (const dir of resolveActiveWebDirs()) {
             const indexPath = path.join(dir, 'index.html');
-            if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+            if (fs.existsSync(indexPath)) {
+                setNoStoreHeaders(res);
+                return res.sendFile(indexPath);
+            }
         }
         if (fallbackStatus !== 200) res.status(fallbackStatus);
         res.send('web build not found. Please build the web project.');
     };
+    app.get('/version.json', (_req: any, res: any) => {
+        setNoStoreHeaders(res);
+        const { webRoot } = getWebRootInfo();
+        const info = readWebBuildInfo(webRoot);
+        if (info) {
+            return res.json(info);
+        }
+        return res.json({ buildId: '', appVersion: '', builtAt: 0 });
+    });
     const [webDist] = resolveActiveWebDirs();
     app.use(serveDynamicWeb);
     if (!fs.existsSync(webDist)) {
@@ -116,6 +141,7 @@ function startAdminServer(dataProvider: any): void {
     mountActivityCenterRoutes(app, ctx);
     mountCommerceRoutes(app, ctx);
     mountDebugRoutes(app, ctx);
+    mountSystemUpdateRoutes(app, ctx);
 
     // SPA fallback
     app.get('*', (req: any, res: any) => {
