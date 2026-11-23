@@ -225,7 +225,7 @@ test('上游 Worker 的登录与跨日强制任务遵守邮箱时刻，同日整
         start() { loginReady = true; startDailyRoutineTimer(); },
     })`, {
         exports: {}, Date: h.ClockDate,
-        process: { env: { FARM_ACCOUNT_ID: 'worker' }, send: noop, on: noop },
+        process: { env: { FARM_ACCOUNT_ID: 'worker' }, send: noop, on: noop, once: noop },
         require: name => modules[name] || {},
     }, { filename });
     // 本地 automation-lock 在两个任务之间强制留 1500ms 缝（MIN_TASK_GAP_MS），

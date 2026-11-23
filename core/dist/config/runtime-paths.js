@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require('node:fs');
 const path = require('node:path');
+const { resolveRuntimePaths, resolveWebRootInfo } = require('@qq-farm-bot/session-contract');
 const isPackaged = !!process.pkg;
 function getResourceRoot() {
     const parent = path.join(__dirname, '..');
@@ -16,8 +17,21 @@ function getResourcePath(...segments) {
 function getAppRootForWritable() {
     return isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '../..');
 }
+function getRuntimePaths() {
+    const appRoot = getAppRootForWritable();
+    return resolveRuntimePaths({
+        appRoot,
+        isPackaged,
+        defaultRuntimeDir: isPackaged ? path.join(appRoot, 'runtime') : path.resolve(appRoot, '../runtime'),
+        defaultResourceRoot: getResourceRoot(),
+        defaultWebRoot: path.resolve(__dirname, '../../../web/dist'),
+    });
+}
+function getWebRootInfo() {
+    return resolveWebRootInfo(getRuntimePaths().runtimeDir, path.resolve(__dirname, '../../../web/dist'));
+}
 function getDataDir() {
-    return path.join(getAppRootForWritable(), 'data');
+    return process.env.FARM_DATA_DIR ? path.resolve(process.env.FARM_DATA_DIR) : path.join(getAppRootForWritable(), 'data');
 }
 function ensureDataDir() {
     const dir = getDataDir();
@@ -29,11 +43,13 @@ function getDataFile(filename) {
     return path.join(getDataDir(), filename);
 }
 function getShareFilePath() {
-    return path.join(getAppRootForWritable(), 'share.txt');
+    return getRuntimePaths().shareFilePath;
 }
 module.exports = {
     isPackaged,
     getResourcePath,
+    getRuntimePaths,
+    getWebRootInfo,
     getDataDir,
     getDataFile,
     ensureDataDir,

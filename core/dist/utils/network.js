@@ -26,6 +26,7 @@ const { readSocketQueues } = require('./tcp-queue');
 const { startAceRuntime, stopAceRuntime, getAceDiagnostics } = require('../services/ace');
 // ============ 事件发射器 (用于推送通知) ============
 const networkEvents = new EventEmitter();
+let hosted;
 class GatewayError extends Error {
     code;
     serviceName;
@@ -111,6 +112,8 @@ function oldestPendingAgeMs() {
 }
 /** 后台任务用来判断「现在该不该占用连接」的负载快照。 */
 function getGatewayLoad() {
+    if (hosted?.load)
+        return hosted.load;
     return {
         pending: pendingCallbacks.size,
         queued: requestQueue.length,
@@ -343,33 +346,46 @@ async function sendMsg(context, serviceName, methodName, bodyBytes, pending, hoo
     // 加密前登记在途请求，确保排队器能准确计算并发槽位。
     if (pending)
         pendingCallbacks.set(seq, pending);
-    const encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
-    if (pending && pendingCallbacks.get(seq) !== pending)
-        return false;
-    if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
-        if (pending) {
-            pendingCallbacks.delete(seq);
-            pending.callback(new Error(`连接未打开: ${methodName}`));
+    const write = async () => {
+        const encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
+        if (hooks?.settled || (pending && pendingCallbacks.get(seq) !== pending))
+            return false;
+        if (hooks?.prepareSend) {
+            await hooks.prepareSend();
+            if (hooks?.settled || (pending && pendingCallbacks.get(seq) !== pending))
+                return false;
         }
-        return false;
-    }
-    const blocked = hooks?.beforeSend?.();
-    if (blocked)
-        throw blocked;
-    try {
-        context.socket.send(encoded);
-        hooks?.onSent?.();
-        // 出站计数：这是「每秒发多少」的唯一可靠观测点，班次来自在途登记。
-        trafficMeter.recordOutbound(pending ? pending.requestClass : getAmbientRequestClass(), methodName);
-    }
-    catch (err) {
-        if (pending) {
-            pendingCallbacks.delete(seq);
-            pending.callback(err);
+        if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
+            if (pending) {
+                pendingCallbacks.delete(seq);
+                pending.callback(new Error(`连接未打开: ${methodName}`));
+            }
+            return false;
         }
-        return false;
-    }
-    return true;
+        const blocked = hooks?.beforeSend?.();
+        if (blocked)
+            throw blocked;
+        try {
+            context.socket.send(encoded);
+            hooks?.onSent?.();
+            // 出站计数：这是「每秒发多少」的唯一可靠观测点，班次来自在途登记。
+            trafficMeter.recordOutbound(pending ? pending.requestClass : getAmbientRequestClass(), methodName);
+        }
+        catch (err) {
+            if (pending) {
+                pendingCallbacks.delete(seq);
+                pending.callback(err);
+            }
+            return false;
+        }
+        return true;
+    };
+    // 宿主内的业务发送可能等待后端确认，按已经分配的序号写入同一条连接。
+    if (process.env.FARM_GATEWAY_WORKER !== '1')
+        return write();
+    const result = (context.writeTail || Promise.resolve()).then(write);
+    context.writeTail = result.then(() => { }, () => { });
+    return result;
 }
 /** Promise 版发送 */
 function sendMsgAsync(serviceName, methodName, bodyBytes, timeoutOrOptions = 20000) {
@@ -384,6 +400,19 @@ function sendMsgAsync(serviceName, methodName, bodyBytes, timeoutOrOptions = 200
     const expectReply = options.expectReply !== false;
     // 班次由「显式 requestClass > priority 兼容映射 > 调度器注入的环境班次 > 前台」决定。
     const requestClass = resolveRequestClass({ priority: options.priority, requestClass: options.requestClass, criticalLane }, getAmbientRequestClass());
+    if (hosted) {
+        return hosted.request(serviceName, methodName, bodyBytes, { timeoutMs, requestClass, criticalLane, expectReply, expectedErrorCodes: [...expectedErrorCodes] }, options)
+            .then(result => {
+            invalidateForecastForReply(serviceName, methodName);
+            return result;
+        }, error => {
+            if (error.name === 'GatewayError')
+                Object.setPrototypeOf(error, GatewayError.prototype);
+            if (error.name === 'GatewayBusyError')
+                Object.setPrototypeOf(error, GatewayBusyError.prototype);
+            throw error;
+        });
+    }
     return new Promise((resolve, reject) => {
         const context = currentConnection;
         if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
@@ -417,6 +446,7 @@ function sendMsgAsync(serviceName, methodName, bodyBytes, timeoutOrOptions = 200
             criticalLane,
             enqueuedAt: performance.now(),
             expectReply,
+            prepareSend: options.prepareSend,
             beforeSend: options.beforeSend,
             onSent: options.onSent,
         };
@@ -477,6 +507,7 @@ function handleMessage(data) {
         // Notify
         if (msgType === 3) {
             handleNotify(msg);
+            networkEvents.emit('sessionNotify', buf);
             return;
         }
         // Response
@@ -494,10 +525,7 @@ function handleMessage(data) {
                     pending.callback(new GatewayError(meta));
                 }
                 else {
-                    if ((meta.service_name === 'gamepb.plantpb.PlantService' && meta.method_name !== 'AllLands')
-                        || (meta.service_name === 'gamepb.itempb.ItemService' && meta.method_name === 'Use')) {
-                        invalidateLandForecast();
-                    }
+                    invalidateForecastForReply(meta.service_name, meta.method_name);
                     pending.callback(null, msg.body, meta);
                 }
             }
@@ -506,6 +534,11 @@ function handleMessage(data) {
     catch (err) {
         logWarn('解码', err.message);
     }
+}
+function invalidateForecastForReply(service, method) {
+    if ((service === 'gamepb.plantpb.PlantService' && method !== 'AllLands')
+        || (service === 'gamepb.itempb.ItemService' && method === 'Use'))
+        invalidateLandForecast();
 }
 function handleNotify(msg) {
     if (!msg.body || msg.body.length === 0)
@@ -1007,6 +1040,7 @@ function startHeartbeat(context) {
             heartbeat.replies += 1;
             const recoveredMisses = heartbeatMissCount;
             const heartbeatOutageMs = Math.max(0, performance.now() - lastHeartbeatMono);
+            networkEvents.emit('sessionTelemetry');
             lastHeartbeatMono = performance.now();
             heartbeatMissCount = 0;
             if (recoveredMisses > 0) {
@@ -1142,6 +1176,10 @@ function finalizeConnection(context, details) {
 }
 // ============ WebSocket 连接 ============
 function connect(code, onLoginSuccess) {
+    if (hosted) {
+        void hosted.connect(code, onLoginSuccess);
+        return;
+    }
     const authCode = String(code || '').trim();
     if (!authCode)
         throw new Error('连接缺少一次性 Code');
@@ -1249,6 +1287,8 @@ function connect(code, onLoginSuccess) {
     });
 }
 function cleanup(reason = '网络清理') {
+    if (hosted)
+        return hosted.release('close');
     const context = currentConnection;
     if (!context) {
         clearNetworkRuntime(reason);
@@ -1261,8 +1301,33 @@ function cleanup(reason = '网络清理') {
     }
     catch { }
 }
-function getWs() { return ws; }
+function getWs() { return hosted ? hosted.socket : ws; }
+function getSessionSnapshot() {
+    return { userState: { ...userState }, shares: [...shareInfoState], serverTime: getServerTimeSec(), ...getSessionTelemetry() };
+}
+function getSessionTelemetry() {
+    return { load: getGatewayLoad(), heartbeatReplies: currentConnection?.heartbeat?.replies || 0 };
+}
+function configureHostedSession(config) {
+    if (!process.env.FARM_SESSION_SOCKET)
+        return;
+    const { HostedNetwork } = require('../session/hosted-network');
+    networkEvents.on('ws_error', (data) => setWsErrorState(data.code, data.message));
+    hosted = new HostedNetwork(config, networkEvents, (snapshot) => {
+        clearWsErrorState();
+        Object.assign(userState, snapshot.userState);
+        shareInfoState.clear();
+        for (const [key, value] of snapshot.shares)
+            shareInfoState.set(key, value);
+        syncServerTime(snapshot.serverTime * 1000);
+        updateStatusFromLogin(userState);
+    }, (body) => handleNotify(types.GateMessage.decode(body)));
+}
 function invalidateGameScene(reason = '游戏场景状态未知，需要重新登录') {
+    if (hosted) {
+        hosted.invalidate(reason);
+        return;
+    }
     const context = currentConnection;
     if (!context)
         return;
@@ -1270,7 +1335,10 @@ function invalidateGameScene(reason = '游戏场景状态未知，需要重新�
     context.socket.terminate();
 }
 module.exports = {
-    connect, cleanup, getWs,
+    connect, cleanup, getWs, configureHostedSession,
+    getSessionSnapshot, getSessionTelemetry,
+    activateHostedSession: () => hosted?.activate(),
+    detachHostedSession: () => hosted ? hosted.release('detach') : cleanup(),
     buildLoginBody, buildHeartbeatBody,
     sendMsgAsync, sendMsgNoReply,
     getGatewayLoad, isGatewayIdleForBackground, waitForGatewayIdle,

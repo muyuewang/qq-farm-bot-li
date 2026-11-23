@@ -57,9 +57,10 @@ function mountAuthRoutes(app, ctx) {
     app.get('/api/ping', (_req, res) => {
         res.json({ ok: true, data: { ok: true, uptime: process.uptime(), version } });
     });
-    app.get('/api/game-version', (_req, res) => {
+    app.get('/api/game-version', async (_req, res) => {
         const { clientVersion, wxClientVersion } = getRuntimeConfig();
-        res.json({ ok: true, clientVersion, wxClientVersion, botVersion: version });
+        const { getServiceSummary } = require('../../session/ipc');
+        res.json({ ok: true, clientVersion, wxClientVersion, botVersion: version, serviceSummary: await getServiceSummary() });
     });
     app.get('/api/auth/validate', (_req, res) => {
         res.json({ ok: true, data: { valid: true } });

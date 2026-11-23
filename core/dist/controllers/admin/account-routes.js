@@ -207,7 +207,7 @@ function mountAccountRoutes(app, ctx) {
             handleApiError(res, e);
         }
     });
-    app.post('/api/accounts', (req, res) => {
+    app.post('/api/accounts', async (req, res) => {
         try {
             const rawBody = (req.body && typeof req.body === 'object') ? req.body : {};
             const requestedName = typeof rawBody.name === 'string' ? rawBody.name.trim() : '';
@@ -254,15 +254,15 @@ function mountAccountRoutes(app, ctx) {
             if (!isUpdate) {
                 const newAcc = data.accounts.at(-1);
                 if (newAcc)
-                    ctx.provider.startAccount(newAcc.id);
+                    await ctx.provider.startAccount(newAcc.id);
             }
             else if (isRemarkRelogin) {
                 // Adding with an existing remark is a relogin operation, including for stopped accounts.
-                ctx.provider.restartAccount(payload.id);
+                await ctx.provider.restartAccount(payload.id);
             }
             else if (wasRunning && !onlyRemarkChanged) {
                 // 如果是更新，且之前在运行，且不是仅修改备注，则重启
-                ctx.provider.restartAccount(payload.id);
+                await ctx.provider.restartAccount(payload.id);
             }
             res.json({ ok: true, data });
         }
@@ -270,7 +270,7 @@ function mountAccountRoutes(app, ctx) {
             handleApiError(res, e);
         }
     });
-    app.delete('/api/accounts/:id', (req, res) => {
+    app.delete('/api/accounts/:id', async (req, res) => {
         try {
             const resolvedId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
             const before = ctx.provider.getAccounts();
@@ -282,7 +282,7 @@ function mountAccountRoutes(app, ctx) {
                 cancelPendingRelogin(resolvedId);
             }
             catch { /* 保活模块不可用时不影响删除 */ }
-            ctx.provider.stopAccount(resolvedId);
+            await ctx.provider.stopAccount(resolvedId);
             const data = deleteAccount(resolvedId);
             if (ctx.provider.addAccountLog) {
                 ctx.provider.addAccountLog('delete', `删除账号: ${(target && target.name) || req.params.id}`, resolvedId, target ? target.name : '');

@@ -30,6 +30,8 @@ let ownRecheckUsed = false;
 const completedPhases = new Set();
 const completedSteps = new Set();
 const pendingBookKinds = new Set();
+const BOOK_CHECK_INTERVAL_MS = 5 * 60_000;
+let nextBookCheckAt = 0;
 let shedCheckPending = true;
 let shedNotifyRevision = 0;
 const PATROL_SLICE_MS = 5000;
@@ -133,13 +135,13 @@ function getRoutineState() {
             'ranch_task', 'ranch_illustrated', 'ranch_share', 'ranch_daily_benefit', 'ranch_activate_shed', 'ranch_grass_buy',
             'ranch_market_organic', ...RANCH_MARKET_SWITCH_KEYS, 'ranch_stroke', 'ranch_friend_mosquito',
         ].includes(key) && auto[key]);
-    const routineDue = work || auto.ranch_activate_shed && shedCheckPending || auto.ranch_illustrated && pendingBookKinds.size > 0
+    const routineDue = work || auto.ranch_activate_shed && shedCheckPending || auto.ranch_illustrated && (pendingBookKinds.size > 0 || Date.now() >= nextBookCheckAt)
         || auto.ranch_task && due(daily.getTaskRoutineState()) || auto.ranch_share && due(daily.getShareRoutineState())
         || auto.ranch_daily_benefit && due(daily.getBenefitRoutineState());
     const pending = routineDue || isRanchMarketEnabled(auto) && marketCheckPending;
     return {
         doneToday: !pending,
-        nextCheckAt: pending ? nextCheckAt : Math.min(strokeReset || Infinity, mosquitoReset || Infinity),
+        nextCheckAt: pending ? nextCheckAt : Math.min(strokeReset || Infinity, mosquitoReset || Infinity, auto.ranch_illustrated ? nextBookCheckAt : Infinity),
     };
 }
 function selectAnimal(goods, settings, kind) {
@@ -390,6 +392,12 @@ async function run(options = {}) {
                 }
             });
             // 成熟动物腾栏后，在补栏前核对一次。让路时保留尚未核对的图鉴。
+            // 巨大图鉴没有可靠的奖励通知；定期重新报价，兼顾登录前已可领的档位。
+            if (enabled('ranch_illustrated') && Date.now() >= nextBookCheckAt) {
+                nextBookCheckAt = Date.now() + BOOK_CHECK_INTERVAL_MS;
+                pendingBookKinds.add('normal');
+                pendingBookKinds.add('giant');
+            }
             for (const kind of ['normal', 'giant']) {
                 if (!enabled('ranch_illustrated') || !pendingBookKinds.delete(kind))
                     continue;
@@ -634,7 +642,7 @@ async function run(options = {}) {
             lastCycleEndAt = Date.now();
             const bookDue = enabled('ranch_illustrated') && pendingBookKinds.size > 0;
             const shedDue = enabled('ranch_activate_shed') && shedCheckPending && shedNotifyAtStart !== shedNotifyRevision;
-            const nextRoutine = Math.min(nextCheckAt, nextActionAt, cycleChanged ? lastCycleEndAt + 30_000 : Infinity);
+            const nextRoutine = Math.min(nextCheckAt, nextActionAt, enabled('ranch_illustrated') ? nextBookCheckAt : Infinity, cycleChanged ? lastCycleEndAt + 30_000 : Infinity);
             nextCheckAt = Math.max(lastCycleEndAt + SCENE_REENTRY_MS, bookDue || shedDue ? lastCycleEndAt : nextRoutine);
             retryAt = 0;
             resetCycle();
@@ -662,6 +670,7 @@ module.exports = {
         lastMarketBalances.clear();
         friendRetryAt.clear();
         shedCheckPending = true;
+        nextBookCheckAt = 0;
         shedNotifyRevision++;
         retryAt = 0;
         resetCycle();

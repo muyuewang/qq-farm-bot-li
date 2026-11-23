@@ -48,13 +48,51 @@ function startAdminServer(dataProvider) {
             return res.sendStatus(200);
         next();
     });
-    const webDist = path.join(__dirname, '../../../../web/dist');
-    if (fs.existsSync(webDist)) {
-        app.use(express.static(webDist));
-    }
-    else {
+    const { getWebRootInfo } = require('../../config/runtime-paths');
+    const resolveActiveWebDirs = () => {
+        const { webRoot, fallbackRoots } = getWebRootInfo();
+        return [webRoot, ...fallbackRoots];
+    };
+    const staticMiddlewareCache = new Map();
+    const serveDynamicWeb = (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/game-config') || req.path.startsWith('/socket.io'))
+            return next();
+        const dirs = resolveActiveWebDirs();
+        for (const cached of staticMiddlewareCache.keys()) {
+            if (!dirs.includes(cached))
+                staticMiddlewareCache.delete(cached);
+        }
+        let idx = 0;
+        const step = (err) => {
+            if (err)
+                return next(err);
+            if (idx >= dirs.length)
+                return next();
+            const dir = dirs[idx++];
+            let mw = staticMiddlewareCache.get(dir);
+            if (!mw) {
+                mw = express.static(dir);
+                staticMiddlewareCache.set(dir, mw);
+            }
+            mw(req, res, step);
+        };
+        step();
+    };
+    const sendDynamicIndex = (res, fallbackStatus) => {
+        for (const dir of resolveActiveWebDirs()) {
+            const indexPath = path.join(dir, 'index.html');
+            if (fs.existsSync(indexPath))
+                return res.sendFile(indexPath);
+        }
+        if (fallbackStatus !== 200)
+            res.status(fallbackStatus);
+        res.send('web build not found. Please build the web project.');
+    };
+    const [webDist] = resolveActiveWebDirs();
+    app.use(serveDynamicWeb);
+    if (!fs.existsSync(webDist)) {
         adminLogger.warn('web build not found', { webDist });
-        app.get('/', (_req, res) => res.send('web build not found. Please build the web project.'));
+        app.get('/', (_req, res) => sendDynamicIndex(res, 200));
     }
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
     // Mount route modules
@@ -72,12 +110,7 @@ function startAdminServer(dataProvider) {
         if (req.path.startsWith('/api') || req.path.startsWith('/game-config')) {
             return res.status(404).json({ ok: false, error: 'Not Found' });
         }
-        if (fs.existsSync(webDist)) {
-            res.sendFile(path.join(webDist, 'index.html'));
-        }
-        else {
-            res.status(404).send('web build not found. Please build the web project.');
-        }
+        return sendDynamicIndex(res, 404);
     });
     const port = CONFIG.adminPort || 3007;
     ctx.server = app.listen(port, '0.0.0.0', () => {
@@ -85,6 +118,15 @@ function startAdminServer(dataProvider) {
     });
     // Setup Socket.IO
     setupSocketIO(ctx);
+}
+async function stopAdminServer() {
+    const server = ctx?.server;
+    if (!server)
+        return;
+    ctx?.io?.disconnectSockets(true);
+    const closed = new Promise(resolve => server.close(() => resolve()));
+    server.closeAllConnections?.();
+    await closed;
 }
 function emitRealtimeStatus(accountId, status) {
     if (!ctx)
@@ -102,7 +144,7 @@ function emitRealtimeAccountLog(entry) {
     _emitAccountLog(ctx, entry);
 }
 module.exports = {
-    startAdminServer,
+    startAdminServer, stopAdminServer,
     emitRealtimeStatus,
     emitRealtimeLog,
     emitRealtimeAccountLog,

@@ -516,10 +516,10 @@ function mountFarmRoutes(app, ctx) {
         }
     });
     // API: 启动账号
-    app.post('/api/accounts/:id/start', (req, res) => {
+    app.post('/api/accounts/:id/start', async (req, res) => {
         try {
             const accountId = resolveAccId(ctx, req.params.id);
-            const ok = ctx.provider.startAccount(accountId);
+            const ok = await ctx.provider.startAccount(accountId);
             if (!ok) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
             }
@@ -530,10 +530,10 @@ function mountFarmRoutes(app, ctx) {
         }
     });
     // API: 停止账号
-    app.post('/api/accounts/:id/stop', (req, res) => {
+    app.post('/api/accounts/:id/stop', async (req, res) => {
         try {
             const accountId = resolveAccId(ctx, req.params.id);
-            const ok = ctx.provider.stopAccount(accountId);
+            const ok = await ctx.provider.stopAccount(accountId);
             if (!ok) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
             }

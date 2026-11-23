@@ -140,6 +140,13 @@ async function claimBook(plan) {
             throw error('RANCH_RESULT_UNKNOWN', '巨大图鉴奖励回包未能确认，请刷新核对');
         rewards.push(...reply.rewards);
     }
+    const after = await rpc('weightBook').catch((cause) => {
+        throw error('RANCH_RESULT_UNKNOWN', `巨大图鉴奖励已提交，未能回读状态：${cause.message}`);
+    });
+    const claimed = new Set(after.levels.filter((level) => level.claimed).map((level) => level.id));
+    if (!plan.ids.every((id) => claimed.has(id))) {
+        throw error('RANCH_RESULT_UNKNOWN', '巨大图鉴等级尚未确认已领取，请刷新核对');
+    }
     return { rewards, completed: plan.count };
 }
 module.exports = { getBook, prepareBookClaim, claimBook, clearGiantBookNew };

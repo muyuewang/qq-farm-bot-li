@@ -339,17 +339,17 @@ function createDataProvider(options) {
             });
             return data;
         },
-        startAccount: (accountRef) => {
+        startAccount: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc)
                 return false;
             // 用户点了「启动」：自动重登的等待应当立即作废，改走这次人工启动。
             cancelPendingReloginSafe(String(acc.id || accountId || ''));
-            startWorker(acc);
+            await startWorker(acc);
             return true;
         },
-        stopAccount: (accountRef) => {
+        stopAccount: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc)
@@ -359,7 +359,7 @@ function createDataProvider(options) {
                 // 只靠 stopWorker 停不掉那条定时器，到点会把它重新启动。
                 cancelPendingReloginSafe(accountId);
                 const hadWorker = !!workers[accountId];
-                stopWorker(accountId);
+                await stopWorker(acc);
                 if (!hadWorker) {
                     // 本来就没在跑：不会有进程退出事件来收尾，直接把状态落成「已停止」。
                     setAccountRuntimeState(accountId, 'stopped');
@@ -367,7 +367,7 @@ function createDataProvider(options) {
             }
             return true;
         },
-        restartAccount: (accountRef) => {
+        restartAccount: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc)
@@ -375,7 +375,7 @@ function createDataProvider(options) {
             // 手动重启要走确定的路径，别让一条还没到点的自动重登定时器在背后
             // 再来一次「换码 + 重启」，把刚起来的连接又打断。
             cancelPendingReloginSafe(accountId);
-            restartWorker(acc);
+            await restartWorker(acc);
             return true;
         },
         isAccountRunning: (accountRef) => {

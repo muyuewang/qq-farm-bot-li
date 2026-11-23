@@ -4,8 +4,10 @@ export interface RanchFriend {
     avatarUrl: string;
     canSteal: boolean;
     canHelp: boolean;
+    canMidwife: boolean;
     stealLotCount: number;
     helpCount: number;
+    midwifeCount: number;
     statusAtMs: number;
 }
 export declare function refreshRanchFriendStatus(friends: RanchFriend[], start: number): Promise<number[]>;

@@ -12,7 +12,12 @@ let cache = null;
 let sync = null;
 // 实包核对：can_steal 按当前账号计算，偷过后变为 false；can_help 排除当前账号自己投放的蚊子。
 function farmStatus(status, statusAtMs) {
-    return { canSteal: status.can_steal, canHelp: status.can_help, stealLotCount: status.steal_lot_count, helpCount: status.help_count, statusAtMs };
+    return {
+        canSteal: status.can_steal, stealLotCount: status.steal_lot_count,
+        canHelp: status.can_help, helpCount: status.help_count,
+        canMidwife: status.can_midwife, midwifeCount: status.midwife_count,
+        statusAtMs,
+    };
 }
 function assertRanchSession(socket) {
     if (getWs() !== socket || getUserState().globalSceneId !== 2) {
