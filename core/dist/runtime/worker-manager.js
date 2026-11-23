@@ -18,7 +18,17 @@ const API_CALL_TIMEOUTS_MS = {
     clearRanchIllustratedNew: 40000,
 };
 function createWorkerManager(options) {
-    const { fork, WorkerThread, runtimeMode = 'thread', processRef, mainEntryPath, workerScriptPath, workers, globalLogs, log, addAccountLog, normalizeStatusForPanel, buildConfigSnapshotForAccount, getOfflineAutoDeleteMs, triggerOfflineReminder, sendConfiguredPush, addOrUpdateAccount, deleteAccount, onStatusSync, onWorkerLog, codeRetryDelayMs = DEFAULT_CODE_RETRY_DELAY_MS, codeRetryMinIntervalMs = DEFAULT_CODE_RETRY_MIN_INTERVAL_MS, } = options;
+    const { fork, WorkerThread, runtimeMode = 'thread', processRef, mainEntryPath, workerScriptPath, workers, globalLogs, log, addAccountLog, normalizeStatusForPanel, buildConfigSnapshotForAccount, getOfflineAutoDeleteMs, triggerOfflineReminder, sendConfiguredPush, addOrUpdateAccount, deleteAccount, onStatusSync, onWorkerLog, codeRetryDelayMs = DEFAULT_CODE_RETRY_DELAY_MS, codeRetryMinIntervalMs = DEFAULT_CODE_RETRY_MIN_INTERVAL_MS, onAccountOffline, } = options;
+    function notifyOffline(accountId, accountName, reason) {
+        if (typeof onAccountOffline !== 'function')
+            return;
+        try {
+            onAccountOffline(accountId, accountName, reason);
+        }
+        catch {
+            // 保活回调失败不能影响账号停止流程
+        }
+    }
     const managerScheduler = createScheduler('worker_manager');
     const useThreadRuntime = runtimeMode === 'thread' && !processRef.pkg && typeof WorkerThread === 'function';
     // 每个账号记一次「用哪个 Code 试过重启、什么时候试的」。这里必须放在 manager 而不是 worker 上：
@@ -369,6 +379,7 @@ function createWorkerManager(options) {
             });
             addAccountLog('kickout_stop', `账号 ${worker.name} 被踢下线，已自动停止`, accountId, worker.name, { reason, reasonCode, diagnostics });
             stopWorker(accountId);
+            notifyOffline(accountId, worker.name, `kickout:${reason}`);
         }
         else if (msg.type === 'account_disconnected') {
             if (worker.terminalHandled)
@@ -430,6 +441,7 @@ function createWorkerManager(options) {
             });
             addAccountLog('disconnect_stop', `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`, accountId, worker.name, { source, disconnectCode: code, reason, phase, connectionId: Number(msg.connectionId) || 0, diagnostics: msg.diagnostics || null });
             stopWorker(accountId);
+            notifyOffline(accountId, worker.name, `disconnect:${source}:${phase}:${code}`);
         }
         else if (msg.type === 'api_response') {
             const { id, result, error } = msg;

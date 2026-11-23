@@ -119,6 +119,11 @@ export interface DeviceInfo {
     deviceId: string;
     userAgent: string;
 }
+export interface AutoCodeRefreshConfig {
+    /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
+    offlineEnabled: boolean;
+    offlineDelaySeconds: number;
+}
 export interface SystemConfig {
     serverUrl: string;
     clientVersion: string;
@@ -129,6 +134,9 @@ export interface SystemConfig {
     os: string;
     timeZone: string;
     deviceInfo: DeviceInfo;
+    autoCodeRefresh?: AutoCodeRefreshConfig;
+    /** 服务启动后是否自动拉起已保存账号（系统级，默认开启）。 */
+    autoStartAccounts?: boolean;
 }
 export interface GlobalConfig {
     accountConfigs: Record<string, AccountConfig>;
