@@ -41,6 +41,8 @@ interface WorkerManagerOptions {
     // 掉线自动重试的节拍，默认取上面的常量（单测里会压到毫秒级）。
     codeRetryDelayMs?: number;
     codeRetryMinIntervalMs?: number;
+    /** 账号掉线（断开 / 被踢下线）时回调，供账号保活安排自动重登。 */
+    onAccountOffline?: (accountId: string, accountName: string, reason: string) => void;
 }
 
 function createWorkerManager(options: WorkerManagerOptions) {
@@ -66,7 +68,17 @@ function createWorkerManager(options: WorkerManagerOptions) {
         onWorkerLog,
         codeRetryDelayMs = DEFAULT_CODE_RETRY_DELAY_MS,
         codeRetryMinIntervalMs = DEFAULT_CODE_RETRY_MIN_INTERVAL_MS,
+        onAccountOffline,
     } = options;
+
+    function notifyOffline(accountId: string, accountName: string, reason: string): void {
+        if (typeof onAccountOffline !== 'function') return;
+        try {
+            onAccountOffline(accountId, accountName, reason);
+        } catch {
+            // 保活回调失败不能影响账号停止流程
+        }
+    }
     const managerScheduler = createScheduler('worker_manager');
     const useThreadRuntime = runtimeMode === 'thread' && !(processRef as any).pkg && typeof WorkerThread === 'function';
     // 每个账号记一次「用哪个 Code 试过重启、什么时候试的」。这里必须放在 manager 而不是 worker 上：
@@ -415,6 +427,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
             });
             addAccountLog('kickout_stop', `账号 ${worker.name} 被踢下线，已自动停止`, accountId, worker.name, { reason, reasonCode, diagnostics });
             stopWorker(accountId);
+            notifyOffline(accountId, worker.name, `kickout:${reason}`);
         } else if (msg.type === 'account_disconnected') {
             if (worker.terminalHandled) return;
             worker.terminalHandled = true;
@@ -481,6 +494,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 { source, disconnectCode: code, reason, phase, connectionId: Number(msg.connectionId) || 0, diagnostics: msg.diagnostics || null },
             );
             stopWorker(accountId);
+            notifyOffline(accountId, worker.name, `disconnect:${source}:${phase}:${code}`);
         } else if (msg.type === 'api_response') {
             const { id, result, error } = msg;
             managerScheduler.clear(`api_timeout_${accountId}_${id}`);
