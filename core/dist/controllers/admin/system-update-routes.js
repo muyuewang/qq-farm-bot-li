@@ -73,6 +73,15 @@ function mountSystemUpdateRoutes(app, ctx) {
             sendUpdateError(res, err);
         }
     });
+    app.put('/api/system/update/backup-setting', authRequired, async (req, res) => {
+        try {
+            const data = await systemUpdate.setSystemBackupEnabled(req.body?.keepBackups);
+            res.json({ ok: true, data });
+        }
+        catch (err) {
+            sendUpdateError(res, err);
+        }
+    });
 }
 module.exports = { mountSystemUpdateRoutes };
 //# sourceMappingURL=system-update-routes.js.map

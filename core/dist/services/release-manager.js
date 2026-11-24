@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { acquireExclusiveLock, readLockMetadata, resolveWebRootInfo, } = require('@qq-farm-bot/session-contract');
 const { readJsonFileStrict, writeJsonFileAtomic } = require('./json-db');
-const { compareReleaseVersions, readReleaseMeta, readReleaseVersions } = require('./release-compat');
+const { compareReleaseVersions, pairedWebReleases, readReleaseMeta, readReleaseVersions } = require('./release-compat');
 const BACKEND_RELEASE_ID_RE = /^backend-[\w.-]+$/;
 const WEB_RELEASE_ID_RE = /^web-[\w.-]+$/;
 const HOST_RELEASE_ID_RE = /^host-[\w.-]+$/;
@@ -96,6 +96,7 @@ function readSlotState(raw) {
         active: typeof raw?.active === 'string' && raw.active ? raw.active : null,
         previous: typeof raw?.previous === 'string' && raw.previous ? raw.previous : null,
         history: Array.isArray(raw?.history) ? raw.history.map((v) => String(v)).filter(Boolean) : [],
+        restoredBackup: raw?.restoredBackup === true || undefined,
         updatedAt: Number(raw?.updatedAt) || undefined,
     };
 }
@@ -300,18 +301,9 @@ async function deleteReleases(options) {
         const allWebIds = listSubdirsMatching(webBaseDir, WEB_RELEASE_ID_RE);
         const allHostIds = listSubdirsMatching(hostBaseDir, HOST_RELEASE_ID_RE);
         const selected = new Set(targetBackendIds);
-        const selectedWeb = new Set();
-        const keepWeb = new Set(state.activeWebIds);
-        for (const id of allBackendIds) {
-            const paired = readReleaseMeta(path.join(backendBaseDir, id))?.pairedWebReleaseId;
-            if (!paired)
-                continue;
-            if (selected.has(id))
-                selectedWeb.add(paired);
-            else
-                keepWeb.add(paired);
-        }
         const deletedReleaseIds = allBackendIds.filter(id => selected.has(id));
+        const selectedWeb = new Set(pairedWebReleases(backendBaseDir, deletedReleaseIds));
+        const keepWeb = new Set([...state.activeWebIds, ...pairedWebReleases(backendBaseDir, allBackendIds.filter(id => !selected.has(id)))]);
         const deletedWebIds = allWebIds.filter(id => !keepWeb.has(id) && (cleanOrphans || selectedWeb.has(id)));
         const deletedHostIds = cleanOrphans ? allHostIds.filter(id => !state.activeHostIds.has(id)) : [];
         const dirs = [

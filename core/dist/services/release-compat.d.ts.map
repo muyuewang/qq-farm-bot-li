@@ -1,1 +1,1 @@
-{"version":3,"file":"release-compat.d.ts","sourceRoot":"","sources":["../../src/services/release-compat.js"],"names":[],"mappings":"AAGA,oCAA8B,mBAAmB,CAAC;AAWlD,+CAGC;AAGD;;;;EAQC;AAED;;;;EAUC"}
+{"version":3,"file":"release-compat.d.ts","sourceRoot":"","sources":["../../src/services/release-compat.js"],"names":[],"mappings":"AAGA,oCAA8B,mBAAmB,CAAC;AAClD,uCAAiC,sBAAsB,CAAC;AAWxD,+CAGC;AAED,6EAEC;AAGD,wDAGC;AAED;;;;EAOC;AAED;;;;EAUC;AAED,4DASC"}

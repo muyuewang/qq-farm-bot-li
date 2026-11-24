@@ -35,6 +35,8 @@ export interface SystemUpdateStatus {
     commitSubject: string;
     startupCommit: string;
     needsApply: boolean;
+    updateHint: string;
+    hostMaintenance: string;
     upstream: string;
     remote: string;
     remoteBranch: string;
@@ -52,6 +54,7 @@ export interface SystemUpdateStatus {
     job: PanelUpdateJobState | null;
     releases: RollbackReleaseItem[];
     releasesSummary: ReleasesSummary;
+    keepBackups: boolean;
 }
 export interface SystemUpdateServiceOptions {
     repoRoot?: string | null;
