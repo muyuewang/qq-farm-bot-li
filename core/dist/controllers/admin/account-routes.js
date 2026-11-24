@@ -1,9 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const push_channels_1 = require("../../config/push-channels");
 /**
  * Account CRUD routes, account-logs, logs, and settings routes.
  */
 const store = require('../../models/store');
+const { pushChannelError, sendPushChannels } = require('../../services/push');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
@@ -411,77 +413,99 @@ function mountAccountRoutes(app, ctx) {
             handleApiError(res, e);
         }
     });
-    // API: 保存下线提醒配置
-    app.post('/api/settings/offline-reminder', async (req, res) => {
+    function channelListError(entries) {
+        if (!Array.isArray(entries))
+            return '推送渠道列表格式无效';
+        const seen = new Set();
+        for (const raw of entries) {
+            if (!raw || typeof raw !== 'object' || typeof raw.enabled !== 'boolean')
+                return '推送渠道配置格式无效';
+            const entry = (0, push_channels_1.normalizePushChannel)(raw);
+            if (seen.has(entry.channel))
+                return '推送渠道重复';
+            seen.add(entry.channel);
+            const error = pushChannelError(entry, entry.enabled);
+            if (error)
+                return error;
+        }
+        return '';
+    }
+    app.post('/api/settings/offline-reminder', (req, res) => {
         try {
-            const body = (req.body && typeof req.body === 'object') ? req.body : {};
-            const channel = String(body.channel || '').trim().toLowerCase();
-            if (channel === 'dingtalk') {
-                try {
-                    const { buildDingTalkWebhook } = require('../../services/push');
-                    buildDingTalkWebhook(body.endpoint, body.token, body.secret);
-                }
-                catch (error) {
-                    return res.status(400).json({ ok: false, error: error?.message || '钉钉 Webhook 地址格式无效' });
+            const body = req.body || {};
+            if (Object.hasOwn(body, 'notificationTypes')) {
+                const types = body.notificationTypes;
+                if (!types || typeof types !== 'object' || Array.isArray(types) || Object.values(types).some(value => typeof value !== 'boolean')) {
+                    return res.status(400).json({ ok: false, error: '通知类型的开关值无效' });
                 }
             }
-            const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
-            res.json({ ok: true, data: data || {} });
+            let error = '';
+            if (Object.hasOwn(body, 'channels')) {
+                error = channelListError(body.channels);
+            }
+            else if (Object.hasOwn(body, 'enabled')) {
+                if (typeof body.enabled !== 'boolean' || !body.channel) {
+                    error = '请指定要修改的渠道和启用状态';
+                }
+                else {
+                    error = pushChannelError((0, push_channels_1.singlePushChannel)(store.getOfflineReminder(), body), body.enabled);
+                }
+            }
+            else if (['channel', 'endpoint', 'token', 'secret'].some(key => Object.hasOwn(body, key))) {
+                const saved = store.getOfflineReminder();
+                const entry = (0, push_channels_1.singlePushChannel)(saved, body);
+                error = pushChannelError(entry, entry.channel !== saved.channel);
+            }
+            if (error)
+                return res.status(400).json({ ok: false, error });
+            res.json({ ok: true, data: store.setOfflineReminder(body) });
         }
         catch (e) {
             handleApiError(res, e);
         }
     });
-    // API: 测试下线提醒推送（不落盘）
+    // 指定渠道时只测试该渠道，草稿参数不写入配置。
     app.post('/api/settings/offline-reminder/test', async (req, res) => {
         try {
-            const saved = store.getOfflineReminder ? store.getOfflineReminder() : {};
-            const body = (req.body && typeof req.body === 'object') ? req.body : {};
-            const cfg = { ...(saved || {}), ...body };
-            const channel = String(cfg.channel || '').trim().toLowerCase();
-            const endpoint = String(cfg.endpoint || '').trim();
-            const token = String(cfg.token || '').trim();
-            const secret = String(cfg.secret || '').trim();
-            const titleBase = String(cfg.title || '账号下线提醒').trim();
-            const msgBase = String(cfg.msg || '账号下线').trim();
-            if (!channel) {
-                return res.status(400).json({ ok: false, error: '推送渠道不能为空' });
+            const body = req.body || {};
+            const saved = store.getOfflineReminder();
+            const single = ['channel', 'endpoint', 'token', 'secret'].some(key => Object.hasOwn(body, key));
+            let targets;
+            if (single) {
+                const entry = (0, push_channels_1.singlePushChannel)(saved, body);
+                const error = pushChannelError(entry, true);
+                if (error)
+                    return res.status(400).json({ ok: false, error });
+                targets = [entry];
             }
-            if (channel === 'webhook' && !endpoint) {
-                return res.status(400).json({ ok: false, error: 'Webhook 渠道需要填写接口地址' });
+            else {
+                if (Object.hasOwn(body, 'channels')) {
+                    const error = channelListError(body.channels);
+                    if (error)
+                        return res.status(400).json({ ok: false, error });
+                }
+                targets = (0, push_channels_1.readPushChannels)(body.channels ? body : saved).filter(entry => entry.enabled);
+                if (!targets.length)
+                    return res.status(400).json({ ok: false, error: '请先配置并启用推送渠道' });
             }
-            if (channel === 'dingtalk' && !endpoint && !token) {
-                return res.status(400).json({ ok: false, error: '钉钉渠道需要填写 Webhook 地址' });
+            const title = String(body.title ?? saved.title ?? '').trim() || '账号下线提醒';
+            const msg = String(body.msg ?? saved.msg ?? '').trim() || '账号下线';
+            const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+            const results = await sendPushChannels(targets, { title: `${title}（测试）`, content: `${msg}\n\n这是一条通知测试消息。\n时间: ${ts}` });
+            if (single) {
+                const [result] = results;
+                return result.ok
+                    ? res.json({ ok: true, data: result, message: result.msg })
+                    : res.status(400).json({ ok: false, error: result.msg, data: result });
             }
-            if (channel !== 'webhook' && channel !== 'dingtalk' && !token) {
-                return res.status(400).json({ ok: false, error: '当前推送渠道需要填写 Token' });
-            }
-            const now = new Date();
-            const ts = now.toISOString().replace('T', ' ').slice(0, 19);
-            const { sendPushooMessage } = require('../../services/push');
-            const ret = await sendPushooMessage({
-                channel,
-                endpoint,
-                token,
-                secret,
-                title: `${titleBase}（测试）`,
-                content: `${msgBase}\n\n这是一条下线提醒测试消息。\n时间: ${ts}`,
-            });
-            if (!ret) {
-                return res.status(400).json({ ok: false, error: '推送失败：无返回结果' });
-            }
-            const isSuccess = ret.ok ||
-                ret.code === 'ok' ||
-                ret.code === '0' ||
-                String(ret.msg || '').includes('成功') ||
-                String(ret.raw?.status || '').toLowerCase() === 'success';
-            if (!isSuccess && ret.msg && !String(ret.msg).includes('成功')) {
-                return res.status(400).json({ ok: false, error: ret.msg || '推送失败', data: ret });
-            }
-            return res.json({ ok: true, data: ret, message: ret.msg || '推送成功' });
+            const data = results.map(({ channel, ok, msg }) => ({ channel, ok, msg }));
+            const sent = data.filter(result => result.ok).length;
+            if (!sent)
+                return res.status(400).json({ ok: false, error: data.map(r => `${r.channel}: ${r.msg}`).join('；'), data });
+            return res.json({ ok: true, message: `测试完成，${sent}/${data.length} 个渠道成功`, data });
         }
         catch (e) {
-            return handleApiError(res, e);
+            handleApiError(res, e);
         }
     });
     // API: 获取配置
@@ -512,13 +536,117 @@ function mountAccountRoutes(app, ctx) {
             const autoAcceptHarvestStealHarvest = id && (typeof store.getAutoAcceptHarvestStealHarvest === 'function') ? store.getAutoAcceptHarvestStealHarvest(id) : 8;
             const autoAcceptHarvestStealSteal = id && (typeof store.getAutoAcceptHarvestStealSteal === 'function') ? store.getAutoAcceptHarvestStealSteal(id) : 1;
             const ui = store.getUI();
-            const offlineReminder = store.getOfflineReminder
-                ? store.getOfflineReminder()
-                : { channel: 'webhook', endpoint: '', token: '', secret: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
+            const offlineReminder = store.getOfflineReminder();
             res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedMultiLandReservationEnabled, bagSeedLandTypes, bagSeedFallbackStrategy, autoAcceptFriendMinLevel, autoAcceptRequireOwnLevel, autoAcceptHarvestStealEnabled, autoAcceptHarvestStealHarvest, autoAcceptHarvestStealSteal, ui, offlineReminder } });
         }
         catch (e) {
             handleApiError(res, e);
+        }
+    });
+    // ===== QQ 机器人单聊推送（重要日志） =====
+    app.get('/api/settings/qq-bot-push', async (_req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            const saved = store.getQqBotPush ? store.getQqBotPush() : {};
+            const config = svc ? svc.getConfig() : saved;
+            const status = svc ? svc.getStatus() : {};
+            res.json({ ok: true, data: { config, status } });
+        }
+        catch (e) {
+            handleApiError(res, e);
+        }
+    });
+    app.post('/api/settings/qq-bot-push', async (req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const config = svc ? svc.setConfig(body) : (store.setQqBotPush ? store.setQqBotPush(body) : body);
+            const status = svc ? svc.getStatus() : {};
+            res.json({ ok: true, data: { config, status } });
+        }
+        catch (e) {
+            handleApiError(res, e);
+        }
+    });
+    app.post('/api/settings/qq-bot-push/test', async (_req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            if (!svc)
+                return res.status(500).json({ ok: false, error: '推送服务未初始化' });
+            const result = await svc.testSend();
+            res.json({ ok: true, data: result, message: '测试消息已发送' });
+        }
+        catch (e) {
+            return res.status(400).json({ ok: false, error: e?.message || '测试发送失败' });
+        }
+    });
+    app.post('/api/settings/qq-bot-push/capture', async (_req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            if (!svc)
+                return res.status(500).json({ ok: false, error: '推送服务未初始化' });
+            svc.startCapture();
+            res.json({ ok: true, message: '已开始监听网关，请用 QQ 给机器人发一条消息' });
+        }
+        catch (e) {
+            return res.status(400).json({ ok: false, error: e?.message || '启动捕获失败' });
+        }
+    });
+    app.get('/api/settings/qq-bot-push/users', async (_req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            const users = svc ? svc.getUsers() : [];
+            res.json({ ok: true, data: { users, currentOpenid: svc ? svc.getConfig().openid : '' } });
+        }
+        catch (e) {
+            handleApiError(res, e);
+        }
+    });
+    app.post('/api/settings/qq-bot-push/select-user', async (req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            if (!svc)
+                return res.status(500).json({ ok: false, error: '推送服务未初始化' });
+            const config = svc.selectUser(String((req.body || {}).openid || ''));
+            res.json({ ok: true, data: { config } });
+        }
+        catch (e) {
+            return res.status(400).json({ ok: false, error: e?.message || '选择用户失败' });
+        }
+    });
+    app.get('/api/settings/qq-bot-push/details', async (_req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            const details = svc && typeof svc.getDetails === 'function' ? svc.getDetails() : { records: [], queue: [], media: [] };
+            res.json({ ok: true, data: details });
+        }
+        catch (e) {
+            handleApiError(res, e);
+        }
+    });
+    app.post('/api/settings/qq-bot-push/delete-records', async (req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            if (!svc || typeof svc.deleteRecordsByDate !== 'function') {
+                return res.status(500).json({ ok: false, error: '推送服务未初始化' });
+            }
+            const removed = svc.deleteRecordsByDate(String((req.body || {}).dateKey || ''));
+            res.json({ ok: true, data: { removed, details: svc.getDetails() } });
+        }
+        catch (e) {
+            return res.status(400).json({ ok: false, error: e?.message || '删除记录失败' });
+        }
+    });
+    app.post('/api/settings/qq-bot-push/delete-user', async (req, res) => {
+        try {
+            const svc = require('../../services/qq-bot-push').getActiveQqBotPush();
+            if (!svc)
+                return res.status(500).json({ ok: false, error: '推送服务未初始化' });
+            const result = svc.deleteUser(String((req.body || {}).openid || ''));
+            res.json({ ok: true, data: { ...result, config: svc.getConfig(), status: svc.getStatus() } });
+        }
+        catch (e) {
+            return res.status(400).json({ ok: false, error: e?.message || '删除用户失败' });
         }
     });
     // API: 获取默认配置

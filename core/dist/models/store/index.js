@@ -54,6 +54,8 @@ module.exports = {
     setLoginSettings: globalConfig.setLoginSettings,
     getOfflineReminder: globalConfig.getOfflineReminder,
     setOfflineReminder: globalConfig.setOfflineReminder,
+    getQqBotPush: globalConfig.getQqBotPush,
+    setQqBotPush: globalConfig.setQqBotPush,
     // Accounts
     getAccounts: accounts.getAccounts,
     addOrUpdateAccount: accounts.addOrUpdateAccount,

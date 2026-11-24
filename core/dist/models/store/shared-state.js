@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const notification_types_1 = require("../../config/notification-types");
+const push_channels_1 = require("../../config/push-channels");
+const qq_bot_push_1 = require("../../config/qq-bot-push");
 const { DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersion } = require('../../config/config');
 const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { createConfigStorage } = require('./config-storage');
@@ -12,12 +15,6 @@ const configStorage = createConfigStorage(STORE_FILE);
 const KNOWN_FRIEND_GIDS_DIR = getDataFile('known_friend_gids');
 const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
 const ALLOWED_BAG_SEED_FALLBACK_STRATEGIES = ALLOWED_PLANTING_STRATEGIES.filter((s) => s !== 'bag_priority');
-const PUSHOO_CHANNELS = new Set([
-    'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
-    'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
-    'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
-    'discord', 'wxpusher', 'meow',
-]);
 const DEFAULT_FERTILIZER_LAND_TYPES = ['purple-gold', 'gold', 'black', 'red', 'normal'];
 const FERTILIZER_MODES = new Set(['both', 'normal', 'organic', 'smart', 'none', 'normal_ripen', 'organic_ripen']);
 const ALL_FERTILIZER_LAND_TYPES = ['blue-crystal', ...DEFAULT_FERTILIZER_LAND_TYPES];
@@ -28,6 +25,8 @@ const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC = 60;
 let systemConfigMigrated = false;
 let accountFallbackConfig;
 const DEFAULT_OFFLINE_REMINDER = {
+    notificationTypes: (0, notification_types_1.normalizeNotificationTypes)(),
+    channels: [],
     channel: 'webhook',
     endpoint: '',
     token: '',
@@ -44,6 +43,7 @@ const DEFAULT_LOGIN_SETTINGS = {
     napCatEndpoint: '',
     napCatSignature: '',
 };
+const DEFAULT_QQ_BOT_PUSH = (0, qq_bot_push_1.defaultQqBotPushConfig)();
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
         ...RANCH_AUTOMATION_DEFAULTS,
@@ -502,6 +502,7 @@ const globalConfig = {
     },
     loginSettings: { ...DEFAULT_LOGIN_SETTINGS },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
+    qqBotPush: { ...DEFAULT_QQ_BOT_PUSH, eventKeys: [...DEFAULT_QQ_BOT_PUSH.eventKeys] },
     systemConfig: null,
 };
 function resolveAccountId(accountId) {
@@ -531,9 +532,12 @@ function loadGlobalConfig() {
             globalConfig.ui = { ...globalConfig.ui, ...(data.ui || {}) };
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
-            // offlineReminder normalization done in global-config
+            // offlineReminder / qqBotPush normalization done in global-config
             if (data.offlineReminder && typeof data.offlineReminder === 'object') {
                 globalConfig.offlineReminder = data.offlineReminder;
+            }
+            if (data.qqBotPush && typeof data.qqBotPush === 'object') {
+                globalConfig.qqBotPush = data.qqBotPush;
             }
             if (data.loginSettings && typeof data.loginSettings === 'object') {
                 globalConfig.loginSettings = {
@@ -604,13 +608,14 @@ module.exports = {
     // Constants
     ALLOWED_PLANTING_STRATEGIES,
     ALLOWED_BAG_SEED_FALLBACK_STRATEGIES,
-    PUSHOO_CHANNELS,
+    PUSHOO_CHANNELS: push_channels_1.PUSHOO_CHANNELS,
     DEFAULT_FERTILIZER_LAND_TYPES,
     FERTILIZER_LAND_TYPE_SET,
     INTERVAL_MAX_SEC,
     DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC,
     DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC,
     DEFAULT_OFFLINE_REMINDER,
+    DEFAULT_QQ_BOT_PUSH,
     DEFAULT_LOGIN_SETTINGS,
     DEFAULT_ACCOUNT_CONFIG,
     ALLOWED_AUTOMATION_KEYS,

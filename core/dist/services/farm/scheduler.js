@@ -214,6 +214,20 @@ async function runMultiSeasonFertilizer(growingLandIds, propagateErrors = false)
             throw e;
     }
 }
+// 收获日志带作物名：QQ 机器人推送要靠它查物品图（事件名后面的小图标）
+function firstCropName(lands, ids) {
+    for (const land of lands) {
+        if (!ids.includes(toNum(land.id)))
+            continue;
+        const plantId = toNum(land.plant?.id);
+        if (!plantId)
+            continue;
+        const name = String(getPlantById(plantId)?.name || land.plant?.name || '').trim();
+        if (name)
+            return name;
+    }
+    return '';
+}
 function autoHarvestLandIds(status) {
     if (getAutomation().farm_harvest_tiangong !== false)
         return status.harvestable;
@@ -259,6 +273,7 @@ async function harvestMatureOwnLandsOnce(actions, propagateErrors = false) {
             result: 'ok',
             count: harvestable.length,
             landIds: [...harvestable],
+            itemName: firstCropName(lands, harvestable),
         });
         const classified = await resolveRemovableHarvestedLands(harvestable, harvestReply);
         await runMultiSeasonFertilizer(classified.growing, propagateErrors);
@@ -300,7 +315,14 @@ async function runFarmOperation(opType, targetLandIdInput = null, propagateError
             harvestedLandIds.push(...completed);
             harvestReply.land.push(...updated);
             const count = completed.length;
-            log('收获', `收获完成 ${count} 块土地`, { module: 'farm', event: '收获作物', result: 'ok', count, landIds: completed });
+            log('收获', `收获完成 ${count} 块土地`, {
+                module: 'farm',
+                event: '收获作物',
+                result: 'ok',
+                count,
+                landIds: completed,
+                itemName: firstCropName(source, completed),
+            });
             actions.push(`收获${count}`);
             recordOperation('harvest', count);
             networkEvents.emit('farmHarvested', { count, landIds: completed, opType });

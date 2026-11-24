@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const notification_types_1 = require("../config/notification-types");
+const push_channels_1 = require("../config/push-channels");
+const { sendPushChannels } = require('../services/push');
 function createReloginReminderService(options) {
     const { store, sendPushooMessage, log } = options;
     function getOfflineAutoDeleteMs() {
@@ -7,54 +10,36 @@ function createReloginReminderService(options) {
         const sec = Math.max(0, Number.parseInt(cfg?.offlineDeleteSec, 10) || 0);
         return sec === 0 ? Infinity : sec * 1000;
     }
-    function resolvePushChannel() {
-        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
-        if (!cfg)
-            return { ok: false, reason: '未找到下线提醒配置' };
-        const channel = String(cfg.channel || '').trim().toLowerCase();
-        const endpoint = String(cfg.endpoint || '').trim();
-        const token = String(cfg.token || '').trim();
-        const secret = String(cfg.secret || '').trim();
-        if (!channel)
-            return { ok: false, reason: '下线提醒配置不完整' };
-        if (channel === 'webhook' && !endpoint)
-            return { ok: false, reason: 'Webhook 渠道未设置接口地址' };
-        if (channel === 'dingtalk' && !endpoint && !token)
-            return { ok: false, reason: '钉钉渠道未设置 Webhook 地址' };
-        if (channel !== 'webhook' && channel !== 'dingtalk' && !token)
-            return { ok: false, reason: '下线提醒渠道未设置 Token' };
-        return { ok: true, channel, endpoint, token, secret };
-    }
     async function sendConfiguredPush(payload = {}) {
+        const cfg = store.getOfflineReminder();
+        const enabled = (0, notification_types_1.normalizeNotificationTypes)(cfg?.notificationTypes);
+        // 同一轮仅发送第一条允许的提醒，优先保留原有的合并购买消息。
+        const notification = payload.candidates ? payload.candidates.find(item => item && enabled[item.type] === true) : payload;
+        if (!notification)
+            return;
         const accountId = String(payload.accountId || '').trim();
         const accountName = String(payload.accountName || '').trim();
-        const baseTitle = String(payload.title || '').trim();
-        const content = String(payload.content || '').trim();
+        const baseTitle = String(notification.title || '').trim();
+        const content = String(notification.content || '').trim();
         const title = accountName ? `${baseTitle} ${accountName}` : baseTitle;
         const logLabel = String(payload.logLabel || '事件提醒').trim() || '事件提醒';
         try {
-            const channelCfg = resolvePushChannel();
-            if (channelCfg.ok === false) {
-                log('错误', channelCfg.reason);
+            const targets = (0, push_channels_1.readPushChannels)(cfg || {}).filter(entry => entry.enabled);
+            if (!targets.length) {
+                log('错误', '未启用已配置的推送渠道');
                 return;
             }
             if (!title || !content) {
                 log('错误', '推送标题或内容为空');
                 return;
             }
-            const result = await sendPushooMessage({
-                channel: channelCfg.channel,
-                endpoint: channelCfg.endpoint,
-                token: channelCfg.token,
-                secret: channelCfg.secret,
-                title,
-                content,
-            });
-            if (result?.ok) {
-                log('系统', `${logLabel}发送成功: ${accountName || accountId || title}`);
-            }
-            else {
-                log('错误', `${logLabel}发送失败: ${result?.msg || 'unknown'}`);
+            const results = await sendPushChannels(targets, { title, content }, sendPushooMessage);
+            for (const result of results) {
+                const suffix = targets.length > 1 ? `（${result.channel}）` : '';
+                if (result.ok)
+                    log('系统', `${logLabel}发送成功${suffix}: ${accountName || accountId || title}`);
+                else
+                    log('错误', `${logLabel}发送失败${suffix}: ${result.msg}`);
             }
         }
         catch (e) {
@@ -66,12 +51,14 @@ function createReloginReminderService(options) {
             const accountId = String(payload.accountId || '').trim();
             const accountName = String(payload.accountName || '').trim();
             const reason = String(payload.reason || 'unknown');
-            log('系统', `触发下线提醒: 账号=${accountName || accountId}, 原因=${reason}`, { accountId, accountName, reason });
             const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
             if (!cfg) {
                 log('错误', '未找到下线提醒配置');
                 return;
             }
+            if (cfg.notificationTypes?.offline === false)
+                return;
+            log('系统', `触发下线提醒: 账号=${accountName || accountId}, 原因=${reason}`, { accountId, accountName, reason });
             const baseTitle = String(cfg.title || '').trim();
             const content = String(cfg.msg || '').trim();
             if (!baseTitle || !content) {

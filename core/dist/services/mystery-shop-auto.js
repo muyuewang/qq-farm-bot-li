@@ -195,7 +195,12 @@ async function checkMysteryShopTick(options = {}) {
         return { bought };
     }
     commitMysteryShopNotify(state, String(decision.visitKey), flags);
-    return { bought, push: buildMysteryShopPush(shop, flags) };
+    const push = buildMysteryShopPush(shop, flags);
+    const notifications = [{ type: flags.purchase ? 'mysteryPurchase' : 'mysteryArrival', ...push }];
+    if (flags.purchase && flags.arrival) {
+        notifications.push({ type: 'mysteryArrival', ...buildMysteryShopPush(shop, { arrival: true, purchase: false }) });
+    }
+    return { bought, push, notifications };
 }
 module.exports = {
     GOLD_ITEM_ID,

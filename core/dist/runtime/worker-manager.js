@@ -569,13 +569,10 @@ function createWorkerManager(options) {
             });
         }
         else if (msg.type === 'push_notify') {
-            const title = String(msg.title || '').trim();
-            const content = String(msg.content || '').trim();
-            if (!title || !content || typeof sendConfiguredPush !== 'function')
+            if (!Array.isArray(msg.candidates) || typeof sendConfiguredPush !== 'function')
                 return;
             Promise.resolve(sendConfiguredPush({
-                title,
-                content,
+                candidates: msg.candidates,
                 accountId,
                 accountName: worker.name,
             })).catch((e) => {

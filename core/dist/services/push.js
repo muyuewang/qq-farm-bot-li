@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const push_channels_1 = require("../config/push-channels");
 /**
  * 推送接口封装（基于 pushoo）
  */
@@ -140,10 +141,14 @@ async function sendPushooMessage(payload = {}) {
             ? await sendMeowMessage({ endpoint, token, title, content })
             : await pushoo(channel, request);
     const raw = (result && typeof result === 'object') ? result : { data: result };
-    const hasError = !!(raw && raw.error);
-    const code = String(raw.code || raw.errcode || (hasError ? 'error' : 'ok'));
-    const message = String(raw.msg || raw.errmsg || raw.message || (hasError ? (raw.error.message || 'push failed') : 'ok'));
-    const ok = !hasError && (code === 'ok' || code === '0' || code === '' || String(raw.status || '').toLowerCase() === 'success');
+    const hasError = Boolean(raw.error) || raw.ok === false || raw.success === false || raw.status === 'failed';
+    const code = String(raw.code ?? raw.errcode ?? raw.retcode ?? raw.error_code ?? (hasError ? 'error' : 'ok'));
+    const accepted = code === 'ok' || code === '0'
+        || (code === '200' && ['pushplus', 'pushplushxtrip', 'bark'].includes(channel))
+        || (channel === 'wxpusher' && code === '1000');
+    const ok = !hasError && accepted;
+    const message = String(raw.msg || raw.errmsg || raw.message || raw.description || raw.error?.message
+        || (ok ? 'ok' : `推送失败（${code}）`));
     return {
         ok,
         code,
@@ -151,7 +156,42 @@ async function sendPushooMessage(payload = {}) {
         raw,
     };
 }
+function pushChannelError(entry, required) {
+    if (!push_channels_1.PUSHOO_CHANNELS.has(entry.channel))
+        return '不支持的推送渠道';
+    if (required && !(0, push_channels_1.isPushChannelConfigured)(entry)) {
+        if (entry.channel === 'webhook')
+            return 'Webhook 渠道需要填写接口地址';
+        if (entry.channel === 'dingtalk')
+            return '钉钉渠道需要填写 Webhook 地址';
+        return '当前推送渠道需要填写 Token';
+    }
+    if (entry.channel === 'dingtalk' && entry.endpoint) {
+        try {
+            if (!/^https:\/\//i.test(entry.endpoint))
+                return '钉钉 Webhook 地址格式无效';
+            buildDingTalkWebhook(entry.endpoint, '');
+        }
+        catch (error) {
+            return error.message;
+        }
+    }
+    return '';
+}
+async function sendPushChannels(channels, message, send = sendPushooMessage) {
+    return Promise.all(channels.map(async ({ channel, endpoint, token, secret }) => {
+        try {
+            const result = await send({ channel, endpoint, token, secret, ...message });
+            return { ...result, channel };
+        }
+        catch (error) {
+            return { channel, ok: false, msg: error instanceof Error ? error.message : String(error) };
+        }
+    }));
+}
 module.exports = {
+    pushChannelError,
+    sendPushChannels,
     buildDingTalkWebhook,
     createDingTalkSign,
     sendMeowMessage,

@@ -1,33 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const notification_types_1 = require("../../config/notification-types");
+const push_channels_1 = require("../../config/push-channels");
+const qq_bot_push_1 = require("../../config/qq-bot-push");
 const { DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION, DEFAULT_TIME_ZONE, DEFAULT_AUTO_CODE_REFRESH, normalizeAutoCodeRefresh, normalizeTimeZone, resolveClientVersionUpdatedAt } = require('../../config/config');
 const sharedState = require('./shared-state');
-const { PUSHOO_CHANNELS, DEFAULT_OFFLINE_REMINDER, DEFAULT_LOGIN_SETTINGS, globalConfig, normalizeAccountConfig, cloneAccountConfig, DEFAULT_ACCOUNT_CONFIG, } = sharedState;
+const { DEFAULT_OFFLINE_REMINDER, DEFAULT_LOGIN_SETTINGS, globalConfig, normalizeAccountConfig, cloneAccountConfig, DEFAULT_ACCOUNT_CONFIG, } = sharedState;
 function normalizeOfflineReminder(input) {
     const src = (input && typeof input === 'object') ? input : {};
     let offlineDeleteSec = Number.parseInt(src.offlineDeleteSec, 10);
     if (!Number.isFinite(offlineDeleteSec) || offlineDeleteSec < 0) {
         offlineDeleteSec = DEFAULT_OFFLINE_REMINDER.offlineDeleteSec;
     }
-    const rawChannel = (src.channel !== undefined && src.channel !== null)
-        ? String(src.channel).trim().toLowerCase()
-        : '';
-    const endpoint = (src.endpoint !== undefined && src.endpoint !== null)
-        ? String(src.endpoint).trim()
-        : DEFAULT_OFFLINE_REMINDER.endpoint;
-    const migratedChannel = rawChannel
-        || (PUSHOO_CHANNELS.has(String(endpoint || '').trim().toLowerCase())
-            ? String(endpoint || '').trim().toLowerCase()
-            : DEFAULT_OFFLINE_REMINDER.channel);
-    const channel = PUSHOO_CHANNELS.has(migratedChannel)
-        ? migratedChannel
-        : DEFAULT_OFFLINE_REMINDER.channel;
-    const token = (src.token !== undefined && src.token !== null)
-        ? String(src.token).trim()
-        : DEFAULT_OFFLINE_REMINDER.token;
-    const secret = (src.secret !== undefined && src.secret !== null)
-        ? String(src.secret).trim()
-        : DEFAULT_OFFLINE_REMINDER.secret;
+    const channels = (0, push_channels_1.readPushChannels)(src);
+    const primary = channels.find(entry => entry.enabled);
     const title = (src.title !== undefined && src.title !== null)
         ? String(src.title).trim()
         : DEFAULT_OFFLINE_REMINDER.title;
@@ -35,10 +21,12 @@ function normalizeOfflineReminder(input) {
         ? String(src.msg).trim()
         : DEFAULT_OFFLINE_REMINDER.msg;
     return {
-        channel,
-        endpoint,
-        token,
-        secret,
+        notificationTypes: (0, notification_types_1.normalizeNotificationTypes)(src.notificationTypes),
+        channels,
+        channel: primary?.channel ?? DEFAULT_OFFLINE_REMINDER.channel,
+        endpoint: primary?.endpoint ?? '',
+        token: primary?.token ?? '',
+        secret: primary?.secret ?? '',
         title,
         msg,
         offlineDeleteSec,
@@ -66,6 +54,14 @@ function setUITheme(theme) {
 function getOfflineReminder() {
     return normalizeOfflineReminder(globalConfig.offlineReminder);
 }
+function getQqBotPush() {
+    return (0, qq_bot_push_1.normalizeQqBotPushConfig)(globalConfig.qqBotPush);
+}
+function setQqBotPush(cfg) {
+    const next = (0, qq_bot_push_1.normalizeQqBotPushConfig)({ ...getQqBotPush(), ...(cfg || {}) });
+    saveGlobalConfig({ qqBotPush: next });
+    return getQqBotPush();
+}
 function normalizeLoginSettings(input) {
     const src = (input && typeof input === 'object') ? input : {};
     return {
@@ -90,9 +86,37 @@ function setLoginSettings(cfg) {
     saveGlobalConfig({ loginSettings: next });
     return getLoginSettings();
 }
-function setOfflineReminder(cfg) {
-    const current = normalizeOfflineReminder(globalConfig.offlineReminder);
-    const next = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
+function setOfflineReminder(cfg = {}) {
+    const current = getOfflineReminder();
+    let channels = cfg.channels ?? current.channels;
+    if (!cfg.channels && cfg.enabled !== undefined) {
+        const selected = (0, push_channels_1.singlePushChannel)(current, cfg);
+        const byName = new Map(current.channels.map(entry => [entry.channel, entry]));
+        if (selected.endpoint || selected.token || selected.secret)
+            byName.set(selected.channel, selected);
+        else
+            byName.delete(selected.channel);
+        channels = [...byName.values()];
+    }
+    else if (!cfg.channels && ['channel', 'endpoint', 'token', 'secret'].some(key => Object.hasOwn(cfg, key))) {
+        const selected = (0, push_channels_1.singlePushChannel)(current, cfg);
+        // 单渠道表单只替换原先选中的渠道，保留 App 另行启用的渠道。
+        const configured = (0, push_channels_1.isPushChannelConfigured)(selected);
+        const changed = selected.channel !== current.channel || selected.endpoint !== current.endpoint
+            || selected.token !== current.token || selected.secret !== current.secret;
+        if (changed) {
+            channels = current.channels.filter(entry => entry.channel !== selected.channel);
+            if (selected.channel !== current.channel && configured) {
+                channels = channels.map(entry => entry.channel === current.channel ? { ...entry, enabled: false } : entry);
+            }
+            if (configured)
+                channels.unshift(selected);
+        }
+    }
+    const next = normalizeOfflineReminder({
+        ...current, ...cfg, channels,
+        notificationTypes: { ...current.notificationTypes, ...cfg.notificationTypes },
+    });
     saveGlobalConfig({ offlineReminder: next });
     return getOfflineReminder();
 }
@@ -171,8 +195,9 @@ function setSystemConfig(config) {
 // Initialize on load
 const { loadGlobalConfig } = sharedState;
 loadGlobalConfig();
-// Apply offlineReminder normalization after load
+// Apply offlineReminder / qqBotPush normalization after load
 globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
+globalConfig.qqBotPush = (0, qq_bot_push_1.normalizeQqBotPushConfig)(globalConfig.qqBotPush);
 globalConfig.loginSettings = normalizeLoginSettings(globalConfig.loginSettings);
 if (sharedState.systemConfigMigrated && !process.env.FARM_ACCOUNT_ID) {
     saveGlobalConfig();
@@ -186,6 +211,8 @@ module.exports = {
     setLoginSettings,
     getOfflineReminder,
     setOfflineReminder,
+    getQqBotPush,
+    setQqBotPush,
     getSystemConfig,
     setSystemConfig,
 };
