@@ -30,7 +30,8 @@ function applySocketSubscription(ctx, socket, accountRef = '') {
             socket.emit('status:update', { accountId: targetId, status: currentStatus });
         }
         if (ctx.provider && typeof ctx.provider.getLogs === 'function') {
-            let currentLogs = ctx.provider.getLogs(targetId, { limit: 100 });
+            // 冗余缓存：逐块务农日志密集，前端要先聚合再截断，快照给足原始行
+            let currentLogs = ctx.provider.getLogs(targetId, { limit: 500 });
             if (!Array.isArray(currentLogs))
                 currentLogs = [];
             socket.emit('logs:snapshot', {

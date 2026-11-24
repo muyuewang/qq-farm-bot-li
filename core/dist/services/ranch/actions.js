@@ -10,6 +10,7 @@ const { getServerTimeSec } = require('../../utils/utils');
 const { setTimeout: wait } = require('node:timers/promises');
 const { ACTIONS } = require('./contract');
 const DIRECT_ACTIONS = new Set(['feed', 'produce', 'harvest', 'clean']);
+const FRIEND_INTERACTIONS = new Set(['stroke', 'putMosquito', 'cleanFriend', 'produceFriend']);
 const LABELS = {
     buy: '购买牧场商品', place: '放养幼崽', addGrass: '补充牧草', useCan: '添加罐头', feed: '喂养动物',
     produce: '牧场生产', harvest: '牧场收获', sell: '出售牧场产物', clean: '清理牧场', upgrade: '升级牧场设施',
@@ -409,7 +410,7 @@ function inActionScene(action, input, run) {
 async function prepareAction(action, input = {}, feedStage) {
     if (action === 'steal')
         return require('./friends').prepareSteal(input);
-    if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
+    if (FRIEND_INTERACTIONS.has(action))
         return require('./friends').prepareInteraction(action, input);
     return inActionScene(action, input, async (cells, recipient) => {
         const raw = action === 'claimIllustrated' ? null : { ...await loadRaw(cells), recipient };
@@ -440,7 +441,7 @@ function animalsInResults(ranches, rows) {
     return ranches.flatMap(ranch => ranch.animals.filter((animal) => ids.has(`${quantity(ranch.ranch_inst_id)}:${animal.animal_inst_id}`)));
 }
 async function operate(action, input = {}, feedStage) {
-    if (['stroke', 'putMosquito', 'cleanFriend'].includes(action))
+    if (FRIEND_INTERACTIONS.has(action))
         return require('./friends').interact(action, input);
     if (action === 'acknowledge')
         return inScene(async () => {

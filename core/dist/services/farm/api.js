@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * 低级农场 API - protobuf 请求、商店、铲除
  */
 const protobuf = require('protobufjs');
-const { sendMsgAsync, getUserState } = require('../../utils/network');
+const { sendMsgAsync, getUserState, networkEvents } = require('../../utils/network');
 const { types } = require('../../utils/proto');
 const { toLong, toNum, sleep, randomDelay, log, logWarn } = require('../../utils/utils');
 // 操作限制更新回调 (由 friend.js 设置)
@@ -23,6 +23,12 @@ async function sendPlantRequest(RequestType, ReplyType, method, landIds, hostGid
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
     return ReplyType.decode(replyBody);
 }
+function decodeChangedLands(replyType, body) {
+    const reply = replyType.decode(body);
+    if (reply.land?.length)
+        networkEvents.emit('ownFarmLandsUpdated', reply.land);
+    return reply;
+}
 async function getAllLands() {
     const forecast = require('../level-forecast');
     const revision = forecast.getLandForecastRevision();
@@ -30,21 +36,22 @@ async function getAllLands() {
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'AllLands', body);
     const reply = types.AllLandsReply.decode(replyBody);
     forecast.rememberLandForecast(reply.lands, getUserState(), revision);
+    networkEvents.emit('ownFarmLandsUpdated', reply.lands, true);
     // 更新操作限制
     if (reply.operation_limits && onOperationLimitsUpdate) {
         onOperationLimitsUpdate(reply.operation_limits);
     }
     return reply;
 }
-async function harvest(landIds) {
+async function harvest(landIds, isAll = true) {
     const state = getUserState();
     const body = types.HarvestRequest.encode(types.HarvestRequest.create({
         land_ids: landIds,
         host_gid: toLong(state.gid),
-        is_all: true,
+        is_all: isAll,
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Harvest', body);
-    return types.HarvestReply.decode(replyBody);
+    return decodeChangedLands(types.HarvestReply, replyBody);
 }
 async function waterLand(landIds) {
     const state = getUserState();
@@ -54,7 +61,7 @@ async function farming(landIds, socialEventItemIds = []) {
     const state = getUserState();
     const body = encodeOwnFarmingRequest(landIds, state.gid, socialEventItemIds);
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Farming', body);
-    return types.FarmingReply.decode(replyBody);
+    return decodeChangedLands(types.FarmingReply, replyBody);
 }
 /**
  * 自家单点/一键务农。官方抓包会显式编码两个值为 0 的场景字段；不能依赖 proto3 默认省略。
@@ -116,7 +123,7 @@ async function fertilizeBatch(landIds, fertilizerId) {
         fertilizer_id: toLong(fertilizerId),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
-    const reply = types.FertilizeReply.decode(replyBody);
+    const reply = decodeChangedLands(types.FertilizeReply, replyBody);
     if (reply.operation_limits && onOperationLimitsUpdate) {
         onOperationLimitsUpdate(reply.operation_limits);
     }
@@ -145,7 +152,8 @@ async function fertilize(landIds, fertilizerId = NORMAL_FERTILIZER_ID, propagate
                 land_ids: [toLong(landId)],
                 fertilizer_id: toLong(fertilizerId),
             })).finish();
-            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            decodeChangedLands(types.FertilizeReply, replyBody);
             successCount++;
             clearFertilizerContainerEmpty(fertilizerId);
         }
@@ -195,7 +203,8 @@ async function fertilizeOrganicLoop(landIds, propagateErrors = false) {
                 land_ids: [toLong(landId)],
                 fertilizer_id: toLong(ORGANIC_FERTILIZER_ID),
             })).finish();
-            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            decodeChangedLands(types.FertilizeReply, replyBody);
             successCount++;
         }
         catch (error) {
@@ -217,7 +226,7 @@ async function removePlant(landIds) {
         land_ids: landIds.map(id => toLong(id)),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'RemovePlant', body);
-    return types.RemovePlantReply.decode(replyBody);
+    return decodeChangedLands(types.RemovePlantReply, replyBody);
 }
 async function upgradeLand(landId) {
     const body = types.UpgradeLandRequest.encode(types.UpgradeLandRequest.create({
@@ -270,6 +279,7 @@ function encodePlantRequest(seedId, landIds) {
     return writer.finish();
 }
 module.exports = {
+    decodeChangedLands,
     setOperationLimitsCallback,
     sendPlantRequest,
     getAllLands,

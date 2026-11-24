@@ -574,7 +574,7 @@ function handleNotify(msg) {
                 if (lands.length > 0) {
                     if (hostGid === userState.gid || hostGid === 0) {
                         invalidateLandForecast();
-                        networkEvents.emit('landsChanged', lands);
+                        networkEvents.emit('landsChanged', lands, hostGid);
                     }
                 }
             }
