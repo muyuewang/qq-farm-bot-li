@@ -22,6 +22,7 @@ export declare const RANCH_AUTOMATION_DEFAULTS: {
     ranch_clean: boolean;
     ranch_stroke: boolean;
     ranch_friend_steal: boolean;
+    ranch_friend_produce: boolean;
     ranch_friend_clean: boolean;
     ranch_friend_mosquito: boolean;
     ranch_task: boolean;

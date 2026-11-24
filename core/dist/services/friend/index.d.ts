@@ -5,5 +5,5 @@ export { removeKnownFriendGid, syncKnownFriendGidsFromFriends, syncKnownFriendGi
 export { getFriendDogState, getFriendPetCacheStats, } from './pet-cache';
 export { isFriendPetSyncRunning, runFriendPetSync, startFriendPetSyncTimer, stopFriendPetSyncTimer, } from './pet-sync';
 export { checkFriends, getOperationLimits, isFriendCheckRunning, isHelpExpLimitReached, onFriendApplicationReceived, refreshFriendCheckLoop, startFriendCheckLoop, stopFriendCheckLoop, } from './scheduler';
-export { cacheFriendsListFromReply, clearFriendsListCache, deleteFriend, doFriendOperation, getFriendLandsDetail, getFriendsList, getFriendsListCacheOnly, } from './visit-strategy';
+export { cacheFriendsListFromReply, clearFriendsListCache, deleteFriend, doFriendOperation, getFriendLandsDetail, getFriendsList, getFriendsListCacheOnly, isFriendsListPartial, } from './visit-strategy';
 //# sourceMappingURL=index.d.ts.map

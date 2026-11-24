@@ -38,7 +38,7 @@ const { sellAllFruits } = require('../warehouse');
 const { getCareerInfo } = require('../career');
 const { getAllFriends, acceptFriends, rejectFriends, getApplications, } = require('./api');
 const { isHarvestStealFilterEnabled, evaluateLevelFilter, evaluateHarvestStealFilter, } = require('./application-filter');
-const { extractReplyFriends, clearAllInvalidKnownFriendGidCooldowns, } = require('./gid-manager');
+const { extractReplyFriends, canScanFriend, clearAllInvalidKnownFriendGidCooldowns, } = require('./gid-manager');
 const { visitFriend, inFriendQuietHours, cacheFriendsListFromReply, clearFriendsListCache, } = require('./visit-strategy');
 const { buildFriendVisitPlan } = require('./visit-plan');
 const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
@@ -374,7 +374,7 @@ async function checkFriends(options = {}) {
             }
             try {
                 await runExclusiveAutomationTask('friend_visit', async () => {
-                    if (!canContinue() || getFriendBlacklist(accountId).includes(target.gid))
+                    if (!canContinue() || !canScanFriend(target.gid) || getFriendBlacklist(accountId).includes(target.gid))
                         return;
                     const allowSteal = target.wantSteal && isAutomationOn('friend_steal');
                     const allowHelp = target.wantHelp && isAutomationOn('friend_help');

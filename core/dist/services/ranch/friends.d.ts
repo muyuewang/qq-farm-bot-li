@@ -10,6 +10,7 @@ type FriendInteraction = {
 };
 export interface FriendPatrolProgress {
     stealChecked?: boolean;
+    produceChecked?: boolean;
     cleanChecked?: boolean;
     pending?: FriendInteraction[];
 }

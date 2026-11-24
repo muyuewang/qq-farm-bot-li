@@ -3,7 +3,7 @@
  * 好友模块 - 统一导出
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getFriendsListCacheOnly = exports.getFriendsList = exports.getFriendLandsDetail = exports.doFriendOperation = exports.deleteFriend = exports.clearFriendsListCache = exports.cacheFriendsListFromReply = exports.stopFriendCheckLoop = exports.startFriendCheckLoop = exports.refreshFriendCheckLoop = exports.onFriendApplicationReceived = exports.isHelpExpLimitReached = exports.isFriendCheckRunning = exports.getOperationLimits = exports.checkFriends = exports.stopFriendPetSyncTimer = exports.startFriendPetSyncTimer = exports.runFriendPetSync = exports.isFriendPetSyncRunning = exports.getFriendPetCacheStats = exports.getFriendDogState = exports.syncKnownFriendGidsFromRecentVisitors = exports.syncKnownFriendGidsFromFriends = exports.removeKnownFriendGid = void 0;
+exports.isFriendsListPartial = exports.getFriendsListCacheOnly = exports.getFriendsList = exports.getFriendLandsDetail = exports.doFriendOperation = exports.deleteFriend = exports.clearFriendsListCache = exports.cacheFriendsListFromReply = exports.stopFriendCheckLoop = exports.startFriendCheckLoop = exports.refreshFriendCheckLoop = exports.onFriendApplicationReceived = exports.isHelpExpLimitReached = exports.isFriendCheckRunning = exports.getOperationLimits = exports.checkFriends = exports.stopFriendPetSyncTimer = exports.startFriendPetSyncTimer = exports.runFriendPetSync = exports.isFriendPetSyncRunning = exports.getFriendPetCacheStats = exports.getFriendDogState = exports.syncKnownFriendGidsFromRecentVisitors = exports.syncKnownFriendGidsFromFriends = exports.removeKnownFriendGid = void 0;
 var gid_manager_1 = require("./gid-manager");
 Object.defineProperty(exports, "removeKnownFriendGid", { enumerable: true, get: function () { return gid_manager_1.removeKnownFriendGid; } });
 Object.defineProperty(exports, "syncKnownFriendGidsFromFriends", { enumerable: true, get: function () { return gid_manager_1.syncKnownFriendGidsFromFriends; } });
@@ -33,4 +33,5 @@ Object.defineProperty(exports, "doFriendOperation", { enumerable: true, get: fun
 Object.defineProperty(exports, "getFriendLandsDetail", { enumerable: true, get: function () { return visit_strategy_1.getFriendLandsDetail; } });
 Object.defineProperty(exports, "getFriendsList", { enumerable: true, get: function () { return visit_strategy_1.getFriendsList; } });
 Object.defineProperty(exports, "getFriendsListCacheOnly", { enumerable: true, get: function () { return visit_strategy_1.getFriendsListCacheOnly; } });
+Object.defineProperty(exports, "isFriendsListPartial", { enumerable: true, get: function () { return visit_strategy_1.isFriendsListPartial; } });
 //# sourceMappingURL=index.js.map

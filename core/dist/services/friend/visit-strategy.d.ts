@@ -1,7 +1,7 @@
 /**
  * 拜访好友策略 - 访问逻辑、好友分析、错误处理、安静时段
  */
-export declare function handleFriendEnterError(friendGid: any, friendName: string, error: any): {
+export declare function handleFriendAccessError(friendGid: any, friendName: string, error: any, entered?: boolean): {
     handled: boolean;
     kind: string;
 };
@@ -36,6 +36,11 @@ export declare function buildFriendPetView(friendGid: any): {
 export declare function cacheFriendsListFromReply(reply: any): any[];
 export declare function getFriendsList(forceSync?: boolean, priority?: 'low' | 'normal', propagateErrors?: boolean): Promise<any[]>;
 export declare function getFriendsListCacheOnly(): any[];
+export declare function isFriendsListPartial(): boolean;
+export declare function getFreshConfirmedFriends(): {
+    friends: any[];
+    partial: boolean;
+} | null;
 /**
  * 获取指定好友的农田详情 (进入-获取-离开)
  */

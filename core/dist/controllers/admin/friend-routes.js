@@ -5,6 +5,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * friend-blacklist, friend-known-gids, interact-records.
  */
 const store = require('../../models/store');
+const { normalizeKnownFriendGidSyncCooldownSec, normalizeFriendsListCacheTtlSec, INTERVAL_MAX_SEC } = require('../../models/store/shared-state');
 const { getAccId, handleApiError, isGatewayProtocolError, isSoftRuntimeError, buildKnownFriendGidSettings, } = require('./middleware');
 function mountFriendRoutes(app, ctx) {
     // API: 好友列表
@@ -14,8 +15,8 @@ function mountFriendRoutes(app, ctx) {
             return res.status(400).json({ ok: false });
         const forceSync = req.query.forceSync === 'true';
         try {
-            const data = await ctx.provider.getFriends(id, forceSync);
-            res.json({ ok: true, data });
+            const list = await ctx.provider.getFriends(id, forceSync, true);
+            res.json({ ok: true, ...list });
         }
         catch (e) {
             handleApiError(res, e);
@@ -27,8 +28,8 @@ function mountFriendRoutes(app, ctx) {
         if (!id)
             return res.status(400).json({ ok: false });
         try {
-            const data = await ctx.provider.getFriendsCache(id);
-            res.json({ ok: true, data });
+            const list = await ctx.provider.getFriendsCache(id, true);
+            res.json({ ok: true, ...list });
         }
         catch (e) {
             handleApiError(res, e);
@@ -124,6 +125,7 @@ function mountFriendRoutes(app, ctx) {
                 return res.json({
                     ok: false,
                     error: data.errorMessage || data.message || data.error || '好友操作失败',
+                    ...(data.reason ? { reason: data.reason } : {}),
                     ...(data.errorMessage ? { errorMessage: data.errorMessage } : {}),
                     ...(data.errorCode ? { errorCode: data.errorCode } : {}),
                 });
@@ -278,14 +280,26 @@ function mountFriendRoutes(app, ctx) {
             return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
-            if (body.knownFriendGids !== undefined && store.setKnownFriendGids) {
+            for (const [field, label, normalize] of [
+                ['knownFriendGidSyncCooldownSec', '访客检测入库冷却', normalizeKnownFriendGidSyncCooldownSec],
+                ['friendsListCacheTtlSec', '好友列表缓存', normalizeFriendsListCacheTtlSec],
+            ]) {
+                const raw = body[field];
+                if (raw === undefined)
+                    continue;
+                const seconds = typeof raw === 'string' ? Number(raw) : raw;
+                if (!Number.isInteger(seconds) || normalize(seconds) !== seconds) {
+                    return res.status(400).json({ ok: false, error: `${label}须填写 ${normalize(0)} 至 ${INTERVAL_MAX_SEC} 的整数秒数` });
+                }
+            }
+            if (body.knownFriendGids !== undefined) {
                 store.setKnownFriendGids(id, body.knownFriendGids);
             }
-            if (body.knownFriendGidSyncCooldownSec !== undefined && store.setKnownFriendGidSyncCooldownSec) {
-                store.setKnownFriendGidSyncCooldownSec(id, body.knownFriendGidSyncCooldownSec);
+            if (body.knownFriendGidSyncCooldownSec !== undefined) {
+                store.setKnownFriendGidSyncCooldownSec(id, Number(body.knownFriendGidSyncCooldownSec));
             }
-            if (body.friendsListCacheTtlSec !== undefined && store.setFriendsListCacheTtlSec) {
-                store.setFriendsListCacheTtlSec(id, body.friendsListCacheTtlSec);
+            if (body.friendsListCacheTtlSec !== undefined) {
+                store.setFriendsListCacheTtlSec(id, Number(body.friendsListCacheTtlSec));
             }
             // 同步配置到 worker 进程
             if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {

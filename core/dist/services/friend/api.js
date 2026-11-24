@@ -21,12 +21,12 @@ exports.putInsectsDetailed = putInsectsDetailed;
 exports.putWeedsDetailed = putWeedsDetailed;
 exports.putSocialItem = putSocialItem;
 const { CONFIG } = require('../../config/config');
-const { sendMsgAsync, getUserState, GatewayError } = require('../../utils/network');
+const { sendMsgAsync, getUserState, networkEvents, GatewayError } = require('../../utils/network');
 const { types } = require('../../utils/proto');
 const { toLong, toNum, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { getFarmingSkillGiftCount } = require('../dog-skill-gifts');
 const { recordFriendDogFromEnterReply } = require('./pet-cache');
-const { syncKnownFriendGidsFromRecentVisitors, fetchQqFriendsByKnownGids, syncKnownFriendGidsFromFriends, getEffectiveKnownQqFriendGids, fetchQqFriendsByLegacyMethod, dedupeFriendsByGid, buildFriendReply, } = require('./gid-manager');
+const { syncKnownFriendGidsFromRecentVisitors, fetchQqFriendsByKnownGids, syncKnownFriendGidsFromFriends, getEffectiveKnownQqFriendGids, isInvalidFriendAccessError, fetchQqFriendsByLegacyMethod, dedupeFriendsByGid, buildFriendReply, } = require('./gid-manager');
 // 延迟引用 scheduler 模块，避免循环依赖
 let _scheduler = null;
 function schedulerRef() {
@@ -34,16 +34,16 @@ function schedulerRef() {
         _scheduler = require('./scheduler');
     return _scheduler;
 }
-const allFriendsRequests = {};
+let allFriendsRequests = {};
+networkEvents.on('disconnected', () => { allFriendsRequests = {}; });
 // ============ 好友 API ============
 async function fetchAllFriends(forceSync, priority) {
     const isQQ = CONFIG.platform === 'qq';
     if (isQQ) {
         await syncKnownFriendGidsFromRecentVisitors(forceSync, priority);
-        const friendsFromKnownGids = await fetchQqFriendsByKnownGids(priority);
-        if (friendsFromKnownGids.length > 0) {
-            syncKnownFriendGidsFromFriends(friendsFromKnownGids);
-            return buildFriendReply(friendsFromKnownGids);
+        const { friends, partial } = await fetchQqFriendsByKnownGids(priority, forceSync);
+        if (friends.length || partial) {
+            return { ...buildFriendReply(friends), partial };
         }
         try {
             const legacyFriends = dedupeFriendsByGid(await fetchQqFriendsByLegacyMethod(priority));
@@ -75,19 +75,32 @@ async function fetchAllFriends(forceSync, priority) {
 async function getAllFriends(forceSync = false, priority = 'normal') {
     // 同优先级好友列表请求合并，避免页面刷新、巡田和后台同步同时重复拉取。
     // 低优先级请求不会阻塞普通请求；反过来低优先级可以复用正在执行的普通请求。
-    if (priority === 'low' && allFriendsRequests.normal)
-        return allFriendsRequests.normal;
-    const current = allFriendsRequests[priority];
+    const requests = allFriendsRequests;
+    const key = forceSync && CONFIG.platform === 'qq' ? 'sync' : priority;
+    if (requests.sync)
+        return requests.sync;
+    if (key === 'low' && requests.normal)
+        return requests.normal;
+    const current = requests[key];
     if (current)
         return current;
-    const request = fetchAllFriends(forceSync, priority);
-    allFriendsRequests[priority] = request;
+    const request = (async () => {
+        if (key === 'sync')
+            await Promise.allSettled(Object.values(requests));
+        if (requests !== allFriendsRequests)
+            throw new Error('好友读取中断，账号已断开连接');
+        const reply = await fetchAllFriends(forceSync, priority);
+        if (requests !== allFriendsRequests)
+            throw new Error('好友读取中断，账号已断开连接');
+        return reply;
+    })();
+    requests[key] = request;
     try {
         return await request;
     }
     finally {
-        if (allFriendsRequests[priority] === request)
-            delete allFriendsRequests[priority];
+        if (requests[key] === request)
+            delete requests[key];
     }
 }
 async function acceptFriends(gids) {
@@ -292,7 +305,7 @@ async function putPlantItemsDetailed(friendGid, landIds, RequestType, ReplyType,
                 break;
             }
             failed.push({ landId, reason: e && e.message ? e.message : '未知错误' });
-            if (propagateErrors)
+            if (propagateErrors || isInvalidFriendAccessError(e, true))
                 throw e;
         }
         if (index < ids.length - 1 && !schedulerRef().isBadOperationLimitReached()) {

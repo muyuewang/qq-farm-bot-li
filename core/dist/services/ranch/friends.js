@@ -354,7 +354,7 @@ async function automateFriend(hostGid, enabled, shouldYield = () => false, onOut
                 onOutcome?.(outcome, nickname);
             return outcome;
         }
-        // 可偷产物可能被好友收走，先处理当前货架再做清理和需要查询次数的互动。
+        // 先处理货架，再用本次拜访读到的栏舍安排帮忙和限次互动。
         if (!progress.stealChecked) {
             if (enabled('steal')) {
                 const plan = quote(host, ranches);
@@ -363,22 +363,26 @@ async function automateFriend(hostGid, enabled, shouldYield = () => false, onOut
             }
             progress.stealChecked = true;
         }
-        let cleaned = false;
-        if (!progress.cleanChecked) {
-            if (enabled('cleanFriend')) {
-                const plan = interactionPlan('cleanFriend', {}, ranches, host, null);
+        let ranchesChanged = false;
+        for (const [action, checked] of [['produceFriend', 'produceChecked'], ['cleanFriend', 'cleanChecked']]) {
+            if (progress[checked])
+                continue;
+            if (enabled(action)) {
+                const plan = interactionPlan(action, {}, ranches, host, null);
                 if (plan.count) {
                     if (pause())
                         return { results, times, yielded: true };
-                    cleaned = (await act(plan, () => commitInteraction(plan)))?.status === 'confirmed';
+                    const outcome = await act(plan, () => commitInteraction(plan));
+                    if (outcome?.status === 'confirmed')
+                        ranchesChanged = true;
                 }
             }
-            progress.cleanChecked = true;
+            progress[checked] = true;
         }
         if (!enabled('stroke') && !enabled('putMosquito'))
             return { results, times };
         if (!progress.pending) {
-            if (cleaned) {
+            if (ranchesChanged) {
                 if (pause())
                     return { results, times, yielded: true };
                 ranches = (await rpc('animals', { host_gid: host })).ranches;
