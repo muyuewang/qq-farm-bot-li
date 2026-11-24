@@ -15,6 +15,7 @@ require.cache[networkPath] = {
             return next();
         },
         getUserState: () => ({ gid: 1 }),
+        networkEvents: { emit: () => {} },
     },
 };
 require.cache[protoPath] = {
@@ -23,6 +24,9 @@ require.cache[protoPath] = {
             FertilizeRequest: {
                 create: value => value,
                 encode: () => ({ finish: () => Buffer.alloc(0) }),
+            },
+            FertilizeReply: {
+                decode: () => ({}),
             },
         },
     },
