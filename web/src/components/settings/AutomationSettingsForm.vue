@@ -613,18 +613,20 @@ const ranchFeedStages = [
   background: color-mix(in srgb, var(--ui-surface-strong) 58%, transparent);
 }
 
+/* 双列瀑布流：卡片按实际高度自动分配到两列，避免一列空着、另一列一路往下堆。
+   列宽下限 340px，内容区不够宽时自动退化成单列；列内的分组容器用 contents 拍平。 */
 .automation-card-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 1rem;
+  columns: 340px 2;
+  column-gap: 1rem;
 }
 
 .automation-card-column {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1rem;
+  display: contents;
+}
+
+.automation-card-layout section {
+  break-inside: avoid;
+  margin-bottom: 1rem;
 }
 
 .automation-setting-item {
@@ -644,19 +646,13 @@ const ranchFeedStages = [
 }
 
 @media (max-width: 1279px) {
-  .automation-card-layout {
-    display: block;
-  }
-
-  .automation-card-column {
-    display: contents;
-  }
-
+  /* 窄屏由 columns 自动退化，这里只兜住旧分支的间距。 */
   .automation-card-layout section {
     margin-bottom: 1rem;
   }
 }
+/* 牧场只有一组卡片，强制单列（columns 在 display:block 上依然生效，必须显式关掉）。 */
 .automation-card-layout--single {
-  display: block;
+  columns: 1;
 }
 </style>

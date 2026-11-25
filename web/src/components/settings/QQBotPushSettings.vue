@@ -341,8 +341,8 @@ function toggleAccountUser(accountId: string, openid: string, checked: boolean) 
 
 <template>
   <div class="space-y-3">
-    <div class="grid grid-cols-1 gap-3 lg:grid-cols-4">
-      <section class="farm-card rounded-lg p-3 lg:col-span-3">
+    <div class="grid grid-cols-1 gap-3 xl:grid-cols-4">
+      <section class="farm-card rounded-lg p-3 xl:col-span-3">
       <div class="mb-3 flex items-start gap-2.5">
         <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/25 dark:text-blue-400">
           <span class="i-carbon-chat text-xl" />
@@ -568,7 +568,7 @@ function toggleAccountUser(accountId: string, openid: string, checked: boolean) 
     </section>
 
     <!-- 推送事件 + 通知与显示：左右栏 -->
-    <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
       <section class="farm-card rounded-lg p-3">
         <h4 class="mb-2 text-base text-gray-900 font-bold dark:text-gray-100">
           推送事件

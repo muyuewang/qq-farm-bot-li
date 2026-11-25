@@ -2456,8 +2456,8 @@ onBeforeUnmount(() => {
             系统设置
           </h3>
 
-          <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-            <div class="min-w-0 space-y-4">
+          <div class="system-settings-flow">
+            <div class="system-column">
               <section class="farm-card rounded-lg p-4">
                 <div class="mb-4 flex items-start gap-3">
                   <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/25 dark:text-blue-400">
@@ -2639,7 +2639,7 @@ onBeforeUnmount(() => {
               </section>
             </div>
 
-            <div class="min-w-0 space-y-4">
+            <div class="system-column">
               <section class="farm-card rounded-lg p-4">
                 <div class="mb-4 flex items-start gap-3">
                   <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/25 dark:text-green-400">
@@ -2725,23 +2725,11 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
-              <section v-if="qqBotStore.config.channelEnabled" class="farm-card rounded-lg p-4">
-                <div class="mb-4 flex items-start gap-3">
-                  <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-400">
-                    <span class="i-carbon-chat-bot text-xl" />
-                  </div>
-                  <div>
-                    <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                      QQ 机器人推送
-                    </h4>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      通过 QQ 机器人单聊推送重要农场动态；与上面的推送渠道独立，可同时开启。
-                    </p>
-                  </div>
-                </div>
-
+              <!-- QQ 机器人整块横跨两列：组件内部自带标题与一组卡片，
+                   这里不再套一层 farm-card，避免双层边框 + 标题重复。 -->
+              <div v-if="qqBotStore.config.channelEnabled" class="system-span-all">
                 <QQBotPushSettings />
-              </section>
+              </div>
 
               <section class="farm-card rounded-lg p-4">
                 <div class="mb-4 flex items-start gap-3">
@@ -3022,6 +3010,32 @@ onBeforeUnmount(() => {
 
 .system-update-card {
   container-type: inline-size;
+}
+
+/* ==================== 系统设置布局 ==================== */
+/* 双列瀑布流：卡片按实际高度自动分到两列，避免「左列空着、右列一路堆到底」。
+   列宽下限 380px，内容区不够宽时自动退化成单列。 */
+.system-settings-flow {
+  columns: 380px 2;
+  column-gap: 16px;
+}
+
+/* 原来的两列容器只用于分组，拍平后让卡片直接参与列流。 */
+.system-settings-flow > .system-column {
+  display: contents;
+}
+
+/* 只给列流里的一级卡片加间距，别渗进 QQ 机器人内部那张卡的分组里。 */
+.system-settings-flow > .system-column > section,
+.system-settings-flow > section {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+
+/* QQ 机器人是整块长表单（账号列表 + 推送事件 + 提示文案），横跨两列拿满宽度。 */
+.system-settings-flow .system-span-all {
+  column-span: all;
+  margin-bottom: 16px;
 }
 
 /* ==================== 版本更新 ==================== */
