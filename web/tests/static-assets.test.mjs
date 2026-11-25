@@ -21,3 +21,15 @@ test('the entry page does not load embedded documents or remote scripts', async 
   for (const script of html.matchAll(/<script\b[^>]+\bsrc\s*=\s*(['"])(.*?)\1/gi))
     assert.match(script[2], /^\/(?!\/)/)
 })
+
+// 活动列表的图标是手写路径，漏了素材就会退回默认的日历方块（以薯换福之前就是这样）。
+test('every activity icon referenced by the directory page has its asset on disk', async () => {
+  const page = await readFile(new URL('../src/views/activity-center/ActivityDirectoryPage.vue', import.meta.url), 'utf8')
+  const paths = [...page.matchAll(/'(\/activity-assets\/[^']+)'/g)].map(match => match[1])
+  assert.ok(paths.length > 0)
+  for (const path of new Set(paths)) {
+    const file = new URL(`../public${path}`, import.meta.url)
+    const bytes = await readFile(file)
+    assert.ok(bytes.length > 0, `${path} 是空文件`)
+  }
+})

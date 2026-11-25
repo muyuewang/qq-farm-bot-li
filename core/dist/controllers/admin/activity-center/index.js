@@ -8,6 +8,7 @@ const qixi_routes_1 = require("./qixi-routes");
 const stellar_routes_1 = require("./stellar-routes");
 const weather_routes_1 = require("./weather-routes");
 const pet_diary_routes_1 = require("./pet-diary-routes");
+const yishuhuanfu_routes_1 = require("./yishuhuanfu-routes");
 function mountActivityCenterRoutes(app, ctx) {
     const routes = (0, context_1.createActivityRouteContext)(app, ctx);
     (0, overview_routes_1.mountActivityOverviewRoutes)(routes);
@@ -17,6 +18,7 @@ function mountActivityCenterRoutes(app, ctx) {
     (0, charity_routes_1.mountCharityActivityRoutes)(routes);
     (0, weather_routes_1.mountWeatherActivityRoutes)(routes);
     (0, pet_diary_routes_1.mountPetDiaryRoutes)(routes);
+    (0, yishuhuanfu_routes_1.mountYishuHuanfuActivityRoutes)(routes);
 }
 module.exports = { mountActivityCenterRoutes };
 //# sourceMappingURL=index.js.map

@@ -101,6 +101,18 @@ const GAMEPLAY_ADAPTERS = [
             context.weather?.researchActivityId,
         ],
     },
+    {
+        gameplayKey: 'yishuhuanfu',
+        detailTarget: 'yishuhuanfu',
+        priority: 90,
+        activityIds: context => [
+            '2026111707',
+            '2026111708',
+            '2026111709',
+            context.yishuHuanfu?.groupId,
+            context.yishuHuanfu?.activityId,
+        ],
+    },
 ];
 function normalizeActivityId(value) {
     if (value == null)

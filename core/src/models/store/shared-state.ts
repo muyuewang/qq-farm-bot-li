@@ -88,6 +88,16 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         solar_calendar_answer_quiz: true,
         muge_claim_rewards: true,
         muge_finish_survey: true,
+        // 默认只做「领种子 + 分享」这两件零风险的事；自动卖薯要动别人的铺子额度，
+        // 默认也开，但好友都收满时默认兜底卖给自己，避免一批蜜薯烂在背包里。
+        yishu_claim_seed: true,
+        yishu_share: true,
+        yishu_auto_sell: true,
+        yishu_claim_commission: true,
+        yishu_sell_fallback_own: true,
+        yishu_scan_friend_limit: 20,
+        yishu_scan_interval_minutes: 30,
+        yishu_sell_min_count: 1,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -379,6 +389,16 @@ function normalizeAutomationValue(key: string, value: unknown, current: any): an
     }
     if (key === 'fertilizer_smart_seconds') {
         return Math.max(30, Math.min(3600, Number(value) || 300));
+    }
+    // 以薯换福的数值项：默认值是数字，这里必须显式夹取，否则会被下面的 `!!value` 折成 true。
+    if (key === 'yishu_scan_friend_limit') {
+        return Math.max(1, Math.min(50, Number.parseInt(String(value), 10) || 20));
+    }
+    if (key === 'yishu_scan_interval_minutes') {
+        return Math.max(5, Math.min(720, Number.parseInt(String(value), 10) || 30));
+    }
+    if (key === 'yishu_sell_min_count') {
+        return Math.max(1, Math.min(10000, Number.parseInt(String(value), 10) || 1));
     }
     return !!value;
 }

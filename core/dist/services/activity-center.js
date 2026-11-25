@@ -7,7 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const share_reward_instances_json_1 = __importDefault(require("../activity-data/share-reward-instances.json"));
 const pending_content_json_1 = __importDefault(require("../activity-data/pending-content.json"));
 const LongModule = require('long');
-const { sendMsgAsync, GatewayError } = require('../utils/network');
+const { sendMsgAsync, GatewayError, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { getItemById, getItemImageById, getEffectiveSellInfo, getMutantEffectsByIds } = require('../config/gameConfig');
 const { getServerTimeSec, getSystemDateKey } = require('../utils/utils');
@@ -20,6 +20,7 @@ const { createStellarActivityService } = require('./activity-center/stellar');
 const { createCharityActivityService } = require('./activity-center/charity');
 const { createQixiActivityService } = require('./activity-center/qixi');
 const { createQingMeiActivityService } = require('./activity-center/qingmei');
+const { createYishuHuanfuActivityService } = require('./activity-center/yishuhuanfu');
 const { createPetDiaryService } = require('./activity-center/pet-diary');
 const { createEmptyCharityRedFlowerState, loadCharityRedFlowerState, mergeCharityRedFlowerStates, mergeConstellationStates, persistCharityRedFlowerState, stateRecordKey, loadConstellationState, persistConstellationState, stateFromDynamicNodes, stateWithNoClaimableDay, } = require('./activity-center-state');
 const MAX_SIGNED_INT64 = 9223372036854775807n;
@@ -326,8 +327,8 @@ async function settleRequest(operation) {
         return { status: 'rejected', reason };
     }
 }
-function buildActivityDirectory(windows, season, shop, solarTerms, constellation, qixi = null, weather = null, qingMei = null, charity = null) {
-    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation, qixi, weather, qingMei, charity });
+function buildActivityDirectory(windows, season, shop, solarTerms, constellation, qixi = null, weather = null, qingMei = null, charity = null, yishuHuanfu = null) {
+    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation, qixi, weather, qingMei, charity, yishuHuanfu });
     const groups = [];
     for (const window of windows) {
         const id = String(window?.id || '').trim();
@@ -376,6 +377,7 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
     const qixiResult = await settleRequest(getCurrentQixiActivity);
     const qingMeiResult = await settleRequest(getCurrentQingMeiActivity);
     const charityResult = await settleRequest(getCurrentCharityRedFlowerActivity);
+    const yishuHuanfuResult = await settleRequest(getCurrentYishuHuanfuActivity);
     const weatherResult = await settleRequest(weatherActivityService.getCurrentWeatherActivity);
     const rawSeason = settledValue(seasonResult);
     const season = rawSeason ? normalizeSeason(rawSeason) : null;
@@ -383,6 +385,7 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
     const qixi = settledValue(qixiResult);
     const qingMei = settledValue(qingMeiResult);
     const charity = settledValue(charityResult);
+    const yishuHuanfu = settledValue(yishuHuanfuResult);
     const weather = settledValue(weatherResult);
     let shopResult;
     if (shopOverride) {
@@ -405,11 +408,15 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
         charityDonateLove: charity?.actions?.donateLove || { enabled: false, available: false, availabilityKnown: false },
         charityClaimDailyGift: charity?.actions?.claimDailyGift || { enabled: false, available: false, availabilityKnown: false },
         weatherResearch: weather?.actions?.advanceResearch || weather?.actions?.research || { enabled: false, available: false, availabilityKnown: false },
+        yishuHuanfuClaimSeed: yishuHuanfu?.actions?.claimSeed || { enabled: false, available: false, availabilityKnown: false },
+        yishuHuanfuSell: yishuHuanfu?.actions?.sell || { enabled: false, available: false, availabilityKnown: false },
+        yishuHuanfuShare: yishuHuanfu?.actions?.share || { enabled: false, available: false, availabilityKnown: false },
+        yishuHuanfuExchange: yishuHuanfu?.actions?.exchange || { enabled: false, available: false, availabilityKnown: false },
     };
     const activityWindows = settledValue(activityListResult) || [];
     return {
         serverTime: getServerTimeSec(),
-        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation, qixi, weather, qingMei, charity),
+        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation, qixi, weather, qingMei, charity, yishuHuanfu),
         season,
         constellation,
         shop,
@@ -418,6 +425,7 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
         qingMei,
         charity,
         weather,
+        yishuHuanfu,
         capabilities: {
             claimPass: actions.claimPass.supported,
             lightConstellation: actions.lightConstellation.supported,
@@ -432,6 +440,11 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
             charityDonateLove: !!charity,
             charityClaimDailyGift: !!charity,
             weatherResearch: !!weather,
+            yishuHuanfu: !!yishuHuanfu,
+            yishuHuanfuClaimSeed: !!yishuHuanfu,
+            yishuHuanfuSell: !!yishuHuanfu,
+            yishuHuanfuShare: !!yishuHuanfu,
+            yishuHuanfuExchange: !!yishuHuanfu,
         },
         actions,
         errors: {
@@ -442,6 +455,7 @@ async function buildActivityCenterSnapshot(shopOverride = null) {
             qingMei: settledError(qingMeiResult),
             charity: settledError(charityResult),
             weather: settledError(weatherResult),
+            yishuHuanfu: settledError(yishuHuanfuResult),
             activities: settledError(activityListResult),
         },
     };
@@ -490,6 +504,29 @@ function serializeMutation(operation) {
     mutationTail = result.then(() => undefined, () => undefined);
     return result;
 }
+const yishuHuanfuService = createYishuHuanfuActivityService({
+    types,
+    sendMsgAsync,
+    getBag,
+    getSystemDateKey,
+    getServerTimeSec,
+    int64String,
+    int64Number,
+    bytesToText,
+    itemDto,
+    textContent,
+    businessError,
+    positiveDecimal,
+    activityWindowIsActive,
+    readBagBalances,
+    serializeMutation,
+    getActivityCenterSnapshot,
+    getUserState,
+});
+// 函数声明提升，供 buildActivityCenterSnapshot 在服务实例化之前引用。
+async function getCurrentYishuHuanfuActivity() {
+    return yishuHuanfuService.getCurrentYishuHuanfuActivity();
+}
 module.exports = {
     getPetDiary: petDiaryService.getPetDiary,
     operatePetDiary: petDiaryService.operatePetDiary,
@@ -535,5 +572,16 @@ module.exports = {
     donateCharityRedFlowerLove,
     claimCharityRedFlowerDailyGift,
     claimCharityRedFlowerProgressReward,
+    getCurrentYishuHuanfuActivity: yishuHuanfuService.getCurrentYishuHuanfuActivity,
+    claimYishuHuanfuSeeds: yishuHuanfuService.claimYishuHuanfuSeeds,
+    sellYishuHuanfuSweetPotato: yishuHuanfuService.sellYishuHuanfuSweetPotato,
+    refreshYishuHuanfuQuote: yishuHuanfuService.refreshYishuHuanfuQuote,
+    queryYishuHuanfuCatalog: yishuHuanfuService.queryYishuHuanfuCatalog,
+    queryYishuHuanfuRecords: yishuHuanfuService.queryYishuHuanfuRecords,
+    claimYishuHuanfuCommission: yishuHuanfuService.claimYishuHuanfuCommission,
+    queryYishuHuanfuShop: yishuHuanfuService.queryYishuHuanfuShop,
+    scanYishuHuanfuFriendShops: yishuHuanfuService.scanYishuHuanfuFriendShops,
+    exchangeYishuHuanfuGoods: yishuHuanfuService.exchangeYishuHuanfuGoods,
+    shareYishuHuanfuShop: yishuHuanfuService.shareYishuHuanfuShop,
 };
 //# sourceMappingURL=activity-center.js.map

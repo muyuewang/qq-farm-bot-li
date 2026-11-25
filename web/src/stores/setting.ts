@@ -74,6 +74,14 @@ export interface AutomationConfig {
   solar_calendar_answer_quiz?: boolean
   muge_claim_rewards?: boolean
   muge_finish_survey?: boolean
+  yishu_claim_seed?: boolean
+  yishu_share?: boolean
+  yishu_auto_sell?: boolean
+  yishu_claim_commission?: boolean
+  yishu_sell_fallback_own?: boolean
+  yishu_scan_friend_limit?: number
+  yishu_scan_interval_minutes?: number
+  yishu_sell_min_count?: number
 }
 
 export interface IntervalsConfig {

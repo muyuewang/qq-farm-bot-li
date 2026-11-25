@@ -275,6 +275,8 @@ function activityIconSrc(activity: ActivityDirectoryItemDto) {
     return '/activity-assets/pet-diary/S3Open_dog_1.png'
   if (activity.gameplayKey === 'milk')
     return '/activity-assets/milk-tea/logo.png'
+  if (activity.gameplayKey === 'yishuhuanfu')
+    return '/activity-assets/yishuhuanfu/icon.png'
   if (activity.gameplayKey === 'wish' || activity.gameplayKey === 'happy')
     return `/activity-assets/autumn/${activity.gameplayKey}.png`
   return ''

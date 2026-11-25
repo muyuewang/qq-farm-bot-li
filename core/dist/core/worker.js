@@ -23,6 +23,7 @@ const { checkDailyShareStatus, getShareDailyState } = require('../services/share
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { createSolarCalendarAutomation, isSolarCalendarAutomationEnabled, SOLAR_CALENDAR_CHECK_INTERVAL_MS } = require('../services/solar-calendar-auto');
 const { startMugeTimer } = require('../services/muge-auto');
+const { startYishuTimer } = require('../services/yishuhuanfu-auto');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -578,6 +579,7 @@ function startBusinessLoops() {
     startMysteryShopTimer();
     startSolarCalendarTimer();
     startMugeTimer(workerScheduler, () => loginReady);
+    startYishuTimer(workerScheduler, () => loginReady);
 }
 function runMysteryShopTick() {
     if (!loginReady)
@@ -714,6 +716,7 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
             startMysteryShopTimer();
             startSolarCalendarTimer();
             startMugeTimer(workerScheduler, () => loginReady);
+            startYishuTimer(workerScheduler, () => loginReady);
         }
     }
     if (syncNow)
@@ -1317,6 +1320,39 @@ async function handleApiCall(msg) {
                         break;
                     case 'claimQixiBridgeRewards':
                         result = await require('../services/activity-center').claimQixiBridgeRewards();
+                        break;
+                    case 'getCurrentYishuHuanfuActivity':
+                        result = await require('../services/activity-center').getCurrentYishuHuanfuActivity();
+                        break;
+                    case 'queryYishuHuanfuCatalog':
+                        result = await require('../services/activity-center').queryYishuHuanfuCatalog();
+                        break;
+                    case 'queryYishuHuanfuRecords':
+                        result = await require('../services/activity-center').queryYishuHuanfuRecords();
+                        break;
+                    case 'claimYishuHuanfuCommission':
+                        result = await require('../services/activity-center').claimYishuHuanfuCommission();
+                        break;
+                    case 'claimYishuHuanfuSeeds':
+                        result = await require('../services/activity-center').claimYishuHuanfuSeeds();
+                        break;
+                    case 'sellYishuHuanfuSweetPotato':
+                        result = await require('../services/activity-center').sellYishuHuanfuSweetPotato(args[0], args[1]);
+                        break;
+                    case 'queryYishuHuanfuShop':
+                        result = await require('../services/activity-center').queryYishuHuanfuShop(args[0]);
+                        break;
+                    case 'scanYishuHuanfuFriendShops':
+                        result = await require('../services/activity-center').scanYishuHuanfuFriendShops(args[0]);
+                        break;
+                    case 'exchangeYishuHuanfuGoods':
+                        result = await require('../services/activity-center').exchangeYishuHuanfuGoods(args[0], args[1]);
+                        break;
+                    case 'refreshYishuHuanfuQuote':
+                        result = await require('../services/activity-center').refreshYishuHuanfuQuote();
+                        break;
+                    case 'shareYishuHuanfuShop':
+                        result = await require('../services/activity-center').shareYishuHuanfuShop();
                         break;
                     case 'giftQixiSachet':
                         result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);

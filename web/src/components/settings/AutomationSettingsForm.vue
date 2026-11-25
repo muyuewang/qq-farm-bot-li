@@ -482,6 +482,59 @@ const ranchFeedStages = [
 
         <section class="farm-card rounded-2xl p-4">
           <div class="mb-4 flex items-start gap-3">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-900/25 dark:text-rose-400">
+              <span class="i-carbon-crop-growth text-xl" />
+            </div>
+            <div>
+              <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                以薯换福
+              </h4>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                领种子 / 分享 / 收提成都是「服务端说能做」才发一次写，卖薯先比价再卖
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.yishu_claim_seed" label="每日自动领取红薯种子" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.yishu_share" label="每日自动分享铺子（触发暴击涨价）" />
+            </div>
+            <div class="automation-setting-item">
+              <BaseSwitch v-model="settings.automation.yishu_claim_commission" label="自动领取小铺收购提成" />
+            </div>
+            <div class="automation-setting-item sm:col-span-2">
+              <BaseSwitch v-model="settings.automation.yishu_auto_sell" label="红薯成熟后自动卖薯（按好友收购价从高到低）" />
+            </div>
+          </div>
+
+          <div v-if="settings.automation.yishu_auto_sell" class="mt-3 rounded-lg bg-gray-50 p-3 space-y-3 dark:bg-gray-800/60">
+            <div class="text-sm text-gray-800 font-medium dark:text-gray-200">
+              卖薯比价
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <BaseInput v-model.number="settings.automation.yishu_scan_friend_limit" label="比价好友数上限" type="number" min="1" max="50" />
+              <BaseInput v-model.number="settings.automation.yishu_scan_interval_minutes" label="两次比价间隔 (分钟)" type="number" min="5" max="720" />
+              <BaseInput v-model.number="settings.automation.yishu_sell_min_count" label="起卖数量 (个)" type="number" min="1" max="10000" />
+            </div>
+            <BaseSwitch v-model="settings.automation.yishu_sell_fallback_own" label="好友铺子都收满时，剩下的卖给自己铺子" />
+          </div>
+
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            10 分钟检查一次：今日还没领种子、还没分享才各发一次写，服务端已经标记过的只按天记一行跳过日志。背包里蜜薯达到「起卖数量」才进入比价，比价（cmd 92 逐个查好友铺子）按「两次比价间隔」节流，间隔内复用上一轮的排序，不会每轮都把好友扫一遍。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            卖薯按成交价（基础价 + 加成）从高到低贪心：最高价那家额度够就卖给它，不够就吃满额度再换第二高，往下依次；单轮最多切 3 家铺子、笔间隔 1200ms，剩下的留到下一轮。好友数上限越小、比价间隔越长，单轮请求越少——好友多的号建议把上限压到 10-20 之间。
+          </p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            提成是好友把蜜薯卖进你铺子后产生的，到账后自动领，一轮一次、没有可领就跳过。整个任务串进和农场/牧场同一把全局锁，不会和别的自动化抢连接。
+          </p>
+        </section>
+
+        <section class="farm-card rounded-2xl p-4">
+          <div class="mb-4 flex items-start gap-3">
             <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
               <span class="i-carbon-store text-xl" />
             </div>

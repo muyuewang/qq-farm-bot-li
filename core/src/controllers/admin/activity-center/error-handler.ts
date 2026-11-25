@@ -68,9 +68,34 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     '1000019': '雷电徽章不足，无法推进研究',
     '1034018': '天气采集瓶不足，无法采集',
     '1034040': '当前这轮雷雨已经采过，下轮雷雨可再次采集',
+    // 以薯换福（活动组 2026111707）：1034177 是服务端对“今天已经领过种子”的固定拒绝码。
+    '1034177': '今日红薯种子已经领取，明天再来领取',
+    YSHF_UNAVAILABLE: '以薯换福活动暂未开放或已经结束',
+    YSHF_INACTIVE: '以薯换福活动未在活动期内',
+    YSHF_SEED_ALREADY_CLAIMED: '今日红薯种子已经领取，明天再来领取',
+    YSHF_SHARE_ALREADY_DONE: '今日铺子已经分享过了，明天再来',
+    YSHF_QUOTE_NOT_READY: '今日收购价尚未生成，请先领取红薯种子',
+    YSHF_OWN_GID_UNKNOWN: '暂时无法确定本人 GID，请稍后重试',
+    YSHF_BALANCE_UNKNOWN: '读取不到蜜薯数量，请稍后重试',
+    INSUFFICIENT_YSHF_SWEET_POTATO: '蜜薯数量不足，无法完成本次出售',
+    INSUFFICIENT_YSHF_LUCK_COIN: '福气币不足，无法完成本次兑换',
+    YSHF_EXCEED_LIMIT: '兑换数量超过本档剩余可兑换次数',
+    INVALID_YSHF_EXCHANGE_COUNT: '兑换数量必须是正整数',
+    INVALID_YSHF_CATALOG_INDEX: '商品序号无效，请刷新兑换商店后重试',
+    YSHF_CATALOG_ENTRY_NOT_FOUND: '商品序号无效，请刷新兑换商店后重试',
+    YSHF_RESPONSE_INVALID: '以薯换福活动数据已经变化，请刷新页面后重试',
+    YSHF_NO_COMMISSION: '当前没有可领取的收购提成',
+    YSHF_GID_UNKNOWN: '未获取到本人 gid，请稍后重试',
+    YSHF_RESULT_UNKNOWN: '服务端回包与请求不一致，请刷新活动后再核对',
+    YSHF_SHOP_UNKNOWN: '无法确认该铺子的主人，本次未出售',
+    YSHF_SHOP_CLOSED: '目标铺子当前不收蜜薯，换一家或卖给自己',
+    YSHF_SHOP_QUOTA_INSUFFICIENT: '目标铺子的剩余接收额度不足，本次未出售',
+    INVALID_YSHF_SELL_COUNT: '出售数量必须是正整数',
+    INVALID_YSHF_FRIEND_GID: '目标铺子 GID 无效',
+    INVALID_YSHF_SHOP_GID: '目标铺子 GID 无效',
 };
 
-function activityErrorResponse(error: any): { code: string; message: string } {
+function activityErrorResponse(error: any): { code: string; message: string; detail?: string } {
     const rawMessage = String(error?.message || error || '活动操作失败');
     const protocolCode = String(error?.code || rawMessage.match(/\bcode=(\d+)\b/)?.[1] || '');
     const friendlyMessage = ACTIVITY_ERROR_MESSAGES[protocolCode];
@@ -92,10 +117,15 @@ function activityErrorResponse(error: any): { code: string; message: string } {
     if (rawMessage.includes('不匹配的活动 ID') || rawMessage.includes('未知操作类型') || rawMessage.includes('回包缺少动态状态')) {
         return { code: 'ACTIVITY_DATA_CHANGED', message: '活动数据已经更新，请刷新页面后再试' };
     }
-    return { code: protocolCode || 'ACTIVITY_OPERATION_FAILED', message: '活动操作失败，请刷新页面后重试' };
+    // 兜底时把服务端原始原因一并透出，避免“活动操作失败，请刷新页面后重试”把真实原因吞掉。
+    return {
+        code: protocolCode || 'ACTIVITY_OPERATION_FAILED',
+        message: '活动操作失败，请刷新页面后重试',
+        detail: rawMessage === '活动操作失败' ? undefined : rawMessage,
+    };
 }
 
 export function handleActivityApiError(res: Response, error: any): Response {
     const result = activityErrorResponse(error);
-    return res.json({ ok: false, error: result.message, errorCode: result.code });
+    return res.json({ ok: false, error: result.message, errorCode: result.code, errorDetail: result.detail });
 }

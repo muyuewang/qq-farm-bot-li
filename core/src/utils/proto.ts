@@ -296,6 +296,22 @@ async function loadProto(): Promise<void> {
     }
     types.CharityRedFlowerProgressRewardResult = root.lookupType('gamepb.activitypb.CharityRedFlowerProgressRewardResult');
     types.ActivityOperateReply = root.lookupType('gamepb.activitypb.ActivityOperateReply');
+    // 以薯换福：请求类型走 Operate 的 cmd 槽位，状态槽在 ActivityData.field 130。
+    for (const name of [
+        'ActivityData',
+        'YshfState',
+        'YshfCatalog',
+        'YshfClaimSeedRequest',
+        'YshfShopQueryRequest',
+        'YshfSellRequest',
+        'YshfExchangeRequest',
+        'YshfRecordRequest',
+        'YshfClaimCommissionRequest',
+        'YshfCatalogRequest',
+        'YshfShareRequest',
+    ]) {
+        types[name] = root.lookupType(`gamepb.activitypb.${name}`);
+    }
     types.GetWeatherStatusRequest = root.lookupType('gamepb.weatherpb.GetWeatherStatusRequest');
     types.GetWeatherStatusReply = root.lookupType('gamepb.weatherpb.GetWeatherStatusReply');
     types.GetSeasonInfoRequest = root.lookupType('gamepb.seasonpb.GetSeasonInfoRequest');

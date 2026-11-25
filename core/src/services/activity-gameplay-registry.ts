@@ -1,6 +1,6 @@
 export {};
 
-type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi' | 'qingmei' | 'charity' | 'weather' | 'pet' | 'wish' | 'happy' | 'milk' | 'muge';
+type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi' | 'qingmei' | 'charity' | 'weather' | 'pet' | 'wish' | 'happy' | 'milk' | 'muge' | 'yishuhuanfu';
 
 interface ActivityGameplayContext {
     season?: any;
@@ -11,6 +11,7 @@ interface ActivityGameplayContext {
     qingMei?: any;
     charity?: any;
     weather?: any;
+    yishuHuanfu?: any;
 }
 
 interface ActivityGameplayAdapter {
@@ -125,6 +126,18 @@ const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
             context.weather?.catalogActivityId,
             context.weather?.taskActivityId,
             context.weather?.researchActivityId,
+        ],
+    },
+    {
+        gameplayKey: 'yishuhuanfu',
+        detailTarget: 'yishuhuanfu',
+        priority: 90,
+        activityIds: context => [
+            '2026111707',
+            '2026111708',
+            '2026111709',
+            context.yishuHuanfu?.groupId,
+            context.yishuHuanfu?.activityId,
         ],
     },
 ];

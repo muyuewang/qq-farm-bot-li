@@ -237,6 +237,25 @@ function createDataProvider(options: DataProviderOptions) {
         continueQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'continueQingMeiBrew'),
         settleQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'settleQingMeiBrew'),
         claimQixiBridgeRewards: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimQixiBridgeRewards'),
+        getCurrentYishuHuanfuActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentYishuHuanfuActivity'),
+        queryYishuHuanfuCatalog: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'queryYishuHuanfuCatalog'),
+        queryYishuHuanfuRecords: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'queryYishuHuanfuRecords'),
+        claimYishuHuanfuCommission: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimYishuHuanfuCommission'),
+        claimYishuHuanfuSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimYishuHuanfuSeeds'),
+        queryYishuHuanfuShop: (accountRef: string, friendGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'queryYishuHuanfuShop', friendGid)
+        ),
+        scanYishuHuanfuFriendShops: (accountRef: string, options: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'scanYishuHuanfuFriendShops', options)
+        ),
+        exchangeYishuHuanfuGoods: (accountRef: string, index: unknown, count: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'exchangeYishuHuanfuGoods', index, count)
+        ),
+        sellYishuHuanfuSweetPotato: (accountRef: string, friendGid: unknown, count: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'sellYishuHuanfuSweetPotato', friendGid, count)
+        ),
+        refreshYishuHuanfuQuote: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'refreshYishuHuanfuQuote'),
+        shareYishuHuanfuShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'shareYishuHuanfuShop'),
         giftQixiSachet: (accountRef: string, friendGid: unknown, messageTextId: unknown = 15) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)
         ),
