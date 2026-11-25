@@ -58,6 +58,9 @@ textarea * {
   --ui-table-head: #edf2eb;
   --ui-radius-control: 10px;
   --ui-radius-card: 14px;
+  /* 以薯换福活动的主价格色：浅色为暖橙红，深色提亮一档，保证深底可读。 */
+  --yshf-accent: #d1542a;
+  --yshf-accent-soft: #c26a3a;
   --ui-dialog-scroll-gap: 12px;
   --ui-dialog-scroll-inset: 8px;
   --ui-shadow-sm: 0 1px 2px rgba(45, 66, 52, 0.04), 0 6px 20px rgba(45, 66, 52, 0.05);
@@ -256,6 +259,8 @@ textarea * {
   --ui-bg-glow-2: rgba(130, 182, 214, 0.035);
   --chrome-bg: color-mix(in srgb, var(--ui-bg) 94%, transparent);
   --ui-table-head: #242a32;
+  --yshf-accent: #f09062;
+  --yshf-accent-soft: #e0a373;
 }
 
 .dark :is(.n-input, .n-input-number, .n-base-selection) {

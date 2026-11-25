@@ -172,7 +172,7 @@ onUnmounted(() => {
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card);
   color: var(--ui-ink);
-  background: rgba(255, 255, 255, 0.58);
+  background: color-mix(in srgb, var(--ui-surface-solid) 58%, transparent);
   box-shadow: var(--ui-shadow-sm);
 }
 
@@ -431,7 +431,7 @@ onUnmounted(() => {
   overflow-y: auto;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card);
-  background: rgba(255, 255, 255, 0.54);
+  background: color-mix(in srgb, var(--ui-surface-solid) 54%, transparent);
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(67, 141, 99, 0.35) transparent;
@@ -449,17 +449,17 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 5px 10px;
-  border: 1px solid rgba(201, 95, 102, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 20%, transparent);
   border-radius: 10px;
-  color: #9a4048;
-  background: rgba(250, 233, 234, 0.94);
+  color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger-soft) 94%, transparent);
   font-size: 10px;
 }
 
 .activity-message.success {
-  border-color: rgba(67, 141, 99, 0.2);
-  color: #2e714b;
-  background: rgba(228, 241, 231, 0.94);
+  border-color: color-mix(in srgb, var(--ui-primary) 20%, transparent);
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary-soft) 94%, transparent);
 }
 
 .activity-message button {

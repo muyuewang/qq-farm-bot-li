@@ -381,17 +381,17 @@ async function onClaimCommission() {
   justify-content: space-between;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid rgba(201, 95, 102, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 20%, transparent);
   border-radius: 10px;
-  color: #9a4048;
-  background: rgba(250, 233, 234, 0.94);
+  color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger-soft) 94%, transparent);
   font-size: 11px;
 }
 
 .yshf-view__message.success {
-  border-color: rgba(67, 141, 99, 0.2);
-  color: #2e714b;
-  background: rgba(228, 241, 231, 0.94);
+  border-color: color-mix(in srgb, var(--ui-primary) 20%, transparent);
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary-soft) 94%, transparent);
 }
 
 .yshf-view__message button {
