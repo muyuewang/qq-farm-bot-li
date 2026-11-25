@@ -42,6 +42,8 @@ const YISHU_SKIP_SHOP_CODES = new Set([
 const DEFAULT_FRIEND_LIMIT = 20;
 const DEFAULT_SCAN_INTERVAL_MINUTES = 30;
 const DEFAULT_SELL_MIN_COUNT = 1;
+/** 自动任务沿用旧余额的上限：与 activity-center 的 AUTO_BALANCE_STALE_MAX_MS 对齐。 */
+const YISHU_BALANCE_STALE_MAX_MS = 60 * 60 * 1000;
 
 function isYishuAutomationEnabled(automation: any = {}): boolean {
     return YISHU_AUTOMATION_KEYS.some(key => automation[key] === true);
@@ -114,7 +116,9 @@ function createYishuAutomation(deps: {
     }): Promise<void> {
         const bagRaw = snapshot?.sweetPotatoBalance;
         if (bagRaw === null || bagRaw === undefined) {
-            skip('sell', '这次没读到背包蜜薯数量');
+            // 带上后端记下的失败原因，否则线上只能看到「没读到」，无从判断是超时还是别的。
+            const reason = String(snapshot?.balanceError || '').trim();
+            skip('sell', `这次没读到背包蜜薯数量${reason ? `（${reason}）` : ''}，下一轮再试`);
             return;
         }
         let remaining = BigInt(bagRaw || '0');
@@ -203,7 +207,13 @@ function createYishuAutomation(deps: {
         let snapshot: any;
         try {
             // 一轮只读一次：领种子 / 分享 / 卖薯的写操作自己会重新校验服务端状态。
-            snapshot = await getActivity({ freshBalances: true });
+            // 自动任务必须拿得到蜜薯数量：读背包失败时多试两次，并且允许沿用一小时内的
+            // 成功值——轮询间隔（10 分钟）与界面的 stale 窗口一样长，只试一次几乎必然读到未知。
+            snapshot = await getActivity({
+                freshBalances: true,
+                balanceRetries: 2,
+                balanceStaleMaxMs: YISHU_BALANCE_STALE_MAX_MS,
+            });
         }
         catch (e: any) {
             failed('read', `读取以薯换福状态失败: ${e?.message || e}`);
@@ -213,6 +223,20 @@ function createYishuAutomation(deps: {
             skip('read', '不在开放窗口（尚未开始或已经结束）');
             return;
         }
+
+        // 每轮留一条摘要：蜜薯数是不是读到了、余额是不是沿用的旧值、行情有没有生成。
+        // 这几项决定了后面会不会跳过卖薯，出问题时不用再靠猜。
+        log('系统', '以薯换福自动本轮开始', {
+            module: 'activity',
+            event: '以薯换福自动',
+            result: 'ok',
+            sweetPotato: snapshot.sweetPotatoBalance ?? 'unknown',
+            luckCoin: snapshot.luckCoinBalance ?? 'unknown',
+            balanceStale: !!snapshot.balanceStale,
+            balanceError: snapshot.balanceError || '',
+            priceKnown: !!snapshot.shop?.priceKnown,
+            price: snapshot.shop?.estimatedPrice || snapshot.shop?.price || '',
+        });
 
         let wrote = false;
         const spacing = async (): Promise<void> => { if (wrote) await sleep(YISHU_STEP_SPACER_MS); };
@@ -301,14 +325,107 @@ function createYishuAutomation(deps: {
 
 let yishuAutomation: any = null;
 
+// ---------- 诊断与自愈 ----------
+// 线上出现过「重启后跑一次，之后几小时不动」：定时器被清掉后没人重建，日志里又完全没有痕迹。
+// 这里补三样东西：跳过原因节流记录、最近一次执行时间、独立看门狗（定时器丢了就重建并告警）。
+const YISHU_WATCHDOG_INTERVAL_MS = 5 * 60 * 1000;
+// 周期 10 分钟，超过 25 分钟没动就认为卡住/丢了。
+const YISHU_WATCHDOG_IDLE_MS = 25 * 60 * 1000;
+const YISHU_SKIP_LOG_THROTTLE_MS = 30 * 60 * 1000;
+
+let lastTickStartedAt = 0;
+let lastTickFinishedAt = 0;
+let lastSkipReason = '';
+let lastSkipLogAt = 0;
+let lastWatchdogWarnAt = 0;
+let watchdogHandle: any = null;
+let watchdogScheduler: any = null;
+
+function yishuLog(message: string, meta: any = {}): void {
+    try {
+        require('../utils/utils').log(message, { module: 'activity', event: '以薯换福自动', ...meta });
+    } catch {
+        // 日志失败不影响主流程
+    }
+}
+
+/** 同一原因 30 分钟只记一条，避免每 10 分钟刷一行。 */
+function yishuSkipTick(reason: string): void {
+    const now = Date.now();
+    if (reason === lastSkipReason && now - lastSkipLogAt < YISHU_SKIP_LOG_THROTTLE_MS) return;
+    lastSkipReason = reason;
+    lastSkipLogAt = now;
+    yishuLog(`以薯换福自动未执行：${reason}`, { result: 'skip', reason });
+}
+
+function registerYishuTasks(scheduler: any, isReady: () => boolean, source: string): void {
+    scheduler.clear('yishu_initial');
+    scheduler.clear('yishu_interval');
+    scheduler.setTimeoutTask('yishu_initial', YISHU_INITIAL_DELAY_MS, () => {
+        runYishuTick(isReady).catch(() => null);
+    });
+    scheduler.setIntervalTask('yishu_interval', YISHU_CHECK_INTERVAL_MS, () => {
+        runYishuTick(isReady).catch(() => null);
+    });
+    yishuLog('以薯换福自动任务已挂载', {
+        result: 'ok',
+        source,
+        intervalMinutes: Math.round(YISHU_CHECK_INTERVAL_MS / 60000),
+        initialDelaySec: Math.round(YISHU_INITIAL_DELAY_MS / 1000),
+    });
+}
+
+/**
+ * 看门狗：每 5 分钟确认一次「开关开着、账号在线、定时器还在、最近 25 分钟动过」。
+ * 任何一条不满足就重建定时器并记一条 warn —— 既自愈，也留下排查依据。
+ */
+function startYishuWatchdog(scheduler: any, isReady: () => boolean): void {
+    watchdogScheduler = scheduler;
+    if (watchdogHandle) return;
+    watchdogHandle = setInterval(() => {
+        try {
+            if (!isReady()) return;
+            const { getAutomation } = require('../models/store');
+            if (!isYishuAutomationEnabled(getAutomation())) return;
+            const hasInterval = typeof watchdogScheduler?.has === 'function'
+                && watchdogScheduler.has('yishu_interval');
+            const idleMs = lastTickStartedAt ? Date.now() - lastTickStartedAt : Number.POSITIVE_INFINITY;
+            if (hasInterval && idleMs <= YISHU_WATCHDOG_IDLE_MS) return;
+            if (watchdogScheduler) registerYishuTasks(watchdogScheduler, isReady, hasInterval ? 'watchdog-idle' : 'watchdog-missing');
+            const now = Date.now();
+            if (now - lastWatchdogWarnAt >= 60 * 60 * 1000) {
+                lastWatchdogWarnAt = now;
+                yishuLog('以薯换福定时器异常，已自动重建', {
+                    result: 'error',
+                    missing: !hasInterval,
+                    idleMinutes: Number.isFinite(idleMs) ? Math.round(idleMs / 60000) : null,
+                });
+            }
+        } catch {
+            // 看门狗自身异常不向外抛
+        }
+    }, YISHU_WATCHDOG_INTERVAL_MS);
+    if (typeof watchdogHandle?.unref === 'function') watchdogHandle.unref();
+}
+
 async function runYishuTick(isReady: () => boolean): Promise<void> {
-    if (!isReady()) return;
+    if (!isReady()) {
+        yishuSkipTick('账号未登录或连接未就绪');
+        return;
+    }
     const { getAutomation } = require('../models/store');
     const { runExclusiveAutomationTask } = require('./automation-lock');
     const automation = getAutomation() || {};
-    if (!isYishuAutomationEnabled(automation)) return;
+    if (!isYishuAutomationEnabled(automation)) {
+        yishuSkipTick('自动任务开关全部关闭');
+        return;
+    }
+    lastTickStartedAt = Date.now();
     await runExclusiveAutomationTask('yishuhuanfu', async () => {
-        if (!isReady()) return;
+        if (!isReady()) {
+            yishuSkipTick('排队期间连接断开');
+            return;
+        }
         if (!yishuAutomation) {
             const activity = require('./activity-center');
             const { getServerTimeSec, log } = require('../utils/utils');
@@ -324,22 +441,43 @@ async function runYishuTick(isReady: () => boolean): Promise<void> {
             });
         }
         await yishuAutomation.runYishuAutomation(automation);
+        lastTickFinishedAt = Date.now();
     });
 }
 
-/** 定时器挂在调用方（worker）的 scheduler 上，停表时随 clearAll() 一起清掉。 */
+/**
+ * 定时器挂在调用方（worker）的 scheduler 上，停表时随 clearAll() 一起清掉。
+ *
+ * 这里有三处曾经踩过的坑，改的时候别退回去：
+ *   1. 必须先判断再清。老实现一进来就 clear 两个任务，只要有一次在「还没登录」
+ *      或「配置尚未就绪」时被调用，定时器就被永久清掉，要等进程重启才恢复
+ *      （线上表现就是：重启后 4 分钟跑一次，之后几小时一动不动）。
+ *   2. 幂等注册。配置每变一次 applyRuntimeConfig 都会调过来，若每次都 clear 重建，
+ *      带 phase 的首跑（phase 4min + interval 10min）永远等不到。
+ *   3. 不叠加 phase。错相位的收益（别和其它活动撞在同一秒）比不上「首跑准时」重要，
+ *      第一次已经由 initial 的 260s 承担。
+ */
 function startYishuTimer(scheduler: any, isReady: () => boolean): void {
-    scheduler.clear('yishu_initial');
-    scheduler.clear('yishu_interval');
-    if (!isReady()) return;
+    if (!isReady()) {
+        // 不清旧定时器：这一支可能是「掉线瞬间的配置同步」，清了就再也不会重建。
+        yishuSkipTick('账号未登录或连接未就绪，保留已有定时器');
+        return;
+    }
     const { getAutomation } = require('../models/store');
-    if (!isYishuAutomationEnabled(getAutomation())) return;
-    scheduler.setTimeoutTask('yishu_initial', YISHU_INITIAL_DELAY_MS, () => {
-        runYishuTick(isReady).catch(() => null);
-    });
-    scheduler.setIntervalTask('yishu_interval', YISHU_CHECK_INTERVAL_MS, () => {
-        runYishuTick(isReady).catch(() => null);
-    }, { phaseMs: YISHU_CHECK_PHASE_MS });
+    if (!isYishuAutomationEnabled(getAutomation())) {
+        // 明确关闭：把上一轮的定时器停掉。
+        scheduler.clear('yishu_initial');
+        scheduler.clear('yishu_interval');
+        return;
+    }
+    // 已经在跑就别重建：重复 clear + setTimeout 会把首跑无限推后。
+    if (typeof scheduler.has === 'function' && scheduler.has('yishu_interval')) {
+        startYishuWatchdog(scheduler, isReady);
+        return;
+    }
+
+    registerYishuTasks(scheduler, isReady, 'start');
+    startYishuWatchdog(scheduler, isReady);
 }
 
 module.exports = {

@@ -50,8 +50,14 @@ const BALANCE_CACHE_TTL_MS = 10 * 1000;
  * 背包读取连续失败时，最多沿用多久之前的成功值。
  * 余额变化只发生在本次进程内的几个写操作上（写操作后都会强制刷新缓存），
  * 因此 10 分钟内的旧值仍然可信，比把界面刷成“--”更有用。
+ *
+ * 注意：自动任务的轮询间隔也是 10 分钟，正好卡在这个窗口边界上，
+ * 一旦 Bag 超时就会「刚好过期 → 判定未知 → 跳过卖薯」。自动任务传自己的
+ * 宽窗口（AUTO_BALANCE_STALE_MAX_MS），界面仍用这 10 分钟。
  */
 const BALANCE_STALE_MAX_MS = 10 * 60 * 1000;
+/** 自动任务沿用旧余额的上限：一小时内的蜜薯数足够可信，卖薯失败服务端还会兜底。 */
+const AUTO_BALANCE_STALE_MAX_MS = 60 * 60 * 1000;
 /** 好友比价结果缓存时间：cmd 92 是实时行情，短缓存只为防连点刷屏。 */
 const FRIEND_SCAN_TTL_MS = 3 * 60 * 1000;
 const FRIEND_SCAN_DEFAULT_LIMIT = 40;
@@ -293,9 +299,12 @@ function createYishuHuanfuActivityService(deps) {
      * 快照只同步读内存。并发快照读的是同一份状态，不可能一个成功一个失败把数字打回去。
      */
     async function refreshBalances(options = {}) {
+        // 在途请求直接复用。注意：复用方拿到的可能是「按更窄窗口判定的 null」，
+        // 自动任务因此先在调用处决定重试次数与窗口，避免和界面抢同一个 promise。
         if (balanceRefreshingPromise)
             return balanceRefreshingPromise;
         const retryDelays = options.retries === 0 ? [] : [250, 700];
+        const staleMaxMs = options.staleMaxMs ?? BALANCE_STALE_MAX_MS;
         const task = (async () => {
             for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
                 try {
@@ -318,8 +327,8 @@ function createYishuHuanfuActivityService(deps) {
                 }
             }
             logBalanceFailure();
-            if (freshFallback()) {
-                // 失败但手里有 10 分钟内的成功值：继续用它，只标 stale。
+            if (freshFallback(staleMaxMs)) {
+                // 失败但手里还有可用成功值：继续用它，只标 stale。
                 balanceStale = true;
                 return lastGoodBalances.data;
             }
@@ -349,13 +358,13 @@ function createYishuHuanfuActivityService(deps) {
             // 日志失败不影响主流程
         }
     }
-    /** 最近一次成功值是否还能用。 */
-    function freshFallback() {
-        return !!lastGoodBalances && Date.now() - lastGoodBalances.at <= BALANCE_STALE_MAX_MS;
+    /** 最近一次成功值是否还能用（窗口可由调用方放宽，自动任务用 1 小时）。 */
+    function freshFallback(maxMs = BALANCE_STALE_MAX_MS) {
+        return !!lastGoodBalances && Date.now() - lastGoodBalances.at <= maxMs;
     }
     /** 快照专用：同步返回内存里的余额，绝不 await 网关。 */
-    function currentBalances() {
-        if (freshFallback()) {
+    function currentBalances(maxMs = BALANCE_STALE_MAX_MS) {
+        if (freshFallback(maxMs)) {
             // 值还在手就先给出去；超过 10 秒顺手在后台补一次，不阻塞本次快照。
             if (Date.now() - lastGoodBalances.at > BALANCE_CACHE_TTL_MS)
                 void refreshBalances();
@@ -373,9 +382,12 @@ function createYishuHuanfuActivityService(deps) {
         const groupReply = await queryYshfGroupReply();
         // 写操作后、以及进程里还没有任何成功值时，同步单次读一次（不重试）。
         // 其余情况只读内存，快照不会被 Bag 拖住，也不会出现并发快照互相覆盖。
-        const balances = options.freshBalances || !freshFallback()
-            ? await refreshBalances({ retries: 0 })
-            : currentBalances();
+        // 自动任务需要更硬的读数：给重试次数和更宽松的 stale 窗口，
+        // 否则「轮询间隔 10 分钟 = stale 上限 10 分钟」会让它每次刚好读到未知值。
+        const staleMaxMs = options.balanceStaleMaxMs ?? BALANCE_STALE_MAX_MS;
+        const balances = options.freshBalances || !freshFallback(staleMaxMs)
+            ? await refreshBalances({ retries: options.balanceRetries ?? 0, staleMaxMs })
+            : currentBalances(staleMaxMs);
         // 目录查询是独立命令，快照里不拉，避免每次刷新快照都多发一条网关请求；
         // 前端进入活动页时单独调用 queryYishuHuanfuCatalog。
         return yshfDto(groupReply, balances, null);

@@ -262,3 +262,95 @@ test('an inactive activity window stops the whole round', async () => {
     assert.deepEqual(harness.calls.map(entry => entry[0]), ['getActivity']);
     assert.ok(harness.logs.some(entry => entry.message.includes('不在开放窗口')));
 });
+
+/**
+ * 定时器接线：桩掉 store 与 scheduler，只断言「什么时候注册、什么时候清」。
+ * 线上踩过的坑是「掉线瞬间被 clear 后再也不重建」，所以这里必须锁住这两条。
+ */
+function timerHarness(automation, aliveKeys = []) {
+    const storePath = require.resolve('../dist/models/store');
+    require.cache[storePath] = {
+        id: storePath,
+        filename: storePath,
+        loaded: true,
+        exports: { getAutomation: () => automation },
+    };
+    const cleared = [];
+    const timeouts = [];
+    const intervals = [];
+    const alive = new Set(aliveKeys);
+    return {
+        cleared,
+        timeouts,
+        intervals,
+        scheduler: {
+            clear: (key) => { cleared.push(key); alive.delete(key); },
+            has: (key) => alive.has(key),
+            setTimeoutTask: (key, ms) => { timeouts.push({ key, ms }); },
+            setIntervalTask: (key, ms, fn, options) => { intervals.push({ key, ms, options }); alive.add(key); },
+        },
+    };
+}
+
+test('定时器注册首跑与十分钟周期，且不再叠加错相位', () => {
+    const { startYishuTimer, YISHU_CHECK_INTERVAL_MS, YISHU_INITIAL_DELAY_MS } = require('../dist/services/yishuhuanfu-auto');
+    const h = timerHarness({ ...ALL_ON });
+    startYishuTimer(h.scheduler, () => true);
+
+    assert.equal(h.timeouts.length, 1);
+    assert.equal(h.timeouts[0].key, 'yishu_initial');
+    assert.equal(h.timeouts[0].ms, YISHU_INITIAL_DELAY_MS);
+    assert.equal(h.intervals.length, 1);
+    assert.equal(h.intervals[0].key, 'yishu_interval');
+    assert.equal(h.intervals[0].ms, YISHU_CHECK_INTERVAL_MS);
+    // 错相位会把首跑推到 phase + interval（14 分钟），配置一变就重建，首跑永远等不到。
+    assert.equal(h.intervals[0].options, undefined);
+});
+
+test('未登录时不碰已有定时器，重复挂表不重建', () => {
+    const { startYishuTimer } = require('../dist/services/yishuhuanfu-auto');
+
+    const offline = timerHarness({ ...ALL_ON }, ['yishu_interval']);
+    startYishuTimer(offline.scheduler, () => false);
+    assert.deepEqual(offline.cleared, [], '未登录时不能清掉已有定时器');
+    assert.equal(offline.timeouts.length, 0);
+    assert.equal(offline.intervals.length, 0);
+
+    const ready = timerHarness({ ...ALL_ON });
+    startYishuTimer(ready.scheduler, () => true);
+    const clearedAfterFirst = ready.cleared.length;
+    startYishuTimer(ready.scheduler, () => true);
+    assert.equal(ready.cleared.length, clearedAfterFirst, '第二次挂表不该再清一次');
+    assert.equal(ready.timeouts.length, 1);
+    assert.equal(ready.intervals.length, 1);
+});
+
+test('开关全关时只清不挂', () => {
+    const { startYishuTimer } = require('../dist/services/yishuhuanfu-auto');
+    const h = timerHarness({ yishu_claim_seed: false, yishu_share: false, yishu_auto_sell: false, yishu_claim_commission: false }, ['yishu_initial', 'yishu_interval']);
+    startYishuTimer(h.scheduler, () => true);
+    assert.deepEqual(h.cleared, ['yishu_initial', 'yishu_interval']);
+    assert.equal(h.timeouts.length, 0);
+    assert.equal(h.intervals.length, 0);
+});
+
+test('自动任务读快照时要求更硬的余额读取参数', async () => {
+    const harness = createHarness({ snapshot: makeSnapshot({ sweetPotatoBalance: '5' }), shops: [] });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    const read = harness.calls.find(entry => entry[0] === 'getActivity');
+    assert.equal(read[1].freshBalances, true);
+    // 轮询间隔 10 分钟 = 界面 stale 窗口，只试一次几乎必然读到未知值。
+    assert.equal(read[1].balanceRetries, 2);
+    assert.equal(read[1].balanceStaleMaxMs, 60 * 60 * 1000);
+});
+
+test('没读到蜜薯数量时把后端原因写进跳过日志', async () => {
+    const harness = createHarness({
+        snapshot: makeSnapshot({ sweetPotatoBalance: null, balanceError: 'itempb.ItemService.Bag timeout' }),
+        shops: [],
+    });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    assert.ok(harness.logs.some(entry => entry.message.includes('这次没读到背包蜜薯数量（itempb.ItemService.Bag timeout）')));
+});
