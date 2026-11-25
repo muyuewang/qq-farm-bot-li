@@ -86,7 +86,7 @@ function createHarness(options = {}) {
             if (options.sell) return options.sell(friendGid, count);
             return { count, price: '165', income: String(Number(count) * 165) };
         },
-        getServerTimeSec: () => NOW_SEC,
+        getServerTimeSec: () => options.nowSec ?? NOW_SEC,
         log: (module, message, meta) => logs.push({ module, message, meta }),
     });
     return {
@@ -417,4 +417,71 @@ test('本轮摘要日志带上蜜薯数量与是否读到', async () => {
     assert.ok(summary, '每轮必须留一条摘要');
     assert.equal(summary.meta.sweetPotato, '0');
     assert.equal(summary.meta.sweetPotatoKnown, true);
+});
+
+// 出售时间闸门：22:00 UTC = 次日 06:00 北京时间？这里直接用 UTC 构造北京时间：
+// UTC 14:00 = 北京 22:00（未到 23:00），UTC 15:05 = 北京 23:05（已过点）。
+const BEIJING_2200_SEC = Date.UTC(2026, 10, 25, 14, 0, 0) / 1000;
+const BEIJING_2305_SEC = Date.UTC(2026, 10, 25, 15, 5, 0) / 1000;
+
+test('未到开始售卖时间时不卖薯，但领种子/分享/提成照常', async () => {
+    const harness = createHarness({
+        nowSec: BEIJING_2200_SEC,
+        snapshot: makeSnapshot({
+            sweetPotato: { balance: '6', balanceKnown: true },
+            commission: { pending: '86', claimable: true, flag: '1' },
+        }),
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation({ ...ALL_ON, yishu_sell_after_time: '23:00' });
+
+    assert.equal(harness.sells().length, 0);
+    assert.ok(harness.logs.some(entry => entry.message.includes('还没到开始售卖时间 23:00')));
+    assert.ok(harness.calls.some(entry => entry[0] === 'claimSeed'), '领种子不该被闸门挡住');
+    assert.ok(harness.calls.some(entry => entry[0] === 'shareShop'));
+    assert.ok(harness.calls.some(entry => entry[0] === 'claimCommission'));
+
+    const summary = harness.logs.find(entry => entry.message === '以薯换福自动本轮开始');
+    assert.equal(summary.meta.sellAfter, '23:00');
+    assert.equal(summary.meta.sellGateOpen, false);
+});
+
+test('过了开始售卖时间后每轮都按原逻辑卖', async () => {
+    const harness = createHarness({
+        nowSec: BEIJING_2305_SEC,
+        snapshot: makeSnapshot({ sweetPotato: { balance: '6', balanceKnown: true } }),
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation({ ...ALL_ON, yishu_sell_after_time: '23:00' });
+
+    assert.equal(harness.sells().length, 1);
+    assert.equal(harness.sells()[0][2], '6');
+    const summary = harness.logs.find(entry => entry.message === '以薯换福自动本轮开始');
+    assert.equal(summary.meta.sellGateOpen, true);
+});
+
+test('只开卖薯且未到点时连活动状态都不读', async () => {
+    const harness = createHarness({
+        nowSec: BEIJING_2200_SEC,
+        snapshot: makeSnapshot({ sweetPotato: { balance: '6', balanceKnown: true } }),
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation({ yishu_auto_sell: true, yishu_sell_after_time: '23:00' });
+
+    assert.equal(harness.calls.filter(entry => entry[0] === 'getActivity').length, 0);
+    assert.equal(harness.calls.filter(entry => entry[0] === 'scanFriends').length, 0);
+    assert.equal(harness.sells().length, 0);
+});
+
+test('没配开始售卖时间时保持随时可卖', async () => {
+    const harness = createHarness({
+        nowSec: BEIJING_2200_SEC,
+        snapshot: makeSnapshot({ sweetPotato: { balance: '6', balanceKnown: true } }),
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation({ yishu_auto_sell: true });
+
+    assert.equal(harness.sells().length, 1);
+    const summary = harness.logs.find(entry => entry.message === '以薯换福自动本轮开始');
+    assert.equal(summary.meta.sellAfter, '不限');
 });

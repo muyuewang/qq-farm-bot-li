@@ -39,11 +39,38 @@ const YISHU_SKIP_SHOP_CODES = new Set([
     'YSHF_SHOP_CLOSED',
 ]);
 
-const DEFAULT_FRIEND_LIMIT = 20;
+const DEFAULT_FRIEND_LIMIT = 60;
 const DEFAULT_SCAN_INTERVAL_MINUTES = 30;
 const DEFAULT_SELL_MIN_COUNT = 1;
 /** 自动任务沿用旧余额的上限：与 activity-center 的 AUTO_BALANCE_STALE_MAX_MS 对齐。 */
 const YISHU_BALANCE_STALE_MAX_MS = 60 * 60 * 1000;
+
+/**
+ * 出售时间闸门：把 "HH:MM" 解析成当天的分钟数，空串 / 非法值返回 null（不限时段）。
+ * 不做精准卡点——过了这个时刻之后，每一轮自动任务（10 分钟）都会按原逻辑卖，
+ * 只是把「太早卖」这件事挡掉：那时好友还没分享触发暴击，价格排在后面。
+ */
+function parseSellAfterMinutes(value: any): number | null {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const match = /^(\d{1,2})\s*[:：]\s*(\d{1,2})$/.exec(raw);
+    if (!match) return null;
+    const hour = Math.max(0, Math.min(23, Number(match[1])));
+    const minute = Math.max(0, Math.min(59, Number(match[2])));
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return hour * 60 + minute;
+}
+
+/** 服务器时间（北京时间固定 +8）当天的分钟数，与服务端日期用的是同一个偏移。 */
+function currentMinutesOfDay(serverTimeSec: number): number {
+    const shifted = new Date((Number(serverTimeSec) + 8 * 3600) * 1000);
+    return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+}
+
+function formatMinutesOfDay(minutes: number): string {
+    const safe = Math.max(0, Math.min(24 * 60 - 1, Math.floor(minutes)));
+    return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
 
 function isYishuAutomationEnabled(automation: any = {}): boolean {
     return YISHU_AUTOMATION_KEYS.some(key => automation[key] === true);
@@ -226,6 +253,19 @@ function createYishuAutomation(deps: {
         const sellEnabled = automation.yishu_auto_sell === true;
         if (!claimSeedEnabled && !shareEnabled && !commissionEnabled && !sellEnabled) return;
 
+        // 出售时间闸门：null = 不限时段（改造前的行为）。过了这个点，之后每一轮都卖。
+        const sellAfterMinutes = parseSellAfterMinutes(automation.yishu_sell_after_time);
+        const sellAfterLabel = sellAfterMinutes === null ? '' : formatMinutesOfDay(sellAfterMinutes);
+        const sellGateOpen = sellAfterMinutes === null
+            || currentMinutesOfDay(getServerTimeSec()) >= sellAfterMinutes;
+        const sellGateSkipText = `还没到开始售卖时间 ${sellAfterLabel}，到点后每轮都会卖`;
+
+        // 只开了卖薯、又还没到点：连活动状态都不用读，直接按天记一行跳过。
+        if (sellEnabled && !sellGateOpen && !claimSeedEnabled && !shareEnabled && !commissionEnabled) {
+            skip('sell', sellGateSkipText);
+            return;
+        }
+
         let snapshot: any;
         try {
             // 一轮只读一次：领种子 / 分享 / 卖薯的写操作自己会重新校验服务端状态。
@@ -260,6 +300,9 @@ function createYishuAutomation(deps: {
             balanceError: snapshot.balanceError || '',
             priceKnown: !!snapshot.shop?.priceKnown,
             price: snapshot.shop?.estimatedPrice || snapshot.shop?.price || '',
+            // 出售时间闸门：知道配置值、当前是否放行，才能解释「有蜜薯为什么不卖」。
+            sellAfter: sellAfterLabel || '不限',
+            sellGateOpen,
         });
 
         let wrote = false;
@@ -309,9 +352,13 @@ function createYishuAutomation(deps: {
             }
         }
 
-        if (sellEnabled) {
+        if (sellEnabled && !sellGateOpen) {
+            // 到点前不卖，其余（领种子 / 分享 / 收提成）照常，不影响当天的准备动作。
+            skip('sell', sellGateSkipText);
+        }
+        else if (sellEnabled) {
             await sellSweetPotatoes(snapshot, {
-                friendLimit: toInt(automation.yishu_scan_friend_limit, DEFAULT_FRIEND_LIMIT, 1, 50),
+                friendLimit: toInt(automation.yishu_scan_friend_limit, DEFAULT_FRIEND_LIMIT, 1, 200),
                 scanIntervalMinutes: toInt(automation.yishu_scan_interval_minutes, DEFAULT_SCAN_INTERVAL_MINUTES, 5, 720),
                 sellMinCount: toInt(automation.yishu_sell_min_count, DEFAULT_SELL_MIN_COUNT, 1, 10000),
                 fallbackOwn: automation.yishu_sell_fallback_own !== false,

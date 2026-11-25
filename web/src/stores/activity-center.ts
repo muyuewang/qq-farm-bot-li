@@ -443,6 +443,9 @@ export interface YishuHuanfuFriendShopDto {
   canSell: boolean | null
   // 自家铺子不占好友额度，界面显示「不限」而不是「还可收 N 个」。
   unlimited: boolean
+  // 候选来源：本账号好友 / 面板里其它账号的好友 / 自己。其它账号好友也可能收蜜薯。
+  via: 'own' | 'friend' | 'panel'
+  panelAccount: string
 }
 
 /**
@@ -467,6 +470,9 @@ export interface YishuHuanfuFriendScanDto {
   scanned: number
   failed: number
   friendCount: number
+  panelFriendCount: number
+  candidateCount: number
+  pendingCount: number
   friendListError: string
   scannedAt: number
   cached: boolean
@@ -2557,6 +2563,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       quotaUsed: text(payload.quotaUsed, payload.quota_used),
       canSell: payload.canSell === null || payload.canSell === undefined ? null : bool(payload.canSell, payload.can_sell),
       unlimited: bool(payload.own),
+      via: 'friend',
+      panelAccount: '',
     }
   }
 
@@ -2646,16 +2654,23 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
             : bool(entry.canSell, entry.can_sell),
           // 自家铺子不占好友额度，界面固定显示「不限」。
           unlimited: bool(entry.unlimited) || bool(entry.own),
+          via: (text(entry.via) || (bool(entry.own) ? 'own' : 'friend')) as 'own' | 'friend' | 'panel',
+          panelAccount: text(entry.panelAccount, entry.panel_account),
         }
       })
       yishuHuanfuFriendScanAt.value = finiteNumber(first(payload.scannedAt, payload.scanned_at)) || Date.now()
       const scanned = finiteNumber(first(payload.scanned)) || 0
       const failed = finiteNumber(first(payload.failed)) || 0
       const friendListError = text(payload.friendListError, payload.friend_list_error)
+      const panelFriendCount = finiteNumber(first(payload.panelFriendCount, payload.panel_friend_count)) || 0
+      const pendingCount = finiteNumber(first(payload.pendingCount, payload.pending_count)) || 0
       yishuHuanfuFriendScanNote.value = friendListError
         || (scanned === 0
-          ? '没有可查询的好友铺子'
-          : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子${failed ? `，${failed} 个查询失败` : ''}`)
+          ? '没有可查询的铺子'
+          : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子`
+            + `${panelFriendCount ? `（含其它账号好友 ${panelFriendCount} 个）` : ''}`
+            + `${failed ? `，${failed} 个查询失败` : ''}`
+            + `${pendingCount ? `，还有 ${pendingCount} 个候选待下一轮轮换` : ''}`)
       return true
     } catch (scanError) {
       if (yishuHuanfuFriendShopsAccountId.value === requestedAccountId)

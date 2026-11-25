@@ -45,6 +45,20 @@ const emit = defineEmits<{
 }>()
 
 const settings = defineModel<AutomationSettingsFormModel>({ required: true })
+
+// 出售时间：30 分钟一档，空串 = 不限。到点之后每一轮自动任务都会按原逻辑卖，
+// 不是一次性定时任务，所以不需要秒级精度，也不存在调度卡点失败的问题。
+const sellTimeOptions = computed(() => {
+  const options: Array<{ label: string, value: string }> = [
+    { label: '不限时段（随时可卖）', value: '' },
+  ]
+  for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+    const label = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+    options.push({ label, value: label })
+  }
+  return options
+})
+
 const ripeningOnly = computed(() => ['normal_ripen', 'organic_ripen'].includes(settings.value.automation.fertilizer ?? 'none'))
 const ripeningEnabled = computed(() => ripeningOnly.value || settings.value.automation.fertilizer === 'smart')
 const ripeningFertilizerLabel = computed(() => settings.value.automation.fertilizer === 'normal_ripen' ? '普通化肥' : '有机化肥')
@@ -514,19 +528,29 @@ const ranchFeedStages = [
             <div class="text-sm text-gray-800 font-medium dark:text-gray-200">
               卖薯比价
             </div>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <BaseInput v-model.number="settings.automation.yishu_scan_friend_limit" label="比价好友数上限" type="number" min="1" max="50" />
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <BaseInput v-model.number="settings.automation.yishu_scan_friend_limit" label="参与比价的好友数上限" type="number" min="1" max="200" />
               <BaseInput v-model.number="settings.automation.yishu_scan_interval_minutes" label="两次比价间隔 (分钟)" type="number" min="5" max="720" />
               <BaseInput v-model.number="settings.automation.yishu_sell_min_count" label="起卖数量 (个)" type="number" min="1" max="10000" />
+              <BaseSelect
+                v-model="settings.automation.yishu_sell_after_time"
+                label="开始售卖时间"
+                :options="sellTimeOptions"
+              />
             </div>
             <BaseSwitch v-model="settings.automation.yishu_sell_fallback_own" label="好友铺子都收满时，剩下的卖给自己铺子" />
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              「开始售卖时间」不是精准卡点：选了 23:00，就是过了 23:00 之后每一轮自动任务（10 分钟一次）都按下面的逻辑卖，
+              校验、比价、额度判断完全不变。等晚一点的好处是好友当天基本都分享过、暴击加成已经加上，价格排在前面；
+              代价是高价铺子的额度可能被别人先吃满，届时会按价格往下找。留空表示不限时段。
+            </p>
           </div>
 
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            10 分钟检查一次：今日还没领种子、还没分享才各发一次写，服务端已经标记过的只按天记一行跳过日志。背包里蜜薯达到「起卖数量」才进入比价，比价（cmd 92 逐个查好友铺子）按「两次比价间隔」节流，间隔内复用上一轮的排序，不会每轮都把好友扫一遍。
+            10 分钟检查一次：今日还没领种子、还没分享才各发一次写，服务端已经标记过的只按天记一行跳过日志。背包里蜜薯达到「起卖数量」才进入比价，比价（cmd 92 逐个查铺子）按「两次比价间隔」节流，间隔内复用上一轮的排序，不会每轮都把候选铺子扫一遍。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            卖薯按成交价（基础价 + 加成）从高到低贪心：最高价那家额度够就卖给它，不够就吃满额度再换第二高，往下依次；单轮最多切 3 家铺子、笔间隔 1200ms，剩下的留到下一轮。好友数上限越小、比价间隔越长，单轮请求越少——好友多的号建议把上限压到 10-20 之间。
+            候选池不再只有本账号好友：面板里每个账号同步下来的好友 GID 都会并进来（蜜薯本来就能卖给非好友，只要对方开着铺子）。候选超过上限时按轮换窗口扫，几轮下来能覆盖全部。卖薯按成交价（基础价 + 加成）从高到低贪心：最高价那家额度够就卖给它，不够就吃满额度再换第二高；单轮最多切 3 家铺子、笔间隔 1200ms，剩下的留到下一轮。
           </p>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             提成是好友把蜜薯卖进你铺子后产生的，到账后自动领，一轮一次、没有可领就跳过。整个任务串进和农场/牧场同一把全局锁，不会和别的自动化抢连接。

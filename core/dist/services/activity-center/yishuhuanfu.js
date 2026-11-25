@@ -60,8 +60,9 @@ const BALANCE_STALE_MAX_MS = 10 * 60 * 1000;
 const AUTO_BALANCE_STALE_MAX_MS = 60 * 60 * 1000;
 /** 好友比价结果缓存时间：cmd 92 是实时行情，短缓存只为防连点刷屏。 */
 const FRIEND_SCAN_TTL_MS = 3 * 60 * 1000;
-const FRIEND_SCAN_DEFAULT_LIMIT = 40;
-const FRIEND_SCAN_MAX_LIMIT = 100;
+// 候选池现在是「本账号好友 + 面板其它账号好友」，上限放宽到 200；超出时按轮换窗口扫。
+const FRIEND_SCAN_DEFAULT_LIMIT = 60;
+const FRIEND_SCAN_MAX_LIMIT = 200;
 const FRIEND_SCAN_CONCURRENCY = 4;
 /**
  * 兑换目录（cmd 97）只下发序号与价格，商品由客户端静态配置按序号映射。
@@ -84,12 +85,16 @@ const YSHF_CATALOG_TEMPLATE = {
 function createYishuHuanfuActivityService(deps) {
     const { types, sendMsgAsync, getBag, getSystemDateKey, getServerTimeSec, int64String, int64Number, bytesToText, itemDto, textContent, businessError, positiveDecimal, activityWindowIsActive, readBagBalances, serializeMutation, getActivityCenterSnapshot, getUserState, 
     // 好友列表默认懒加载，测试可注入桩函数，避免拉起真实的网关请求。
-    getAllFriends: getAllFriendsDep, } = deps;
+    getAllFriends: getAllFriendsDep, 
+    // 面板其它账号的好友同样可注入，测试不必读写磁盘存档。
+    getPanelFriendGids: getPanelFriendGidsDep, } = deps;
     // 状态槽 130 的 4 号子槽只保留最近一次动作，不能用它判断“今天是否已领”，
     // 因此每日动作按服务器日期在本地记账，服务端报错时再回滚。
     let seedClaimedDateKey = '';
     let sharedDateKey = '';
     let friendScanCache = null;
+    // 候选池（本账号好友 + 面板其它账号好友）超过单轮上限时的轮换游标。
+    let friendScanRotation = 0;
     // 背包读取失败时保留原因，随快照一起下发，前端可以显示“余额未知”的具体理由。
     let lastBalanceError = '';
     // 前端轮询很密，同一个超时错误 5 分钟内只记一条，避免把日志刷爆后反而看不到别的信息。
@@ -112,6 +117,78 @@ function createYishuHuanfuActivityService(deps) {
         })).finish());
         const { body: replyBody } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'GetGroup', body);
         return types.GetGroupReply.decode(replyBody);
+    }
+    /**
+     * 面板里所有账号的「已知好友 GID」。每个账号的 worker 同步好友列表时会把它落盘到
+     * `known_friend_gids/<accountId>.json`（worker-manager 的 known_friend_gids_sync），
+     * 这里把目录里所有账号的文件并起来，比价候选池就不再只有当前账号的好友。
+     *
+     * 蜜薯能卖给任何开着铺子的人，非好友也收，所以候选池越大越容易挑到当日最高价。
+     * 读不到（文件缺失 / 存档损坏）只当没有，不影响本账号好友。
+     */
+    function collectPanelFriendGids() {
+        if (typeof getPanelFriendGidsDep === 'function') {
+            const injected = getPanelFriendGidsDep();
+            if (Array.isArray(injected)) {
+                const result = [];
+                const seen = new Set();
+                for (const raw of injected) {
+                    const gid = int64String(raw?.gid);
+                    if (!gid || gid === '0' || !/^\d+$/.test(gid) || seen.has(gid))
+                        continue;
+                    seen.add(gid);
+                    result.push({ gid, accountName: String(raw?.accountName || '') });
+                }
+                return result;
+            }
+        }
+        const result = [];
+        const seen = new Set();
+        try {
+            const store = require('../models/store');
+            const { readKnownFriendGidsCache } = require('../models/store/gid-cache');
+            const listed = store?.getAccounts?.();
+            const accounts = Array.isArray(listed?.accounts) ? listed.accounts : [];
+            for (const account of accounts) {
+                const accountId = String(account?.id || '');
+                if (!accountId)
+                    continue;
+                const gids = readKnownFriendGidsCache(accountId);
+                if (!Array.isArray(gids))
+                    continue;
+                const accountName = String(account?.name || account?.nick || accountId);
+                for (const raw of gids) {
+                    const gid = int64String(raw);
+                    if (!gid || gid === '0' || !/^\d+$/.test(gid) || seen.has(gid))
+                        continue;
+                    seen.add(gid);
+                    result.push({ gid, accountName });
+                }
+            }
+        }
+        catch {
+            // 读不到面板账号存档不是错误：退回只用本账号好友。
+        }
+        return result;
+    }
+    /**
+     * 候选池超过本轮上限时的轮换窗口：自己的铺子永远在内，其余按扫描轮次前后滚动，
+     * 几轮下来能把整个候选池覆盖一遍，不会被「永远只扫前 N 个」卡住。
+     */
+    function takeScanWindow(targets, limit, hasOwn) {
+        if (targets.length <= limit)
+            return targets;
+        const ownEntry = hasOwn ? targets[0] : null;
+        const others = hasOwn ? targets.slice(1) : targets.slice();
+        const capacity = Math.max(1, limit - (ownEntry ? 1 : 0));
+        if (others.length <= capacity)
+            return ownEntry ? [ownEntry, ...others] : others;
+        const start = friendScanRotation % others.length;
+        const window = [];
+        for (let offset = 0; offset < capacity; offset += 1)
+            window.push(others[(start + offset) % others.length]);
+        friendScanRotation = (start + capacity) % others.length;
+        return ownEntry ? [ownEntry, ...window] : window;
     }
     async function operateYshf(requestType, payload) {
         const body = Buffer.from(requestType.encode(requestType.create(payload)).finish());
@@ -537,10 +614,11 @@ function createYishuHuanfuActivityService(deps) {
         catch (error) {
             friendListError = error?.message || '好友列表获取失败';
         }
+        const panelFriends = collectPanelFriendGids();
         const targets = [];
         const seen = new Set();
         if (own) {
-            targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0' });
+            targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0', via: 'own' });
             seen.add(own);
         }
         for (const friend of friends) {
@@ -554,9 +632,29 @@ function createYishuHuanfuActivityService(deps) {
                 name: friend?.remark || friend?.name || gid,
                 avatar: friend?.avatar_url || '',
                 level: int64String(friend?.level),
+                via: 'friend',
             });
         }
-        const slice = targets.slice(0, limit);
+        // 面板里其它账号的好友同样并进来：蜜薯能卖给任何开着铺子的人，
+        // 不限于本账号好友，候选池越大越容易挑到当日最高价。
+        let panelCount = 0;
+        for (const entry of panelFriends) {
+            if (seen.has(entry.gid))
+                continue;
+            seen.add(entry.gid);
+            panelCount += 1;
+            targets.push({
+                gid: entry.gid,
+                own: false,
+                // 名字靠 cmd 92 回包里的铺主信息补，界面没有名字时会退化成显示 GID。
+                name: '',
+                avatar: '',
+                level: '0',
+                via: 'panel',
+                panelAccount: entry.accountName,
+            });
+        }
+        const slice = takeScanWindow(targets, limit, !!own);
         const shops = [];
         let failed = 0;
         let failureMessage = '';
@@ -571,8 +669,14 @@ function createYishuHuanfuActivityService(deps) {
                         failureMessage = result.reason?.message || '铺子行情查询失败';
                     return;
                 }
+                const quotedOwner = result.value.shop;
                 shops.push({
                     ...entry,
+                    // 其它账号好友在这里没有本地名字：cmd 92 回包自带铺主昵称 / 头像 / 等级，
+                    // 用它补齐，界面上就不用只显示一串 GID。
+                    name: entry.name || quotedOwner?.name || '',
+                    avatar: entry.avatar || quotedOwner?.avatar || '',
+                    level: entry.level && entry.level !== '0' ? entry.level : (quotedOwner?.level || '0'),
                     price: result.value.price,
                     totalPrice: result.value.totalPrice,
                     quota: result.value.quota,
@@ -599,11 +703,18 @@ function createYishuHuanfuActivityService(deps) {
             ownShop: shops.find(entry => entry.own) || null,
             scanned: slice.length,
             failed,
+            // 候选池 = 本账号好友 + 面板里其它账号的已知好友（去重后）。
             friendCount: targets.length - (own ? 1 : 0),
+            panelFriendCount: panelCount,
+            candidateCount: targets.length - (own ? 1 : 0),
+            // 候选池超过本轮上限时按轮换窗口扫，这里告诉界面还有多少没轮到。
+            pendingCount: Math.max(0, targets.length - (own ? 1 : 0) - slice.filter(entry => !entry.own).length),
+            limit,
             friendListError,
             message: shops.length === 0
-                ? (friendListError || '没有可查询的好友铺子')
-                : `已扫描 ${shops.length} 个铺子，最高收购价 ${shops[0].totalPrice}`,
+                ? (friendListError || '没有可查询的铺子')
+                : `已扫描 ${shops.length} 个铺子${panelCount ? `（含其它账号好友 ${panelCount} 个）` : ''}，`
+                    + `最高收购价 ${shops[0].totalPrice}`,
             errorMessage: failureMessage,
             cached: false,
             scannedAt: now,

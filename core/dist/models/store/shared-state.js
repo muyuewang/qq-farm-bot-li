@@ -91,6 +91,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
         yishu_scan_friend_limit: 20,
         yishu_scan_interval_minutes: 30,
         yishu_sell_min_count: 1,
+        // 空串 = 不限时段，和改造前的行为一致；填了 "HH:MM" 就等过了这个点才卖。
+        yishu_sell_after_time: '',
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -358,6 +360,25 @@ function normalizeFertilizerMode(value, fallback) {
     return FERTILIZER_MODES.has(value) ? value : fallback;
 }
 /**
+ * 卖薯开始时间 "HH:MM"。空串 / 非法值一律当「不限时段」，避免把界面输错的东西
+ * 变成「永远不卖」——闸门只推迟卖薯，绝不该让它彻底停下。
+ */
+function normalizeSellAfterTime(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw)
+        return '';
+    const match = /^(\d{1,2})\s*[:：]\s*(\d{1,2})$/.exec(raw);
+    if (!match)
+        return '';
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute))
+        return '';
+    const clampedHour = Math.max(0, Math.min(23, hour));
+    const clampedMinute = Math.max(0, Math.min(59, minute));
+    return `${String(clampedHour).padStart(2, '0')}:${String(clampedMinute).padStart(2, '0')}`;
+}
+/**
  * 单个 automation 键的归一。两处写入路径（`normalizeAccountConfig` 读账号存档、
  * `applyConfigSnapshot` 保存设置页）必须共用这一份，否则选法配置会被另一处 `!!v` 布尔化：
  * 2026-10-19 的 bug 就是雇佣班次/特长在保存时被折成 true，再读回来落回默认档。
@@ -378,13 +399,17 @@ function normalizeAutomationValue(key, value, current) {
     }
     // 以薯换福的数值项：默认值是数字，这里必须显式夹取，否则会被下面的 `!!value` 折成 true。
     if (key === 'yishu_scan_friend_limit') {
-        return Math.max(1, Math.min(50, Number.parseInt(String(value), 10) || 20));
+        return Math.max(1, Math.min(200, Number.parseInt(String(value), 10) || 20));
     }
     if (key === 'yishu_scan_interval_minutes') {
         return Math.max(5, Math.min(720, Number.parseInt(String(value), 10) || 30));
     }
     if (key === 'yishu_sell_min_count') {
         return Math.max(1, Math.min(10000, Number.parseInt(String(value), 10) || 1));
+    }
+    // "HH:MM" 是字符串项，不夹取就会被折成 true，卖薯闸门直接失效。
+    if (key === 'yishu_sell_after_time') {
+        return normalizeSellAfterTime(value);
     }
     return !!value;
 }

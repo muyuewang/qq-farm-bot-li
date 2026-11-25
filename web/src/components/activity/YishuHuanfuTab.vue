@@ -582,7 +582,7 @@ function scanAgo() {
         </button>
       </div>
       <p class="compare-hint">
-        用好友 GID 逐个查今日收购价（只读命令，不占用对方额度，对方也收不到通知）。
+        用 GID 逐个查今日收购价（只读命令，不占用对方额度，对方也收不到通知）；候选包含面板里其它账号的好友，非好友也能卖。
         {{ ranking || '挑个价高的铺子卖，比卖给自己更划算。' }}
       </p>
       <p v-if="friendScanNote" class="compare-note">{{ friendScanNote }}<template v-if="friendScanAt">（{{ scanAgo() }}）</template></p>
@@ -591,7 +591,11 @@ function scanAgo() {
         <article v-for="(shop, index) in friendShops" :key="shop.gid" class="compare-row">
           <span class="rank">{{ index + 1 }}</span>
           <div class="who">
-            <strong>{{ shop.name || shop.gid }}<em v-if="shop.own">自己</em></strong>
+            <strong>
+              {{ shop.name || shop.gid }}
+              <em v-if="shop.own">自己</em>
+              <em v-else-if="shop.via === 'panel'" class="panel-source" :title="shop.panelAccount ? `${shop.panelAccount} 的好友` : '面板其它账号的好友'">其它号好友</em>
+            </strong>
             <span>GID {{ shop.gid }}</span>
           </div>
           <div class="quote">
@@ -1406,6 +1410,11 @@ function scanAgo() {
   color: #4f7a30;
   font-size: 10px;
   font-style: normal;
+}
+
+.compare-row .who em.panel-source {
+  background: #e9f2ff;
+  color: #3568a8;
 }
 
 .compare-row .who span {
