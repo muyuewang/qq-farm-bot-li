@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { YishuHuanfuTab } from '@/components/activity/gameplays/yishuhuanfu'
 import { useAccountStore } from '@/stores/account'
-import { useActivityCenterStore } from '@/stores/activity-center'
+import { useActivityCenterStore, type YishuHuanfuFriendShopDto } from '@/stores/activity-center'
 import { useActivityClock } from './useActivityClock'
 
 const emit = defineEmits<{ back: [] }>()
@@ -98,8 +98,54 @@ watch(
   { immediate: true },
 )
 
-async function onSell(payload: { friendGid: string, count: number | null }) {
+// 手动指定 GID 卖薯：蜜薯不只能卖给好友，陌生人（只要开着铺子）也收。
+// 行情单独用 cmd 92 查一次，界面按查到的单价与剩余额度预估，成交仍由后端校验后落地。
+const manualQuote = ref<YishuHuanfuFriendShopDto | null>(null)
+const manualQuoteLoading = ref(false)
+const manualQuoteNote = ref('')
+// 回执属于哪个 GID：手改输入框后旧提示必须消失，否则会把上一个号码的单价/额度当成本次的。
+const manualQuoteGid = ref('')
+
+// 换账号必须清掉：上一个账号查的 GID 行情留着会误导「单价 / 额度」。
+watch(currentAccountId, () => {
+  manualQuote.value = null
+  manualQuoteNote.value = ''
+  manualQuoteGid.value = ''
+})
+
+async function onQueryShop(gid: string) {
   const id = accountId()
+  const target = String(gid || '').trim()
+  if (!id)
+    return
+  if (!target) {
+    manualQuote.value = null
+    manualQuoteNote.value = '先填写对方 GID'
+    return
+  }
+  manualQuoteLoading.value = true
+  manualQuoteNote.value = ''
+  manualQuoteGid.value = target
+  try {
+    const quote = await activityStore.queryYishuHuanfuShopQuote(id, target)
+    manualQuote.value = quote
+    if (!quote)
+      manualQuoteNote.value = '没查到这个 GID 的铺子，确认号码是否正确'
+    else if (quote.canSell === false)
+      manualQuoteNote.value = '这家铺子当前不收蜜薯'
+    else
+      manualQuoteNote.value = `今日收购价 ${formatNumber(quote.totalPrice)} 福气币 / 个，剩余额度 ${formatNumber(quote.quota)} 个`
+  }
+  catch (e: any) {
+    manualQuote.value = null
+    manualQuoteNote.value = String(e?.message || '查询失败，稍后再试')
+  }
+  finally {
+    manualQuoteLoading.value = false
+  }
+}
+
+async function onSell(payload: { friendGid: string, count: number | null }) {  const id = accountId()
   if (!id)
     return
   const ok = await activityStore.sellYishuHuanfuSweetPotato(id, payload.friendGid, payload.count)
@@ -108,6 +154,9 @@ async function onSell(payload: { friendGid: string, count: number | null }) {
     activityStore.loadYishuHuanfuShop(id)
   if (ok && payload.friendGid)
     activityStore.scanYishuHuanfuFriendShops(id, true)
+  // 手动指定 GID 卖出后，这家铺子的剩余额度已经变了，重新查一次才不会再被提示「超出额度」。
+  if (ok && payload.friendGid && manualQuote.value?.gid === payload.friendGid)
+    await onQueryShop(payload.friendGid)
 }
 
 // 收购记录（cmd 95）不进快照，进页面拉一次；领完提成、卖完薯都重新拉，保持列表最新。
@@ -201,8 +250,13 @@ async function onClaimCommission() {
         :records="yishuHuanfuRecords"
         :records-loading="yishuHuanfuRecordsLoading"
         :records-note="yishuHuanfuRecordsNote"
+        :target-quote="manualQuote"
+        :target-quote-loading="manualQuoteLoading"
+        :target-quote-note="manualQuoteNote"
+        :target-quote-gid="manualQuoteGid"
         @claim-seed="activityStore.claimYishuHuanfuSeeds(accountId())"
         @sell="onSell"
+        @query-shop="onQueryShop"
         @share="activityStore.shareYishuHuanfuShop(accountId())"
         @exchange="(index, count) => activityStore.exchangeYishuHuanfuGoods(accountId(), index, count)"
         @scan-friends="(force) => activityStore.scanYishuHuanfuFriendShops(accountId(), force)"

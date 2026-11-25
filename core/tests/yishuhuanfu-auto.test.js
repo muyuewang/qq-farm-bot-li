@@ -6,21 +6,38 @@ const { createYishuAutomation, isYishuAutomationEnabled } = require('../dist/ser
 // 以薯换福自动任务的纯逻辑测试：所有网关调用都用桩替换，只验证「什么时候发、发给谁、发几次」。
 const NOW_SEC = 1795573881;
 
+/**
+ * 快照必须与真实 DTO 同形：蜜薯在 `sweetPotato.balance` 上（item_id=1032 蜜薯），
+ * DTO 里没有顶层 `sweetPotatoBalance` 字段。旧桩用了不存在的顶层字段，正好把
+ * 「自动任务每轮都判成没读到蜜薯」这个 bug 盖住了，所以这里按 DTO 生成。
+ */
 function makeSnapshot(overrides = {}) {
+    const { sweetPotatoBalance, ...rest } = overrides || {};
     const base = {
         active: true,
         daily: { seedClaimed: false, shared: false, sharedToday: false },
-        sweetPotatoBalance: '0',
+        sweetPotato: { balance: '0', balanceKnown: true },
+        luckCoin: { balance: '0', balanceKnown: true },
         shop: { priceKnown: true, price: '111', bonus: '33', estimatedPrice: '144' },
         commission: { pending: '0', claimable: false, flag: '0' },
     };
-    return {
+    const snapshot = {
         ...base,
-        ...overrides,
-        daily: { ...base.daily, ...(overrides.daily || {}) },
-        shop: { ...base.shop, ...(overrides.shop || {}) },
-        commission: { ...base.commission, ...(overrides.commission || {}) },
+        ...rest,
+        daily: { ...base.daily, ...(rest.daily || {}) },
+        shop: { ...base.shop, ...(rest.shop || {}) },
+        commission: { ...base.commission, ...(rest.commission || {}) },
+        sweetPotato: { ...base.sweetPotato, ...(rest.sweetPotato || {}) },
     };
+    // 兼容旧写法的简写参数：sweetPotatoBalance: '500' / null 都映射到真实字段上。
+    if (sweetPotatoBalance !== undefined) {
+        snapshot.sweetPotato = {
+            ...snapshot.sweetPotato,
+            balance: sweetPotatoBalance === null ? null : String(sweetPotatoBalance),
+            balanceKnown: sweetPotatoBalance !== null,
+        };
+    }
+    return snapshot;
 }
 
 function makeShop(overrides = {}) {
@@ -353,4 +370,51 @@ test('没读到蜜薯数量时把后端原因写进跳过日志', async () => {
     await harness.automation.runYishuAutomation(ALL_ON);
 
     assert.ok(harness.logs.some(entry => entry.message.includes('这次没读到背包蜜薯数量（itempb.ItemService.Bag timeout）')));
+});
+
+// 回归：DTO 里蜜薯只在 sweetPotato.balance 上。旧实现读顶层 sweetPotatoBalance（永远 undefined），
+// 每轮都判成「没读到背包蜜薯数量」→ 有蜜薯也从不卖。这条测试用的快照就是真实 DTO 形状。
+test('按真实 DTO 形状读蜜薯数量并卖出（与红薯种子/果实无关）', async () => {
+    const snapshot = makeSnapshot({ sweetPotato: { balance: '6', balanceKnown: true } });
+    assert.equal('sweetPotatoBalance' in snapshot, false, 'DTO 没有顶层 sweetPotatoBalance');
+
+    const harness = createHarness({ snapshot, shops: [makeShop({ quota: '100', totalPrice: '165' })] });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    const sells = harness.sells();
+    assert.equal(sells.length, 1, '真实 DTO 形状下必须卖出');
+    assert.equal(sells[0][2], '6', '卖的数量必须是蜜薯数量');
+    assert.ok(harness.logs.some(entry => String(entry.message).includes('卖出 6 个蜜薯')));
+});
+
+test('balanceKnown=false 时才跳过卖薯，且不把余额当 0 静默忽略', async () => {
+    const harness = createHarness({
+        snapshot: makeSnapshot({ sweetPotato: { balance: '9', balanceKnown: false } }),
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    assert.equal(harness.sells().length, 0);
+    assert.ok(harness.logs.some(entry => entry.message.includes('这次没读到背包蜜薯数量')));
+});
+
+test('旧形状快照（顶层 sweetPotatoBalance）仍能兼容，不会把自动任务打停', async () => {
+    const harness = createHarness({
+        snapshot: { active: true, sweetPotatoBalance: '4', daily: { seedClaimed: true, shared: true }, shop: { priceKnown: true } },
+        shops: [makeShop({ quota: '100' })],
+    });
+    await harness.automation.runYishuAutomation({ yishu_auto_sell: true, yishu_sell_fallback_own: true });
+
+    assert.equal(harness.sells().length, 1);
+    assert.equal(harness.sells()[0][2], '4');
+});
+
+test('本轮摘要日志带上蜜薯数量与是否读到', async () => {
+    const harness = createHarness({ snapshot: makeSnapshot({ sweetPotato: { balance: '0' } }), shops: [] });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    const summary = harness.logs.find(entry => entry.message === '以薯换福自动本轮开始');
+    assert.ok(summary, '每轮必须留一条摘要');
+    assert.equal(summary.meta.sweetPotato, '0');
+    assert.equal(summary.meta.sweetPotatoKnown, true);
 });

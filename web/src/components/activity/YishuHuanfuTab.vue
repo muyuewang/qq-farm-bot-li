@@ -17,11 +17,18 @@ const props = defineProps<{
   records: YishuHuanfuRecordDto[]
   recordsLoading: boolean
   recordsNote: string
+  // 手动填 GID 查到的铺子行情（cmd 92）：陌生人铺子也能收蜜薯，不限于好友列表。
+  targetQuote: YishuHuanfuFriendShopDto | null
+  targetQuoteLoading: boolean
+  targetQuoteNote: string
+  // 回执对应的 GID：输入框改号后旧提示要隐藏，避免把上一个号码的行情当成这次的。
+  targetQuoteGid: string
 }>()
 
 const emit = defineEmits<{
   claimSeed: []
   sell: [payload: { friendGid: string, count: number | null }]
+  queryShop: [gid: string]
   share: []
   exchange: [index: number, count: number]
   scanFriends: [force: boolean]
@@ -93,16 +100,35 @@ const quotaPercent = computed(() => {
 })
 
 // 选择了好友铺子就按对方报价预估；否则按自己铺子的预计成交价。
+// 手动填的 GID 可能不在好友列表里，此时用单独查到的 cmd 92 行情兜底。
+const manualQuoteMatch = computed(() => {
+  const quote = props.targetQuote
+  if (!quote || !targetGid.value)
+    return null
+  return quote.gid === targetGid.value ? quote : null
+})
 const targetShop = computed(() => {
   if (!targetGid.value)
     return null
-  return props.friendShops.find(entry => entry.gid === targetGid.value) || null
+  return props.friendShops.find(entry => entry.gid === targetGid.value) || manualQuoteMatch.value
 })
+
+/** GID 只允许数字：粘贴带空格的号码时直接清掉，省得后端报「参数无效」。 */
+function onGidInput(value: string) {
+  targetGid.value = String(value || '').replace(/\D/g, '').slice(0, 20)
+}
+
+function queryTargetQuote() {
+  const gid = targetGid.value.trim()
+  if (!gid || props.targetQuoteLoading)
+    return
+  emit('queryShop', gid)
+}
 const targetLabel = computed(() => {
   if (!targetGid.value)
     return '自己的铺子'
   const shop = targetShop.value
-  return shop ? `${shop.name || shop.gid} 的铺子` : `好友 ${targetGid.value} 的铺子`
+  return shop ? `${shop.name || shop.gid} 的铺子` : `GID ${targetGid.value} 的铺子`
 })
 const unitPrice = computed(() => {
   if (targetShop.value)
@@ -439,6 +465,33 @@ function scanAgo() {
             <span>可用蜜薯</span>
             <strong>{{ activity?.sweetPotatoBalanceKnown ? formatNumber(sweetPotatoCount) : '--' }} 个</strong>
           </div>
+
+          <!-- 蜜薯不只能卖给好友：只要对方开着铺子，陌生人也能收。这里手填 GID 卖给他。 -->
+          <label class="sell-input">
+            <span>目标 GID</span>
+            <input
+              :value="targetGid"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="留空 = 卖给自己"
+              @input="onGidInput(($event.target as HTMLInputElement).value)"
+            >
+            <button
+              type="button"
+              class="link"
+              :disabled="targetQuoteLoading || !targetGid"
+              @click="queryTargetQuote"
+            >
+              {{ targetQuoteLoading ? '查询中…' : '查行情' }}
+            </button>
+          </label>
+          <p v-if="targetQuoteNote && targetQuoteGid === targetGid" class="sell-hint" :class="{ warning: targetClosed }">
+            {{ targetQuoteNote }}
+          </p>
+          <p v-else-if="targetGid && !targetShop" class="sell-hint">
+            填好 GID 后点「查行情」，先确认单价和剩余额度再卖。
+          </p>
 
           <label class="sell-input">
             <span>出售数量</span>
@@ -1157,6 +1210,18 @@ function scanAgo() {
 .sell-warning {
   margin: 6px 0 0;
   font-size: 11px;
+  color: #c26a3a;
+}
+
+/* 手填 GID 的行情回执：默认弱提示，明确不能卖（can_sell=false）时才转成告警色。 */
+.sell-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ui-ink-soft, #8a7a68);
+}
+
+.sell-hint.warning {
   color: #c26a3a;
 }
 

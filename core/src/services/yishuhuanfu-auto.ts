@@ -59,6 +59,28 @@ function toInt(value: any, fallback: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, base));
 }
 
+/**
+ * 背包里的蜜薯数量。
+ *
+ * 服务端快照把它放在 `sweetPotato.balance`（与界面读的是同一个字段，item_id=1032 蜜薯）；
+ * 早期这里读的是顶层 `sweetPotatoBalance`——那个字段在 DTO 里根本不存在，
+ * 于是每轮都判成「没读到背包蜜薯数量」直接跳过卖薯。这就是「有蜜薯却几小时不卖」的真因，
+ * 与红薯种子（20307）、红薯果实都无关：卖薯只认蜜薯。
+ *
+ * 顶层字段保留作兼容，避免别处传入旧形状快照时把自动任务直接打停。
+ */
+function readSweetPotatoCount(snapshot: any): { count: string | null; known: boolean } {
+    const item = snapshot?.sweetPotato;
+    if (item && typeof item === 'object') {
+        const raw = item.balance;
+        const known = item.balanceKnown !== false && raw !== null && raw !== undefined && raw !== '';
+        return { count: known ? String(raw) : null, known };
+    }
+    const legacy = snapshot?.sweetPotatoBalance;
+    const legacyKnown = legacy !== null && legacy !== undefined && legacy !== '';
+    return { count: legacyKnown ? String(legacy) : null, known: legacyKnown };
+}
+
 function createYishuAutomation(deps: {
     getActivity: (options?: any) => Promise<any>;
     claimSeed: (options?: any) => Promise<any>;
@@ -114,14 +136,14 @@ function createYishuAutomation(deps: {
         sellMinCount: number;
         fallbackOwn: boolean;
     }): Promise<void> {
-        const bagRaw = snapshot?.sweetPotatoBalance;
-        if (bagRaw === null || bagRaw === undefined) {
+        const bag = readSweetPotatoCount(snapshot);
+        if (!bag.known) {
             // 带上后端记下的失败原因，否则线上只能看到「没读到」，无从判断是超时还是别的。
             const reason = String(snapshot?.balanceError || '').trim();
             skip('sell', `这次没读到背包蜜薯数量${reason ? `（${reason}）` : ''}，下一轮再试`);
             return;
         }
-        let remaining = BigInt(bagRaw || '0');
+        let remaining = BigInt(bag.count || '0');
         if (remaining <= 0n) {
             skip('sell', '背包里还没有蜜薯，等红薯成熟收获后自动卖');
             return;
@@ -226,12 +248,14 @@ function createYishuAutomation(deps: {
 
         // 每轮留一条摘要：蜜薯数是不是读到了、余额是不是沿用的旧值、行情有没有生成。
         // 这几项决定了后面会不会跳过卖薯，出问题时不用再靠猜。
+        const bag = readSweetPotatoCount(snapshot);
         log('系统', '以薯换福自动本轮开始', {
             module: 'activity',
             event: '以薯换福自动',
             result: 'ok',
-            sweetPotato: snapshot.sweetPotatoBalance ?? 'unknown',
-            luckCoin: snapshot.luckCoinBalance ?? 'unknown',
+            sweetPotato: bag.count ?? 'unknown',
+            sweetPotatoKnown: bag.known,
+            luckCoin: snapshot.luckCoin?.balance ?? snapshot.luckCoinBalance ?? 'unknown',
             balanceStale: !!snapshot.balanceStale,
             balanceError: snapshot.balanceError || '',
             priceKnown: !!snapshot.shop?.priceKnown,

@@ -2523,6 +2523,43 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('giftQixiSachet', '/qixi/gift', accountId, { friendGid, messageTextId })
   }
 
+  /**
+   * 查任意 GID 的铺子行情（cmd 92）。好友列表里的铺子本来就是这条命令查出来的，
+   * 这里只是放开「手动填 GID」——蜜薯能卖给陌生人，不需要先加好友。
+   * 返回结构与好友比价列表一致，界面可以复用同一套额度/单价渲染。
+   */
+  async function queryYishuHuanfuShopQuote(accountId: string, gid: string): Promise<YishuHuanfuFriendShopDto | null> {
+    const requestedAccountId = String(accountId || '').trim()
+    const targetGid = String(gid || '').trim()
+    if (!requestedAccountId || !targetGid)
+      return null
+    const response = await api.get('/api/activity-center/yishuhuanfu/shop', {
+      headers: { 'x-account-id': requestedAccountId },
+      params: { friendGid: targetGid },
+      skipErrorToast: true,
+    } as any)
+    const payload = record(responsePayload(response.data))
+    const shop = record(payload.shop)
+    const price = text(payload.price)
+    const bonus = text(payload.bonus)
+    const totalPrice = text(payload.totalPrice, payload.total_price, price)
+    return {
+      gid: text(shop.gid, payload.targetGid, targetGid),
+      name: text(shop.name),
+      avatar: text(shop.avatar),
+      level: text(shop.level),
+      own: bool(payload.own),
+      price,
+      bonus,
+      totalPrice,
+      quota: text(payload.quota),
+      quotaCap: text(payload.quotaCap, payload.quota_cap),
+      quotaUsed: text(payload.quotaUsed, payload.quota_used),
+      canSell: payload.canSell === null || payload.canSell === undefined ? null : bool(payload.canSell, payload.can_sell),
+      unlimited: bool(payload.own),
+    }
+  }
+
   // 把自己铺子的剩余接收额度（cmd 92）并回快照，供进度条展示。
   async function loadYishuHuanfuShop(accountId: string) {
     const requestedAccountId = String(accountId || '').trim()
@@ -2827,6 +2864,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     exchangeYishuHuanfuGoods,
     loadYishuHuanfuCatalog,
     loadYishuHuanfuShop,
+    queryYishuHuanfuShopQuote,
     loadYishuHuanfuRecords,
     claimYishuHuanfuCommission,
     yishuHuanfuRecords,
