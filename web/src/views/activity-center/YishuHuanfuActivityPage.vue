@@ -51,6 +51,8 @@ async function refreshActivity() {
   // 兑换档位的价格与剩余次数会随当日行情变，刷新时一并重拉 cmd 97，
   // 否则「已加载过」的旧目录会一直挂在界面上。
   activityStore.loadYishuHuanfuCatalog(accountId())
+  // 收购记录同样不进快照，页头刷新要一起更新，不能只刷余额和行情。
+  loadRecords(true)
   return ok
 }
 
@@ -80,9 +82,19 @@ watch(
 )
 
 // 活动详情到位后再拉收购记录，避免账号还没切好就发请求。
+// 换账号或重新进入页面都必须真拉一次：记录按账号隔离，store 在换号时已清空，
+// 这里再用 force 跳过「已加载」守卫，否则会沿用上一个账号的列表。
+let recordsAccountId = ''
 watch(
   () => [currentAccountId.value, yishuHuanfu.value?.activityId],
-  () => loadRecords(),
+  () => {
+    const id = accountId()
+    if (!id)
+      return
+    const switched = id !== recordsAccountId
+    recordsAccountId = id
+    loadRecords(switched)
+  },
   { immediate: true },
 )
 
@@ -99,13 +111,13 @@ async function onSell(payload: { friendGid: string, count: number | null }) {
 }
 
 // 收购记录（cmd 95）不进快照，进页面拉一次；领完提成、卖完薯都重新拉，保持列表最新。
+// 「是否已加载过」的判断交给 store（按账号记账），这里不再用列表长度当守卫——
+// 那会把上一个账号残留的记录当成「已加载」，切号后一直显示别人的数据。
 function loadRecords(force = false) {
   const id = accountId()
   if (!id)
     return
-  if (!force && activityStore.yishuHuanfuRecords.length > 0)
-    return
-  activityStore.loadYishuHuanfuRecords(id)
+  activityStore.loadYishuHuanfuRecords(id, force)
 }
 
 async function onClaimCommission() {
@@ -197,7 +209,7 @@ async function onClaimCommission() {
         @refresh-shop="loadShopQuota"
         @refresh-quote="activityStore.refreshYishuHuanfuQuote(accountId())"
         @claim-commission="onClaimCommission"
-        @load-records="activityStore.loadYishuHuanfuRecords(accountId())"
+        @load-records="activityStore.loadYishuHuanfuRecords(accountId(), true)"
       />
     </template>
   </section>

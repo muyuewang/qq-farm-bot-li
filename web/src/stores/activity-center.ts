@@ -2054,9 +2054,15 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const yishuHuanfuFriendScanAt = ref(0)
   const yishuHuanfuFriendScanNote = ref('')
   // 收购记录（cmd 95）是独立查询，不放在快照里，避免每次轮询都多打一次网关。
+  // recordsAccountId 记录这份列表属于哪个账号：切号时必须整份丢掉，否则会把上一个账号的
+  // 记录当成当前账号的显示（页面守卫还会因为「已有数据」直接跳过请求）。
   const yishuHuanfuRecords = ref<YishuHuanfuRecordDto[]>([])
   const yishuHuanfuRecordsLoading = ref(false)
   const yishuHuanfuRecordsNote = ref('')
+  const yishuHuanfuRecordsAccountId = ref('')
+  const yishuHuanfuRecordsLoaded = ref(false)
+  // 比价结果同理：好友列表是按账号取的，切号后旧列表必须清掉。
+  const yishuHuanfuFriendShopsAccountId = ref('')
 
   const season = computed(() => snapshot.value.season)
   const activities = computed(() => snapshot.value.activities)
@@ -2090,6 +2096,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   function reset() {
     requestVersion.value += 1
     clearYishuHuanfuFriendShops()
+    // 收购记录也属于具体账号，整份重置时一起清掉，避免切号后残留。
+    clearYishuHuanfuRecords()
     snapshot.value = normalizeActivitySnapshot({})
     loading.value = false
     error.value = ''
@@ -2391,10 +2399,20 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   }
 
   // 收购记录列表（cmd 95）。独立查询、不进快照，避免每次轮询多打一次网关。
-  async function loadYishuHuanfuRecords(accountId: string) {
+  // 列表按账号隔离：换账号先同步清空再请求，旧账号的迟到回包直接丢弃。
+  // force=true 用于进页面/手动刷新；不带 force 时同一账号已加载过就不再打网关。
+  async function loadYishuHuanfuRecords(accountId: string, force = false) {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId)
       return false
+    if (yishuHuanfuRecordsAccountId.value !== requestedAccountId)
+      clearYishuHuanfuRecords()
+    yishuHuanfuRecordsAccountId.value = requestedAccountId
+    // 同一账号的请求还在路上，别叠加第二个。
+    if (yishuHuanfuRecordsLoading.value)
+      return false
+    if (!force && yishuHuanfuRecordsLoaded.value)
+      return true
     yishuHuanfuRecordsLoading.value = true
     try {
       const response = await api.get('/api/activity-center/yishuhuanfu/records', {
@@ -2402,6 +2420,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         skipErrorToast: true,
       } as any)
       const payload = record(responsePayload(response.data))
+      // 请求期间又切了账号：这份回包属于上一个账号，写进去就是串号。
+      if (yishuHuanfuRecordsAccountId.value !== requestedAccountId)
+        return false
       yishuHuanfuRecords.value = records(payload.records).map(entry => ({
         timestamp: text(entry.timestamp),
         gid: text(entry.gid),
@@ -2413,13 +2434,25 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         commission: text(entry.commission),
       }))
       yishuHuanfuRecordsNote.value = text(payload.message)
+      yishuHuanfuRecordsLoaded.value = true
       return true
     } catch (error) {
-      yishuHuanfuRecordsNote.value = errorMessage(error, '收购记录加载失败')
+      if (yishuHuanfuRecordsAccountId.value === requestedAccountId)
+        yishuHuanfuRecordsNote.value = errorMessage(error, '收购记录加载失败')
       return false
     } finally {
-      yishuHuanfuRecordsLoading.value = false
+      // 只有仍然属于这个账号时才关掉 loading，避免旧请求把新账号的加载态提前结束。
+      if (yishuHuanfuRecordsAccountId.value === requestedAccountId)
+        yishuHuanfuRecordsLoading.value = false
     }
+  }
+
+  function clearYishuHuanfuRecords() {
+    yishuHuanfuRecords.value = []
+    yishuHuanfuRecordsLoading.value = false
+    yishuHuanfuRecordsNote.value = ''
+    yishuHuanfuRecordsLoaded.value = false
+    yishuHuanfuRecordsAccountId.value = ''
   }
 
   // 刷新本人铺子的今日行情（cmd 92）。旧实现打的是 cmd 95，而 95 其实是收购记录列表，
@@ -2537,6 +2570,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId || yishuHuanfuFriendShopsLoading.value)
       return false
+    // 换账号先清空上一个账号的比价结果（同步执行，界面上不会闪别人的好友）。
+    if (yishuHuanfuFriendShopsAccountId.value !== requestedAccountId)
+      clearYishuHuanfuFriendShops()
+    yishuHuanfuFriendShopsAccountId.value = requestedAccountId
     yishuHuanfuFriendShopsLoading.value = true
     try {
       const response = await api.get('/api/activity-center/yishuhuanfu/friends', {
@@ -2545,6 +2582,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         skipErrorToast: true,
       } as any)
       const payload = record(responsePayload(response.data))
+      // 扫描期间切了账号：这份结果属于上一个账号，丢掉。
+      if (yishuHuanfuFriendShopsAccountId.value !== requestedAccountId)
+        return false
       yishuHuanfuFriendShops.value = records(payload.shops).map((entry) => {
         const price = text(entry.price)
         const bonus = text(entry.bonus)
@@ -2581,10 +2621,12 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
           : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子${failed ? `，${failed} 个查询失败` : ''}`)
       return true
     } catch (scanError) {
-      yishuHuanfuFriendScanNote.value = errorMessage(scanError, '好友铺子比价失败')
+      if (yishuHuanfuFriendShopsAccountId.value === requestedAccountId)
+        yishuHuanfuFriendScanNote.value = errorMessage(scanError, '好友铺子比价失败')
       return false
     } finally {
-      yishuHuanfuFriendShopsLoading.value = false
+      if (yishuHuanfuFriendShopsAccountId.value === requestedAccountId)
+        yishuHuanfuFriendShopsLoading.value = false
     }
   }
 
@@ -2593,6 +2635,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     yishuHuanfuFriendShopsLoading.value = false
     yishuHuanfuFriendScanAt.value = 0
     yishuHuanfuFriendScanNote.value = ''
+    yishuHuanfuFriendShopsAccountId.value = ''
   }
 
   function claimQingMeiDailySeed(accountId: string) {
@@ -2789,6 +2832,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     yishuHuanfuRecords,
     yishuHuanfuRecordsLoading,
     yishuHuanfuRecordsNote,
+    clearYishuHuanfuRecords,
     scanYishuHuanfuFriendShops,
     clearYishuHuanfuFriendShops,
     claimQingMeiDailySeed,
