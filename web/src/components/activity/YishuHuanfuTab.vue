@@ -692,6 +692,17 @@ function scanAgo() {
 </template>
 
 <style scoped>
+/* 页面与弹窗都按主题色取值：浅色下与原来的暖白卡片一致，深色下自动退回深灰底，
+   不再固定 rgba(255,255,255,…) 导致深色模式整页发亮。弹窗通过 Teleport 挂到 body，
+   不在 .yshf-page 内，所以两组选择器都要声明同一套变量。 */
+.yshf-page,
+.exchange-dialog {
+  --yshf-panel-bg: color-mix(in srgb, var(--ui-surface-solid) 72%, transparent);
+  --yshf-card-bg: color-mix(in srgb, var(--ui-warning) 5%, var(--ui-surface-solid));
+  --yshf-soft-bg: color-mix(in srgb, var(--ui-ink) 5%, transparent);
+  --yshf-chip-bg: color-mix(in srgb, var(--ui-warning) 12%, transparent);
+}
+
 .yshf-page {
   display: flex;
   flex-direction: column;
@@ -710,19 +721,19 @@ function scanAgo() {
 .yshf-kicker {
   font-size: 12px;
   letter-spacing: 0.16em;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .yshf-hero h1 {
   margin: 6px 0 4px;
   font-size: 22px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
 }
 
 .yshf-hero p {
   margin: 0;
   font-size: 13px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 /* 资源条：三份资源横排成胶囊，数值在前、名称在后，提示语独占下一行。
@@ -741,8 +752,8 @@ function scanAgo() {
   gap: 8px;
   padding: 6px 14px 6px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(176, 132, 84, 0.16);
+  background: var(--yshf-panel-bg);
+  border: 1px solid color-mix(in srgb, var(--ui-warning) 20%, var(--ui-border));
 }
 
 .wallet-item img {
@@ -755,14 +766,14 @@ function scanAgo() {
   font-size: 16px;
   font-weight: 700;
   line-height: 1;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   font-variant-numeric: tabular-nums;
 }
 
 .wallet-item span {
   font-size: 11px;
   line-height: 1;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .wallet-error,
@@ -776,15 +787,15 @@ function scanAgo() {
 
 .wallet-error {
   max-width: 520px;
-  color: #9a4048;
+  color: var(--ui-danger);
 }
 
 .wallet-stale {
-  color: #8c7355;
+  color: var(--ui-warning);
 }
 
 .wallet-tagline {
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .yshf-tabs {
@@ -792,7 +803,7 @@ function scanAgo() {
   gap: 8px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--yshf-soft-bg);
   width: fit-content;
 }
 
@@ -801,15 +812,15 @@ function scanAgo() {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
   font-size: 13px;
   cursor: pointer;
 }
 
 .yshf-tabs button.active {
-  background: #fff;
-  color: #a8661f;
-  box-shadow: var(--ui-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.06));
+  background: var(--ui-surface-solid);
+  color: var(--ui-warning);
+  box-shadow: var(--ui-shadow-sm);
 }
 
 .yshf-columns {
@@ -834,10 +845,10 @@ function scanAgo() {
 
 .yshf-panel {
   padding: 16px;
-  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card, 16px);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: var(--ui-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.04));
+  background: var(--yshf-panel-bg);
+  box-shadow: var(--ui-shadow-sm);
 }
 
 .price-head {
@@ -845,13 +856,13 @@ function scanAgo() {
   align-items: center;
   justify-content: space-between;
   font-size: 13px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .price-head em {
   font-style: normal;
   font-size: 12px;
-  color: #c26a3a;
+  color: var(--yshf-accent-soft);
 }
 
 .price-main {
@@ -865,21 +876,21 @@ function scanAgo() {
 .price-main strong {
   font-size: 40px;
   line-height: 1;
-  color: #d1542a;
+  color: var(--yshf-accent);
   font-variant-numeric: tabular-nums;
 }
 
 .price-main span {
   font-size: 13px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .price-main i {
   font-style: normal;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #eef6e6;
-  color: #4f7a30;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
   font-size: 12px;
 }
 
@@ -893,9 +904,9 @@ function scanAgo() {
 .price-tags span {
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--yshf-soft-bg);
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .price-hint,
@@ -905,7 +916,7 @@ function scanAgo() {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 /* 提成领取按钮：与兑换按钮同一套暖色，可领时实心、不可领时描边。 */
@@ -913,9 +924,9 @@ function scanAgo() {
   flex: none;
   padding: 6px 16px;
   border-radius: 999px;
-  border: 1px solid #e0a86a;
-  background: #fff;
-  color: #b8622a;
+  border: 1px solid color-mix(in srgb, var(--ui-warning) 55%, transparent);
+  background: var(--ui-surface-solid);
+  color: var(--ui-warning);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -929,9 +940,9 @@ function scanAgo() {
 
 .commission-claim:disabled {
   cursor: not-allowed;
-  color: #b3a293;
-  border-color: #e6d8c8;
-  background: #faf5ef;
+  color: var(--ui-subtle);
+  border-color: var(--ui-border);
+  background: var(--ui-bg-soft);
 }
 
 .record-head {
@@ -940,12 +951,12 @@ function scanAgo() {
   gap: 8px;
   margin: 14px 0 8px;
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .record-head span {
   font-weight: 600;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
 }
 
 .record-head em {
@@ -957,9 +968,9 @@ function scanAgo() {
   margin-left: auto;
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid #e6d8c8;
-  background: #fff;
-  color: #8a7a68;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-solid);
+  color: var(--ui-muted);
   font-size: 11px;
   cursor: pointer;
 }
@@ -986,8 +997,8 @@ function scanAgo() {
   gap: 10px;
   padding: 8px 10px;
   border-radius: 12px;
-  background: #fdf7ef;
-  border: 1px solid #f3e6d5;
+  background: var(--yshf-card-bg);
+  border: 1px solid var(--ui-border);
 }
 
 .record-list img {
@@ -996,7 +1007,7 @@ function scanAgo() {
   border-radius: 50%;
   flex: none;
   object-fit: cover;
-  background: #efe2d2;
+  background: var(--ui-bg-soft);
 }
 
 .record-main {
@@ -1008,7 +1019,7 @@ function scanAgo() {
 
 .record-main strong {
   font-size: 13px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1016,7 +1027,7 @@ function scanAgo() {
 
 .record-main span {
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .record-side {
@@ -1030,25 +1041,25 @@ function scanAgo() {
 
 .record-side b {
   font-size: 14px;
-  color: #d1542a;
+  color: var(--yshf-accent);
   font-variant-numeric: tabular-nums;
 }
 
 .record-side em {
   font-style: normal;
   font-size: 11px;
-  color: #a89786;
+  color: var(--ui-subtle);
 }
 
 .record-empty {
   margin: 10px 0 0;
   padding: 16px;
   border-radius: 12px;
-  background: #fdf7ef;
-  border: 1px dashed #efdfcc;
+  background: var(--yshf-card-bg);
+  border: 1px dashed var(--ui-border);
   font-size: 12px;
   line-height: 1.6;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
   text-align: center;
 }
 
@@ -1060,24 +1071,24 @@ function scanAgo() {
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .quota-head em {
   font-style: normal;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   font-variant-numeric: tabular-nums;
 }
 
 .quota-head em.soft {
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .quota-bar {
   height: 8px;
   margin: 10px 0 8px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--yshf-soft-bg);
   overflow: hidden;
 }
 
@@ -1103,29 +1114,29 @@ function scanAgo() {
 
 .section-heading span {
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .section-heading strong {
   margin-left: 8px;
   font-size: 14px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
 }
 
 .section-heading strong.muted {
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .section-heading .soft,
 .soft {
   font-style: normal;
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .daily-note {
   margin: 6px 0 0;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -1158,9 +1169,9 @@ function scanAgo() {
 }
 
 .yshf-button.ghost {
-  background: #fff6e6;
-  border-color: #f0c98a;
-  color: #a8661f;
+  background: var(--yshf-chip-bg);
+  border-color: color-mix(in srgb, var(--ui-warning) 45%, transparent);
+  color: var(--ui-warning);
 }
 
 .yshf-button.compact {
@@ -1177,17 +1188,17 @@ function scanAgo() {
 
 .sell-panel .sell-row {
   padding: 6px 0;
-  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+  border-bottom: 1px dashed var(--ui-border);
 }
 
 .sell-row strong {
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .sell-row.total strong {
-  color: #d1542a;
+  color: var(--yshf-accent);
   font-size: 16px;
 }
 
@@ -1197,24 +1208,24 @@ function scanAgo() {
   gap: 8px;
   margin: 10px 0;
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .sell-input input {
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
-  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.12));
+  border: 1px solid var(--ui-border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--ui-surface-solid);
   font-size: 13px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
 }
 
 .sell-warning {
   margin: 6px 0 0;
   font-size: 11px;
-  color: #c26a3a;
+  color: var(--yshf-accent-soft);
 }
 
 /* 手填 GID 的行情回执：默认弱提示，明确不能卖（can_sell=false）时才转成告警色。 */
@@ -1222,18 +1233,18 @@ function scanAgo() {
   margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .sell-hint.warning {
-  color: #c26a3a;
+  color: var(--yshf-accent-soft);
 }
 
 .link {
   border: none;
   background: none;
   padding: 0;
-  color: #a8661f;
+  color: var(--ui-warning);
   font-size: 11px;
   cursor: pointer;
   text-decoration: underline;
@@ -1247,9 +1258,9 @@ function scanAgo() {
 
 .catalog-card {
   padding: 10px 8px;
-  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--ui-border);
   border-radius: 12px;
-  background: #fffdf8;
+  background: var(--yshf-card-bg);
   text-align: center;
 }
 
@@ -1267,13 +1278,13 @@ function scanAgo() {
 
 .catalog-placeholder {
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .catalog-name {
   margin: 6px 0 2px;
   font-size: 12px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1282,14 +1293,14 @@ function scanAgo() {
 .catalog-limit {
   margin: 0;
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .catalog-price {
   margin: 4px 0 0;
   font-size: 12px;
   font-weight: 600;
-  color: #d1542a;
+  color: var(--yshf-accent);
 }
 
 .catalog-stepper {
@@ -1298,7 +1309,7 @@ function scanAgo() {
   justify-content: center;
   gap: 0;
   margin-top: 6px;
-  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--ui-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -1307,8 +1318,8 @@ function scanAgo() {
   width: 30px;
   padding: 3px 0;
   border: 0;
-  background: rgba(0, 0, 0, 0.03);
-  color: #8a7a68;
+  background: var(--yshf-soft-bg);
+  color: var(--ui-muted);
   font-size: 14px;
   line-height: 1.2;
   cursor: pointer;
@@ -1322,7 +1333,7 @@ function scanAgo() {
 .catalog-stepper span {
   flex: 1;
   padding: 3px 0;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -1330,17 +1341,17 @@ function scanAgo() {
 .catalog-cost {
   margin: 4px 0 0;
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .catalog-buy {
   margin-top: 6px;
   width: 100%;
   padding: 5px 0;
-  border: 1px solid #f0c98a;
+  border: 1px solid color-mix(in srgb, var(--ui-warning) 45%, transparent);
   border-radius: 999px;
-  background: #fff6e6;
-  color: #a8661f;
+  background: var(--yshf-chip-bg);
+  color: var(--ui-warning);
   font-size: 12px;
   cursor: pointer;
 }
@@ -1360,7 +1371,7 @@ function scanAgo() {
 .catalog-empty {
   margin: 0;
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .compare-list {
@@ -1375,15 +1386,15 @@ function scanAgo() {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--ui-border);
   border-radius: 12px;
-  background: #fffdf8;
+  background: var(--yshf-card-bg);
 }
 
 .rank {
   width: 20px;
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
   text-align: center;
 }
 
@@ -1396,7 +1407,7 @@ function scanAgo() {
 
 .compare-row .who strong {
   font-size: 13px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1406,20 +1417,20 @@ function scanAgo() {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #eef6e6;
-  color: #4f7a30;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
   font-size: 10px;
   font-style: normal;
 }
 
 .compare-row .who em.panel-source {
-  background: #e9f2ff;
-  color: #3568a8;
+  background: var(--ui-blue-soft);
+  color: var(--ui-blue);
 }
 
 .compare-row .who span {
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .compare-row .quote {
@@ -1431,28 +1442,28 @@ function scanAgo() {
 
 .compare-row .quote strong {
   font-size: 16px;
-  color: #d1542a;
+  color: var(--yshf-accent);
   font-variant-numeric: tabular-nums;
 }
 
 .compare-row .quote span {
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .compare-row .quote span.closed {
   padding: 0 5px;
   border-radius: 999px;
   font-weight: 600;
-  color: #b23c2e;
-  background: #fdecea;
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
 }
 
 .rules-line {
   margin: 0 0 6px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 /* 兑换数量弹窗 */
@@ -1472,9 +1483,9 @@ function scanAgo() {
   width: min(420px, 100%);
   padding: 18px 20px 16px;
   border-radius: 18px;
-  background: linear-gradient(180deg, #fffaf2, #fff);
-  box-shadow: 0 24px 60px rgba(60, 38, 16, 0.28);
-  border: 1px solid #f3e3cf;
+  background: color-mix(in srgb, var(--ui-warning) 4%, var(--ui-surface-solid));
+  box-shadow: var(--ui-shadow-lg);
+  border: 1px solid var(--ui-border);
 }
 
 .exchange-head {
@@ -1497,7 +1508,7 @@ function scanAgo() {
   flex: none;
   border-radius: 12px;
   object-fit: contain;
-  background: #fdf1e2;
+  background: var(--ui-bg-soft);
 }
 
 .exchange-title div {
@@ -1509,12 +1520,12 @@ function scanAgo() {
 
 .exchange-title strong {
   font-size: 15px;
-  color: var(--ui-ink, #3a2d20);
+  color: var(--ui-ink);
 }
 
 .exchange-title span {
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .exchange-close {
@@ -1523,8 +1534,8 @@ function scanAgo() {
   height: 26px;
   border: none;
   border-radius: 50%;
-  background: #f6ead9;
-  color: #8a6a45;
+  background: var(--ui-bg-soft);
+  color: var(--ui-muted);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
@@ -1536,7 +1547,7 @@ function scanAgo() {
 
 .exchange-qty > label {
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .exchange-stepper {
@@ -1551,16 +1562,16 @@ function scanAgo() {
   height: 34px;
   flex: none;
   border-radius: 10px;
-  border: 1px solid #eeddc8;
-  background: #fff;
-  color: #b8622a;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-solid);
+  color: var(--ui-warning);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .exchange-stepper button:disabled {
-  color: #cbb9a5;
+  color: var(--ui-subtle);
   cursor: not-allowed;
 }
 
@@ -1570,9 +1581,9 @@ function scanAgo() {
   height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  border: 1px solid #eeddc8;
-  background: #fffdfa;
-  color: var(--ui-ink, #3a2d20);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-solid);
+  color: var(--ui-ink);
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1580,7 +1591,7 @@ function scanAgo() {
 }
 
 .exchange-stepper input:focus {
-  outline: 2px solid #f6c07a;
+  outline: 2px solid var(--ui-warning);
   outline-offset: 1px;
 }
 
@@ -1594,7 +1605,7 @@ function scanAgo() {
 .exchange-hint {
   margin: 8px 0 0;
   font-size: 11px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .exchange-summary {
@@ -1604,18 +1615,18 @@ function scanAgo() {
   margin-top: 14px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #fdf3e6;
-  border: 1px solid #f4e4cf;
+  background: var(--yshf-chip-bg);
+  border: 1px solid var(--ui-border);
 }
 
 .exchange-summary span {
   font-size: 12px;
-  color: var(--ui-ink-soft, #8a7a68);
+  color: var(--ui-muted);
 }
 
 .exchange-summary strong {
   font-size: 18px;
-  color: #d1542a;
+  color: var(--yshf-accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1623,7 +1634,7 @@ function scanAgo() {
   margin-left: auto;
   font-style: normal;
   font-size: 11px;
-  color: #9d8a76;
+  color: var(--ui-subtle);
 }
 
 .exchange-actions {
@@ -1642,9 +1653,9 @@ function scanAgo() {
 }
 
 .exchange-actions .ghost {
-  border: 1px solid #eadcc9;
-  background: #fff;
-  color: #8a7a68;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-solid);
+  color: var(--ui-muted);
 }
 
 .exchange-actions .primary {
@@ -1654,9 +1665,9 @@ function scanAgo() {
 }
 
 .exchange-actions .primary:disabled {
-  border-color: #ecd9c2;
-  background: #f6ece0;
-  color: #b3a293;
+  border-color: var(--ui-border);
+  background: var(--ui-bg-soft);
+  color: var(--ui-subtle);
   cursor: not-allowed;
 }
 </style>

@@ -32,10 +32,10 @@ defineProps<{ theme?: 'night' | 'day' }>()
   overflow: hidden;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-card);
-  background: rgba(255, 255, 255, 0.62);
+  background: color-mix(in srgb, var(--ui-surface-solid) 62%, transparent);
   box-shadow:
     var(--ui-shadow-sm),
-    inset 0 1px rgba(255, 255, 255, 0.92);
+    inset 0 1px var(--glass-highlight);
 }
 @media (max-width: 1023px) {
   .activity-shell {
