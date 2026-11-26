@@ -98,8 +98,8 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         yishu_scan_friend_limit: 20,
         yishu_scan_interval_minutes: 30,
         yishu_sell_min_count: 1,
-        // 空串 = 不限时段，和改造前的行为一致；填了 "HH:MM" 就等过了这个点才卖。
-        yishu_sell_after_time: '',
+        // 默认 14:00 开始卖：这个点好友大多已分享、暴击加成齐全，报价更高；空串 = 不限时段（用户可显式选）。
+        yishu_sell_after_time: '14:00',
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,

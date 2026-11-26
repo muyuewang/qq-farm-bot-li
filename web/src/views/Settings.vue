@@ -1083,7 +1083,7 @@ const localAutomationSettings = ref({
     solar_calendar_claim_events: true,
     solar_calendar_claim_seasons: true,
     solar_calendar_answer_quiz: true,
-    yishu_sell_after_time: '',
+    yishu_sell_after_time: '14:00',
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -1144,7 +1144,7 @@ function syncLocalAutomationSettings() {
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
-        yishu_sell_after_time: '',
+        yishu_sell_after_time: '14:00',
       }
     }
     else {
@@ -1181,7 +1181,7 @@ function syncLocalAutomationSettings() {
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
-        yishu_sell_after_time: '',
+        yishu_sell_after_time: '14:00',
       }
       localAutomationSettings.value.automation = {
         ...defaults,
