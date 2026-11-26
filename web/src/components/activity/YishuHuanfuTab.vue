@@ -3,6 +3,7 @@ import type { YishuHuanfuActivityDto, YishuHuanfuCatalogEntryDto, YishuHuanfuFri
 import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
+  accountId: string
   activity: YishuHuanfuActivityDto | null
   pendingSeed: boolean
   pendingSell: boolean
@@ -169,7 +170,9 @@ const ranking = computed(() => {
 })
 
 // 账号或活动切换时重置出售目标，避免把蜜薯卖到上一个账号的好友铺子。
-watch(() => [activity.value?.activityId, activity.value?.shop.gid], () => {
+// 只监听账号 ID 和活动 ID：shop.gid 会随每次快照刷新波动，之前把它当切换信号，
+// 导致选中的好友铺子被刷新瞬间清空、按钮悄悄变回「卖给自己」。
+watch(() => [props.accountId, activity.value?.activityId], () => {
   targetGid.value = ''
   sellCountText.value = ''
 })
