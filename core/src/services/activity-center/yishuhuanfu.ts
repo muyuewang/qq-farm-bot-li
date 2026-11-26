@@ -178,8 +178,11 @@ function createYishuHuanfuActivityService(deps: any) {
         const result: Array<{ gid: string; accountName: string }> = [];
         const seen = new Set<string>();
         try {
-            const store = require('../models/store');
-            const { readKnownFriendGidsCache } = require('../models/store/gid-cache');
+            // 本文件在 services/activity-center/ 下，store 在 models/ 下，要退两级；
+            // 写成 '../models/store' 会指向不存在的 services/models/store，require 抛错被
+            // 下面的 catch 吞掉，面板好友池就永远为空（只剩本账号好友）。
+            const store = require('../../models/store');
+            const { readKnownFriendGidsCache } = require('../../models/store/gid-cache');
             const listed = store?.getAccounts?.();
             const accounts = Array.isArray(listed?.accounts) ? listed.accounts : [];
             for (const account of accounts) {
