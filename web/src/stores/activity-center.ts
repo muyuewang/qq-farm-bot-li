@@ -2222,10 +2222,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       loadedAccountId.value = ''
       serverClockOffset.value = 0
       clearWeatherFriends()
-      // 好友比价与收购记录都不在快照里，切号时必须一起清掉：
-      // 否则新账号进「好友比价」会看到上一个账号的好友铺子，还因为列表非空而跳过重新扫描。
-      clearYishuHuanfuFriendShops()
-      clearYishuHuanfuRecords()
+      // 好友比价池是后端汇总的面板全账号好友、报价与当前账号无关；收购记录则由
+      // loadYishuHuanfuRecords() 内部的 accountId 守卫在换号时清理并重拉，这里无需清空。
     }
 
     try {
