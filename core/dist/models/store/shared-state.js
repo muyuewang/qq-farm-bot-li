@@ -88,7 +88,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         yishu_auto_sell: true,
         yishu_claim_commission: true,
         yishu_sell_fallback_own: true,
-        yishu_scan_friend_limit: 20,
+        yishu_scan_friend_limit: 50,
         // 默认两小时比价一次：cmd 92 逐个查铺子比较重，间隔拉长可以少打网关。
         yishu_scan_interval_minutes: 120,
         yishu_sell_min_count: 1,
@@ -400,7 +400,7 @@ function normalizeAutomationValue(key, value, current) {
     }
     // 以薯换福的数值项：默认值是数字，这里必须显式夹取，否则会被下面的 `!!value` 折成 true。
     if (key === 'yishu_scan_friend_limit') {
-        return Math.max(1, Math.min(200, Number.parseInt(String(value), 10) || 20));
+        return Math.max(1, Math.min(200, Number.parseInt(String(value), 10) || 50));
     }
     if (key === 'yishu_scan_interval_minutes') {
         return Math.max(5, Math.min(720, Number.parseInt(String(value), 10) || 120));

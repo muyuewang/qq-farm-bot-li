@@ -37,7 +37,10 @@ const YISHU_SKIP_SHOP_CODES = new Set([
     // can_sell = false：这家铺子当前不收蜜薯，换下一家，不算整轮失败。
     'YSHF_SHOP_CLOSED',
 ]);
-const DEFAULT_FRIEND_LIMIT = 60;
+// 自动卖薯的比价下限：候选池通常几十家，只扫前 20 家会把窗口外的最优价永远挡在外面，
+// 只能反复卖次高价。这里保证至少扫 50 家，用户配得更大就按用户的来（上限 200）。
+const AUTO_SCAN_MIN_LIMIT = 50;
+const DEFAULT_FRIEND_LIMIT = 50;
 // 默认两小时比价一次，和账号配置默认值一致；这里兜底用于配置缺字段的情况。
 const DEFAULT_SCAN_INTERVAL_MINUTES = 120;
 const DEFAULT_SELL_MIN_COUNT = 1;
@@ -135,6 +138,23 @@ function createYishuAutomation(deps) {
         const result = await scanFriends({ limit, force: true });
         const shops = Array.isArray(result?.shops) ? result.shops : [];
         scanCache = { at: now, limit, shops };
+        // 打印候选池与排名前几，线上能直接看出「为什么选了这家」，
+        // 而不是只看到最终卖了谁。
+        const top = shops.slice(0, 5).map((shop) => `${shop.own ? '自己' : (shop.name || shop.gid)}:${shop.totalPrice}`).join(' > ');
+        const pool = Number(result?.candidateCount) || shops.length;
+        const scanned = Number(result?.scanned) || shops.length;
+        const pending = Number(result?.pendingCount) || 0;
+        log('活动', `以薯换福比价：候选池 ${pool} 家，本轮扫描 ${scanned} 家${pending ? `（还有 ${pending} 家待轮换）` : ''}，`
+            + `排名 ${top || '无'}`, {
+            module: 'activity',
+            event: '以薯换福自动',
+            result: 'ok',
+            action: 'scan',
+            candidateCount: pool,
+            scannedCount: scanned,
+            pendingCount: pending,
+            limit,
+        });
         return shops;
     }
     async function sellSweetPotatoes(snapshot, options) {
@@ -330,7 +350,9 @@ function createYishuAutomation(deps) {
         }
         else if (sellEnabled) {
             await sellSweetPotatoes(snapshot, {
-                friendLimit: toInt(automation.yishu_scan_friend_limit, DEFAULT_FRIEND_LIMIT, 1, 200),
+                // 至少扫 50 家，避免旧配置（20）把候选池后半段的最优价截在窗口外；
+                // 用户调大则按用户的值，上限仍是 200。
+                friendLimit: Math.max(toInt(automation.yishu_scan_friend_limit, DEFAULT_FRIEND_LIMIT, 1, 200), AUTO_SCAN_MIN_LIMIT),
                 scanIntervalMinutes: toInt(automation.yishu_scan_interval_minutes, DEFAULT_SCAN_INTERVAL_MINUTES, 5, 720),
                 sellMinCount: toInt(automation.yishu_sell_min_count, DEFAULT_SELL_MIN_COUNT, 1, 10000),
                 fallbackOwn: automation.yishu_sell_fallback_own !== false,

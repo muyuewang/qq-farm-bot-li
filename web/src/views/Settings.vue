@@ -1083,6 +1083,7 @@ const localAutomationSettings = ref({
     solar_calendar_claim_events: true,
     solar_calendar_claim_seasons: true,
     solar_calendar_answer_quiz: true,
+    yishu_scan_friend_limit: 50,
     yishu_scan_interval_minutes: 120,
     yishu_sell_after_time: '14:00',
   },
@@ -1145,6 +1146,7 @@ function syncLocalAutomationSettings() {
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
+        yishu_scan_friend_limit: 50,
         yishu_scan_interval_minutes: 120,
         yishu_sell_after_time: '14:00',
       }
@@ -1183,6 +1185,7 @@ function syncLocalAutomationSettings() {
         solar_calendar_claim_events: true,
         solar_calendar_claim_seasons: true,
         solar_calendar_answer_quiz: true,
+        yishu_scan_friend_limit: 50,
         yishu_scan_interval_minutes: 120,
         yishu_sell_after_time: '14:00',
       }
