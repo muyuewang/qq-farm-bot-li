@@ -89,7 +89,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
         yishu_claim_commission: true,
         yishu_sell_fallback_own: true,
         yishu_scan_friend_limit: 20,
-        yishu_scan_interval_minutes: 30,
+        // 默认两小时比价一次：cmd 92 逐个查铺子比较重，间隔拉长可以少打网关。
+        yishu_scan_interval_minutes: 120,
         yishu_sell_min_count: 1,
         // 默认 14:00 开始卖：这个点好友大多已分享、暴击加成齐全，报价更高；空串 = 不限时段（用户可显式选）。
         yishu_sell_after_time: '14:00',
@@ -402,7 +403,7 @@ function normalizeAutomationValue(key, value, current) {
         return Math.max(1, Math.min(200, Number.parseInt(String(value), 10) || 20));
     }
     if (key === 'yishu_scan_interval_minutes') {
-        return Math.max(5, Math.min(720, Number.parseInt(String(value), 10) || 30));
+        return Math.max(5, Math.min(720, Number.parseInt(String(value), 10) || 120));
     }
     if (key === 'yishu_sell_min_count') {
         return Math.max(1, Math.min(10000, Number.parseInt(String(value), 10) || 1));
