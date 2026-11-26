@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { YishuHuanfuActivityDto, YishuHuanfuCatalogEntryDto, YishuHuanfuFriendShopDto, YishuHuanfuRecordDto } from '@/stores/activity-center'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
-  accountId: string
   activity: YishuHuanfuActivityDto | null
   pendingSeed: boolean
   pendingSell: boolean
@@ -169,13 +168,10 @@ const ranking = computed(() => {
   return `${best.own ? '自己的' : (best.name || best.gid)} 铺子高 ${bestPrice - ownPrice} 一枚`
 })
 
-// 账号或活动切换时重置出售目标，避免把蜜薯卖到上一个账号的好友铺子。
-// 只监听账号 ID 和活动 ID：shop.gid 会随每次快照刷新波动，之前把它当切换信号，
-// 导致选中的好友铺子被刷新瞬间清空、按钮悄悄变回「卖给自己」。
-watch(() => [props.accountId, activity.value?.activityId], () => {
-  targetGid.value = ''
-  sellCountText.value = ''
-})
+// 出售目标不在这里监听 activity/账号做自动重置：
+// 账号或活动切换时父级 ActivityCenter.vue 会把 selectedActivity 置空、整页 v-if 卸载，
+// 组件重建后 targetGid 自然归零。这里再 watch activityId 只会被轮询快照刷新误触发，
+// 把用户刚选好的好友铺子清空、按钮悄悄变回「卖给自己」。
 
 // 首次进入比价页时自动扫一轮，之后靠手动刷新，避免每次切页都打满请求。
 function openCompare() {

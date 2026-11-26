@@ -236,7 +236,6 @@ async function onClaimCommission() {
         </button>
       </div>
       <YishuHuanfuTab
-        :account-id="accountId()"
         :activity="yishuHuanfu"
         :pending-seed="pendingActions.claimYishuHuanfuSeed"
         :pending-sell="pendingActions.sellYishuHuanfuSweetPotato"
