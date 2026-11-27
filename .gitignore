@@ -62,3 +62,12 @@ protocol-captures/
 /releases/
 /packages/*/dist/
 .turbo/
+
+# 作物阶段贴图约 31MB，按需本地放置；manifest.json 与来源清单仍随仓库分发
+/core/src/gameConfig/plant_images/*/*.png
+/core/src/gameConfig/plant_images/*/*/*.png
+
+# 本地素材包与工作区数据（体积大，不入库）
+/tools/img/
+/tools/json/
+/.workbuddy/

@@ -373,6 +373,7 @@ function loadConfigs() {
         if (fs.existsSync(manifestPath)) {
             const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
             plantPhaseImageMap.clear();
+            let missingPhaseImages = 0;
             for (const [key, phases] of Object.entries(manifest || {})) {
                 const match = /^Crop_(\d+)$/.exec(key);
                 // 条目必须是 { 阶段: URL } 对象；数组会被展开成裸数字，直接跳过。
@@ -386,12 +387,19 @@ function loadConfigs() {
                     const phase = Number(phaseKey);
                     if (!Number.isInteger(phase) || phase <= 0 || !String(url || '').trim())
                         continue;
+                    // 阶段贴图约 31MB，默认不随仓库分发。本地缺图时不要下发 URL，
+                    // 否则前端拿到 404 破图；跳过该阶段后由前端回落到种子图。
+                    if (!fs.existsSync(path.join(configDir, 'plant_images', key, `${phase}.png`))) {
+                        missingPhaseImages += 1;
+                        continue;
+                    }
                     phaseMap.set(phase, String(url).trim());
                 }
                 if (phaseMap.size > 0)
                     plantPhaseImageMap.set(cropKey, phaseMap);
             }
-            console.warn(`[配置] 已加载作物阶段贴图 (${plantPhaseImageMap.size} 种)`);
+            const missingNote = missingPhaseImages > 0 ? `，${missingPhaseImages} 张贴图未随仓库分发已跳过` : '';
+            console.warn(`[配置] 已加载作物阶段贴图 (${plantPhaseImageMap.size} 种${missingNote})`);
         }
     }
     catch (e) {

@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const path = require('node:path');
 
 process.env.FARM_DATA_DIR = path.resolve(__dirname, '..', 'data');
@@ -53,10 +54,20 @@ test('common crops expose the mutation pool with public probabilities', () => {
     assert.equal(wheat.mutationEffects.some(effect => effect.tag === '活动'), false);
 });
 
-test('plant phase sprites resolve for normal and multi-digit crop ids', () => {
-    assert.match(gameConfig.getPlantPhaseImage(1020084, 1), /^\/game-config\/plant_images\/Crop_\d+\/1\.png$/);
-    assert.match(gameConfig.getPlantPhaseImage(1020084, 6), /\/6\.png$/);
-    // 缺失精确阶段时回退到不大于目标的最近贴图，而不是空串。
-    assert.ok(gameConfig.getPlantPhaseImage(1029004, 3));
+test('plant phase sprites resolve only for locally bundled images', () => {
+    const imageDir = path.resolve(__dirname, '..', 'src', 'gameConfig', 'plant_images');
+    const seedPhase = gameConfig.getPlantPhaseImage(1020084, 1);
+    if (seedPhase) {
+        assert.match(seedPhase, /^\/game-config\/plant_images\/Crop_\d+\/1\.png$/);
+        // 下发的 URL 必须能在本地找到文件，否则前端会 404 破图。
+        assert.ok(fs.existsSync(path.join(imageDir, seedPhase.replace('/game-config/plant_images/', ''))));
+        assert.match(gameConfig.getPlantPhaseImage(1020084, 6), /\/6\.png$/);
+        // 缺失精确阶段时回退到不大于目标的最近贴图，而不是空串。
+        assert.ok(gameConfig.getPlantPhaseImage(1029004, 3));
+    } else {
+        // 贴图未随仓库分发时（默认状态），必须整体降级为空串交给前端回落种子图。
+        assert.equal(gameConfig.getPlantPhaseImage(1020084, 6), '');
+        assert.equal(gameConfig.getPlantPhaseImage(1029004, 3), '');
+    }
     assert.equal(gameConfig.getPlantPhaseImage(0, 1), '');
 });
