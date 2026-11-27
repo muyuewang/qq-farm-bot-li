@@ -11,6 +11,44 @@ const giantProducts = new Map<number, number>();
 for (const [animalId, mutation] of mutationMap) {
     giantProducts.set(animalMap.get(animalId).product_item.id, mutation.giant_product_item);
 }
+// 图鉴条目按产物 ID 排列，这里反查动物配置，给图鉴补成长节奏与巨大体重区间。
+const animalByProduct = new Map<number, any>();
+for (const animal of Array.from((animalMap as any)?.values?.() ?? [])) {
+    const cfg: any = animal;
+    if (cfg && cfg.product_item) animalByProduct.set(Number(cfg.product_item.id), cfg);
+}
+
+function growthDto(cfg: any): any {
+    if (!cfg) return null;
+    return {
+        infantSec: Number(cfg.infant_sec) || 0,
+        growSec: Number(cfg.grow_sec) || 0,
+        matureSec: Number(cfg.mature_sec) || 0,
+        productRoundSec: Number(cfg.product_round_sec) || 0,
+        productDropSec: Number(cfg.product_drop_sec) || 0,
+        grassSecPerItem: Number(cfg.grass_sec_per_item) || 0,
+        maxProduceCount: Number(cfg.max_produce_count) || 0,
+        produceExp: Number(cfg.produce_exp) || 0,
+        harvestExp: Number(cfg.harvest_exp) || 0,
+    };
+}
+
+/** 巨大变异的体重档位（weight 形如 "20000,40000;40000,70000;..."，单位 g）。 */
+function giantWeightDto(animalId: number): any {
+    const mutation = mutationMap.get(animalId);
+    if (!mutation) return null;
+    const tiersList = String(mutation.weight || '').split(';').filter(Boolean).map((segment: string) => {
+        const [lo, hi] = segment.split(',').map(value => Number(value) || 0);
+        return { minG: lo, maxG: hi };
+    }).filter((tier: any) => tier.maxG > 0);
+    return {
+        baseWeightG: Number(mutation.base_weight) || 0,
+        giantScalePermille: Number(mutation.giant_scale) || 0,
+        weightTiers: tiersList,
+        giantProductId: Number(mutation.giant_product_item) || 0,
+        giantCubItemId: Number(mutation.giant_cub_item_id) || 0,
+    };
+}
 
 async function readNormalBook(): Promise<any> {
     const normal = await rpc('book', { type: 101 });
@@ -37,8 +75,11 @@ async function getBook(): Promise<any> {
             const giantId = giantProducts.get(item.id);
             const giantItem = giantId ? itemDto({ id: giantId, count: 1 }) : null;
             if (giantItem && giantItem.image === item.image) giantItem.image = '';
+            const cfg = animalByProduct.get(Number(item.id));
             return {
                 ...item, rarity: entry.rarity, layer: entry.layer, unlocked: entry.unlocked, progress: entry.progress,
+                growth: growthDto(cfg),
+                giantWeight: cfg ? giantWeightDto(Number(cfg.id)) : null,
                 giantItem,
                 giant: entry.giant ? { unlocked: entry.giant.unlocked, tier: entry.giant.tier,
                     tierName: tiers.find(row => row.tier === entry.giant.tier)?.tier_name || '',

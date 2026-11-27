@@ -338,8 +338,8 @@ function markMutantIconFailed(effect: any) {
       :class="{ 'animate-plant-grow': land.matureInSec > 0 }"
     >
       <img
-        v-if="land.seedImage"
-        :src="getSafeImageUrl(land.seedImage)"
+        v-if="land.plantImage || land.seedImage"
+        :src="getSafeImageUrl(land.plantImage || land.seedImage || '')"
         class="max-h-full max-w-full object-contain drop-shadow-sm"
         loading="lazy"
         referrerpolicy="no-referrer"

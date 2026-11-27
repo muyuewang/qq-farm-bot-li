@@ -48,6 +48,18 @@ function animalDto(animal) {
         produceCount: animal.produce_count, maxProduceCount: cfg?.max_produce_count ?? null,
         canProduce: animal.can_deliver, canHarvest: animal.can_harvest, canFeed: animal.can_feed, canRelease: animal.can_donate,
         limitedCanUsed: animal.limited_can_used,
+        // 官方配置里的成长节奏：各阶段秒数、生产周期、每份产物耗草秒数。
+        growth: cfg ? {
+            infantSec: Number(cfg.infant_sec) || 0,
+            growSec: Number(cfg.grow_sec) || 0,
+            matureSec: Number(cfg.mature_sec) || 0,
+            productRoundSec: Number(cfg.product_round_sec) || 0,
+            productDropSec: Number(cfg.product_drop_sec) || 0,
+            grassSecPerItem: Number(cfg.grass_sec_per_item) || 0,
+            maxProduceCount: Number(cfg.max_produce_count) || 0,
+            produceExp: Number(cfg.produce_exp) || 0,
+            harvestExp: Number(cfg.harvest_exp) || 0,
+        } : null,
         mutation: mutation ? { type: mutation.mutation_type, source: mutation.source, weightX10: mutation.weight_display_x10, finalWeightX10: mutation.weight_final_x10, tier: mutation.tier, canStroke: mutation.strokable } : null,
     };
 }

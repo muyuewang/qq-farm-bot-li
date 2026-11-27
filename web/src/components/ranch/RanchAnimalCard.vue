@@ -39,10 +39,43 @@ const rounds = computed(() => {
   const max = Number(props.animal?.maxProduceCount) || 0
   return max > 0 ? { done: Math.min(max, Number(props.animal.produceCount) || 0), max } : null
 })
+// 官方配置里的成长节奏，作为卡片 title 的补充信息（不占版面）。
+const growthText = computed(() => {
+  const g = props.animal?.growth
+  if (!g)
+    return ''
+  const fmt = (sec: number) => {
+    const value = Number(sec) || 0
+    if (value <= 0)
+      return ''
+    if (value >= 3600)
+      return `${(value / 3600).toFixed(value % 3600 ? 1 : 0)}h`
+    if (value >= 60)
+      return `${Math.round(value / 60)}min`
+    return `${value}s`
+  }
+  const parts: string[] = []
+  const infant = fmt(g.infantSec)
+  const grow = fmt(g.growSec)
+  const mature = fmt(g.matureSec)
+  const round = fmt(g.productRoundSec)
+  const grass = fmt(g.grassSecPerItem)
+  if (infant)
+    parts.push(`幼崽 ${infant}`)
+  if (grow)
+    parts.push(`成长 ${grow}`)
+  if (mature)
+    parts.push(`成熟 ${mature}`)
+  if (round)
+    parts.push(`每轮 ${round}`)
+  if (grass)
+    parts.push(`每份牧草 ${grass}`)
+  return parts.join(' · ')
+})
 </script>
 
 <template>
-  <article class="pen" :class="[status ? `pen--${status.kind}` : '', { 'pen--giant': giant }]" :title="animal.name">
+  <article class="pen" :class="[status ? `pen--${status.kind}` : '', { 'pen--giant': giant }]" :title="growthText ? `${animal.name} · ${growthText}` : animal.name">
     <header class="pen__top">
       <span v-if="pen" class="pen__chip">{{ pen }}</span>
       <span v-if="giant" class="pen__giant" :title="weight ? `巨大 · ${weight}` : '巨大'">巨大<template v-if="weight"> {{ weight }}</template></span>

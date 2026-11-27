@@ -245,7 +245,7 @@ const ariaLabel = computed(() => {
     <div class="plot__crop">
       <span v-if="isLocked" class="plot__placeholder i-carbon-locked" />
       <span v-else-if="isEmpty" class="plot__placeholder i-carbon-sprout" />
-      <img v-else-if="land.seedImage" :src="safeImage(land.seedImage)" alt="" loading="lazy" referrerpolicy="no-referrer">
+      <img v-else-if="land.plantImage || land.seedImage" :src="safeImage(land.plantImage || land.seedImage || '')" alt="" loading="lazy" referrerpolicy="no-referrer">
       <span v-else class="plot__placeholder i-carbon-sprout" />
     </div>
 

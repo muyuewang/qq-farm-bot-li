@@ -1,0 +1,502 @@
+[
+  {
+    "group_id": 1,
+    "type": "喜鹊事件",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1001,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2001,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2001,
+    "type": "藏品变异",
+    "pool_config_id": 10001
+  },
+  {
+    "group_id": 3001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3001,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3001,
+    "type": "藏品变异",
+    "pool_config_id": 10002
+  },
+  {
+    "group_id": 4001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4001,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4001,
+    "type": "藏品变异",
+    "pool_config_id": 10003
+  },
+  {
+    "group_id": 5001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5001,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5001,
+    "type": "藏品变异",
+    "pool_config_id": 10004
+  },
+  {
+    "group_id": 6001,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 6001,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "绵绵变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1002,
+    "type": "藏品变异",
+    "pool_config_id": 10005
+  },
+  {
+    "group_id": 1003,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1003,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1003,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1003,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1003,
+    "type": "藏品变异",
+    "pool_config_id": 10006
+  },
+  {
+    "group_id": 1004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 1004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  },
+  {
+    "group_id": 2002,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2002,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2002,
+    "type": "活动限时",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2002,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2002,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2002,
+    "type": "藏品变异",
+    "pool_config_id": 10005
+  },
+  {
+    "group_id": 2003,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2003,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2003,
+    "type": "活动限时",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2003,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2003,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2003,
+    "type": "藏品变异",
+    "pool_config_id": 10006
+  },
+  {
+    "group_id": 2004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2004,
+    "type": "装饰变异",
+    "pool_config_id": 1001
+  },
+  {
+    "group_id": 2004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 2004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  },
+  {
+    "group_id": 3002,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3002,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3002,
+    "type": "活动限时",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3002,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3002,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3002,
+    "type": "藏品变异",
+    "pool_config_id": 10005
+  },
+  {
+    "group_id": 3003,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3003,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3003,
+    "type": "活动限时",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3003,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3003,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3003,
+    "type": "藏品变异",
+    "pool_config_id": 10006
+  },
+  {
+    "group_id": 3004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3004,
+    "type": "装饰变异",
+    "pool_config_id": 1002
+  },
+  {
+    "group_id": 3004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 3004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  },
+  {
+    "group_id": 4004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4004,
+    "type": "装饰变异",
+    "pool_config_id": 1003
+  },
+  {
+    "group_id": 4004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  },
+  {
+    "group_id": 4002,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4002,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4002,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4002,
+    "type": "藏品变异",
+    "pool_config_id": 10005
+  },
+  {
+    "group_id": 4003,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4003,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4003,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 4003,
+    "type": "藏品变异",
+    "pool_config_id": 10006
+  },
+  {
+    "group_id": 5004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5004,
+    "type": "装饰变异",
+    "pool_config_id": 1004
+  },
+  {
+    "group_id": 5004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 5004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  },
+  {
+    "group_id": 6004,
+    "type": "自然变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 6004,
+    "type": "黄金变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 6004,
+    "type": "装饰变异",
+    "pool_config_id": 1005
+  },
+  {
+    "group_id": 6004,
+    "type": "天气变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 6004,
+    "type": "狗狗技能变异",
+    "pool_config_id": null
+  },
+  {
+    "group_id": 6004,
+    "type": "藏品变异",
+    "pool_config_id": 10007
+  }
+]

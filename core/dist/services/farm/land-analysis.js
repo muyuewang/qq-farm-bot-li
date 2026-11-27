@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * 土地分析 - 纯分析函数 + 阶段/生命周期
  */
 const { PlantPhase, PHASE_NAMES } = require('../../config/config');
-const { getPlantName, getPlantExp, getPlantById, getSeedImageBySeedId, getPlantGrowTime, getPlantGrowPhases, getItemById, getItemImageById, getMutantEffectsByIds, getMutantDisplayPlantId, } = require('../../config/gameConfig');
+const { getPlantName, getPlantExp, getPlantById, getSeedImageBySeedId, getPlantPhaseImage, getPlantGrowTime, getPlantGrowPhases, getItemById, getItemImageById, getMutantEffectsByIds, getMutantDisplayPlantId, } = require('../../config/gameConfig');
 const { toNum, toTimeSec, getServerTimeSec, log, logWarn } = require('../../utils/utils');
 const MATURE_PHASE_RECORD_ID = 19;
 const { buildLandUpgradeDetail } = require('./land-upgrade');
@@ -363,6 +363,9 @@ function buildLandDetail(land, options = {}) {
         plantName,
         seedId,
         seedImage: seedId > 0 ? getSeedImageBySeedId(seedId) : '',
+        // 作物当前阶段的官方贴图（plant_images/Crop_*）：变异形态查不到时回退到原作物。
+        plantImage: getPlantPhaseImage(displayPlantId, toNum(currentPhase.image_phase) || phaseVal)
+            || getPlantPhaseImage(plantId, toNum(currentPhase.image_phase) || phaseVal),
         phaseName: currentPhase.phaseName || PHASE_NAMES[phaseVal] || '',
         currentSeason,
         totalSeason,

@@ -474,6 +474,9 @@ function itemDescription(item: any): string {
                     经验
                   </th>
                   <th class="px-4 py-3 font-medium">
+                    可变异
+                  </th>
+                  <th class="px-4 py-3 font-medium">
                     价格
                   </th>
                   <th class="sticky right-0 z-10 bg-gray-50 px-4 py-3 text-center shadow-[-1px_0_0_0_rgba(0,0,0,0.05)] font-medium dark:bg-gray-800">
@@ -523,6 +526,19 @@ function itemDescription(item: any): string {
                   </td>
                   <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
                     {{ item.exp || '-' }}
+                  </td>
+                  <td class="px-4 py-2">
+                    <div v-if="item.mutationEffects?.length" class="flex max-w-[16rem] flex-wrap gap-1">
+                      <span
+                        v-for="effect in item.mutationEffects"
+                        :key="effect.id"
+                        class="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                        :title="`${effect.description || effect.name}${effect.probabilityPercent != null ? ` · ${effect.probabilityPercent}%` : ''}`"
+                      >
+                        {{ effect.name }}<template v-if="effect.probabilityPercent != null"> {{ effect.probabilityPercent }}%</template>
+                      </span>
+                    </div>
+                    <span v-else class="text-gray-400 dark:text-gray-500">-</span>
                   </td>
                   <td class="px-4 py-2 text-amber-600 font-medium dark:text-amber-400">
                     {{ formatPrice(item.price, item.priceId) }}

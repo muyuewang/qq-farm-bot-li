@@ -25,7 +25,10 @@ interface PlantFruit {
 interface PlantItem {
     id: number;
     name: string;
+    asset_name?: string;
     mutant_effect_plant: string | null;
+    /** 官方变异分组，形如 "2001;1"（组 ID 用分号分隔，尾段是层级）。 */
+    mutant_group_ids?: string | null;
     fruit: PlantFruit;
     seed_id: number | null;
     land_level_need: number;
@@ -78,6 +81,16 @@ interface ItemInfo {
     [key: string]: any;
 }
 
+interface SeedMutationEffect {
+    id: number;
+    name: string;
+    icon: string;
+    description: string;
+    tag: string;
+    /** 公开概率（%）。活动/装扮/藏品变异官方未公开，返回 null。 */
+    probabilityPercent: number | null;
+}
+
 interface SeedInfo {
     seedId: number;
     name: string;
@@ -90,6 +103,12 @@ interface SeedInfo {
     growTime: number;
     size: number;
     harvestCount: number;
+    /** 官方 Plant.mutant_group_ids（如 "2001;1" → [2001, 1]）。 */
+    mutationGroupIds: number[];
+    /** 该变异组允许的变异来源：自然变异/天气变异/狗狗技能变异/藏品变异等。 */
+    mutationSources: string[];
+    /** 该作物可触发的变异效果（常规变异池 + 概率）。 */
+    mutationEffects: SeedMutationEffect[];
 }
 
 interface LandConfigItem {
@@ -162,6 +181,31 @@ const illustratedItemMap = new Map<number, IllustratedConfigItem>();
 let buffConfig: BuffConfigItem[] | null = null;
 const buffConfigMap = new Map<number, BuffConfigItem>();
 
+// ============ 无效植物（官方配置里留着、实际不可获得的白萝卜 29999 等） ============
+// 只拦候选池/物品/背包入口；plantMap 保留完整资料，否则地里已种下的作物会被误判成空地。
+let invalidPlantIds = new Set<number>();
+let invalidSeedIds = new Set<number>();
+
+// ============ 变异来源与概率（MutantGroupSource / MutantPublicity） ============
+const mutantGroupSourceMap = new Map<number, string[]>();
+const mutantPublicityMap = new Map<number, Array<{ rarity: number | null; percent: number }>>();
+
+// ============ 作物生长阶段贴图（plant_images/manifest.json：Crop_<编号> → 阶段 → URL） ============
+const plantPhaseImageMap = new Map<number, Map<number, string>>();
+
+function isInvalidSeedId(seedId: number | string | null | undefined): boolean {
+    return invalidSeedIds.has(Number(seedId) || 0);
+}
+
+function isInvalidPlant(plant: any): boolean {
+    return invalidPlantIds.has(Number(plant && plant.id))
+        || isInvalidSeedId(plant && plant.seed_id);
+}
+
+function filterInvalidPlants<T>(plants: T[]): T[] {
+    return (Array.isArray(plants) ? plants : []).filter(plant => !isInvalidPlant(plant));
+}
+
 // 官方活动说明确认：变异 13 为鹊羽活动效果，收获时会额外获得鹊羽。
 // 运行时 MutantEffect 暂未下发 tips/description，因此在展示 DTO 层补充说明。
 const MUTANT_EFFECT_DESCRIPTION_FALLBACKS = new Map<number, string>([
@@ -193,6 +237,24 @@ function loadConfigs(): void {
         console.warn('[配置] 加载 RoleLevel.json 失败:', e.message);
     }
 
+    // 加载无效植物清单（白萝卜 29999 等）：官方 Plant/ItemInfo 里有，但种不出来也买不到，
+    // 不能进种子列表、收益排行和背包识别。
+    invalidPlantIds = new Set<number>();
+    invalidSeedIds = new Set<number>();
+    try {
+        const invalidPath = path.join(configDir, 'InvalidPlants.json');
+        if (fs.existsSync(invalidPath)) {
+            const invalid = JSON.parse(fs.readFileSync(invalidPath, 'utf8'));
+            invalidPlantIds = new Set((invalid.plant_ids || []).map(Number).filter((id: number) => id > 0));
+            invalidSeedIds = new Set((invalid.seed_ids || []).map(Number).filter((id: number) => id > 0));
+            if (invalidPlantIds.size || invalidSeedIds.size) {
+                console.warn(`[配置] 已加载无效植物清单 (${invalidPlantIds.size} 种植物 / ${invalidSeedIds.size} 个种子)`);
+            }
+        }
+    } catch (e: any) {
+        console.warn('[配置] 加载 InvalidPlants.json 失败:', e.message);
+    }
+
     // 加载植物配置
     try {
         const plantPath = path.join(configDir, 'Plant.json');
@@ -211,6 +273,69 @@ function loadConfigs(): void {
                 }
             }
             console.warn(`[配置] 已加载植物配置 (${plantConfig!.length} 种)`);
+        }
+
+        // 活动植物通常早于全量静态配置发布，用轻量增量表补齐植物/种子/果实三者关系。
+        // 全量表已存在的 ID 不覆盖（同名不同 ID 时以全量表为准）。
+        const eventPlantPath = path.join(configDir, 'EventPlants.json');
+        if (fs.existsSync(eventPlantPath)) {
+            const eventPlants = JSON.parse(fs.readFileSync(eventPlantPath, 'utf8'));
+            let merged = 0;
+            for (const entry of eventPlants || []) {
+                if (isInvalidPlant(entry)) continue;
+                const plantId = Number(entry && entry.id) || 0;
+                const seedId = Number(entry && entry.seed_id) || 0;
+                if (plantId <= 0) continue;
+                const existing = plantMap.get(plantId);
+                // 已存在但缺 seed_id 的黄金形态/活动作物：只补种子与果实映射，不动原有资料。
+                if (existing) {
+                    if (!existing.seed_id && seedId > 0) {
+                        existing.seed_id = seedId;
+                        seedToPlant.set(seedId, existing);
+                        merged += 1;
+                    }
+                    continue;
+                }
+                if (seedId > 0 && seedToPlant.has(seedId)) continue;
+                const fruitId = Number(entry && entry.fruit_id) || 0;
+                // 活动表条目字段不全，补齐 PlantItem 必须有默认值的字段，
+                // 避免图鉴/展示层读 offsetPosition 等深层属性时报错。
+                const plant: PlantItem = {
+                    id: plantId,
+                    name: String(entry && entry.name || `植物${plantId}`),
+                    seed_id: seedId || null,
+                    fruit: { id: fruitId, count: Number(entry && entry.fruit_count) || 0 },
+                    asset_name: String(entry && entry.asset_name || ''),
+                    size: Math.max(1, Number(entry && entry.size) || 1),
+                    seasons: Number(entry && entry.seasons) || 1,
+                    grow_phases: String(entry && entry.grow_phases || ''),
+                    exp: Number(entry && entry.exp) || 0,
+                    mutant_effect_plant: (entry && entry.mutant_effect_plant) || null,
+                    land_level_need: Number(entry && entry.level) || 1,
+                    special_fruit: null,
+                    offsetPosition: { x: 0, y: 0 },
+                    mutantEffectScale: { x: 1, y: 1 },
+                    harvestOffsetPosition: { x: 0, y: 0 },
+                    harvestRandom: false,
+                    harvestAllSpineRes: null,
+                    harvestAllOffsetPosition: null,
+                    harvestAniName: '',
+                    all_state_spine: (entry && entry.all_state_spine) || null,
+                    mature_effect: '',
+                    mature_effect_offset: { x: 0, y: 0 },
+                    rare_plant_light_pos: null,
+                    exp_root: 0,
+                    exp_alter: 0,
+                    fruit_root: 0,
+                    fruit_alter: 0,
+                };
+                plantMap.set(plantId, plant);
+                if (seedId > 0) seedToPlant.set(seedId, plant);
+                if (fruitId > 0) fruitToPlant.set(fruitId, plant);
+                merged += 1;
+            }
+            plantConfig = Array.from(plantMap.values());
+            if (merged > 0) console.warn(`[配置] 已合并活动植物配置 (${merged} 种新增/补种)`);
         }
     } catch (e: any) {
         console.warn('[配置] 加载 Plant.json 失败:', e.message);
@@ -231,13 +356,66 @@ function loadConfigs(): void {
                     delete raw['trait_id '];
                 }
                 const id = Number(item && item.id) || 0;
-                if (id <= 0) continue;
+                if (id <= 0 || isInvalidSeedId(id)) continue;
                 itemInfoMap.set(id, item);
                 if (Number(item.type) === 5) {
                     seedItemMap.set(id, item);
                 }
             }
             console.warn(`[配置] 已加载物品配置 (${itemInfoConfig!.length} 项)`);
+        }
+
+        // 活动植物的种子/果实官方 ItemInfo 可能还没下发，按增量表补一份，
+        // 避免背包里认得出作物却认不出物品。已有条目一律不覆盖。
+        const eventItemPath = path.join(configDir, 'EventPlants.json');
+        if (fs.existsSync(eventItemPath)) {
+            const eventPlants = JSON.parse(fs.readFileSync(eventItemPath, 'utf8'));
+            let added = 0;
+            for (const entry of eventPlants || []) {
+                if (isInvalidPlant(entry)) continue;
+                const seedId = Number(entry && entry.seed_id) || 0;
+                const plant = seedId > 0 ? seedToPlant.get(seedId) : undefined;
+                const fruitId = Number(plant && plant.fruit && plant.fruit.id) || Number(entry && entry.fruit_id) || 0;
+                const name = String(plant && plant.name || entry && entry.name || '');
+                const assetName = String(plant && plant.asset_name || entry && entry.asset_name || '');
+                if (!name) continue;
+                const base = {
+                    asset_name: assetName,
+                    icon_res: '',
+                    level: Number(entry && entry.level) || Number(plant && plant.land_level_need) || 1,
+                    rarity: Math.max(3, Number(entry && entry.rarity) || 0),
+                    rarity_color: (entry && entry.rarity_color) || 'EEC55A',
+                };
+                if (seedId > 0 && !itemInfoMap.has(seedId)) {
+                    const seedItem: any = {
+                        ...base,
+                        id: seedId,
+                        type: 5,
+                        name: `${name}种子`,
+                        interaction_type: 'plant',
+                        max_count: 9999,
+                        max_own: 9999,
+                        desc: `种植后，可以收获一定数量的${name}。`,
+                        effectDesc: name,
+                    };
+                    itemInfoMap.set(seedId, seedItem);
+                    seedItemMap.set(seedId, seedItem);
+                    added += 1;
+                }
+                if (fruitId > 0 && !itemInfoMap.has(fruitId)) {
+                    const fruitItem: any = {
+                        ...base,
+                        id: fruitId,
+                        type: 2,
+                        name,
+                        desc: `收获自${name}的果实。`,
+                        effectDesc: name,
+                    };
+                    itemInfoMap.set(fruitId, fruitItem);
+                    added += 1;
+                }
+            }
+            if (added > 0) console.warn(`[配置] 已补齐活动植物物品 (${added} 项)`);
         }
     } catch (e: any) {
         console.warn('[配置] 加载 ItemInfo.json 失败:', e.message);
@@ -293,6 +471,66 @@ function loadConfigs(): void {
         }
     } catch (e: any) {
         console.warn('[配置] 加载 Illustrated.json 失败:', e.message);
+    }
+
+    // 变异公开概率（MutantPublicity）与变异来源（MutantGroupSource）：
+    // 种子/图鉴需要给出"这个作物能变异成什么、概率多少、可能由什么触发"。
+    try {
+        mutantPublicityMap.clear();
+        const publicityPath = path.join(configDir, 'collections', 'MutantPublicity.json');
+        if (fs.existsSync(publicityPath)) {
+            const rows = JSON.parse(fs.readFileSync(publicityPath, 'utf8'));
+            for (const row of rows || []) {
+                const id = Number(row && row.mutant_id) || 0;
+                if (id <= 0) continue;
+                const list = mutantPublicityMap.get(id) || [];
+                list.push({ rarity: row.rarity == null ? null : Number(row.rarity), percent: Math.round((Number(row.public_probability) || 0)) / 100 });
+                mutantPublicityMap.set(id, list);
+            }
+            console.warn(`[配置] 已加载变异公开概率 (${mutantPublicityMap.size} 种)`);
+        }
+        mutantGroupSourceMap.clear();
+        const groupSourcePath = path.join(configDir, 'MutantGroupSource.json');
+        if (fs.existsSync(groupSourcePath)) {
+            const rows = JSON.parse(fs.readFileSync(groupSourcePath, 'utf8'));
+            for (const row of rows || []) {
+                const groupId = Number(row && row.group_id) || 0;
+                const type = String(row && row.type || '').trim();
+                if (groupId <= 0 || !type) continue;
+                const list = mutantGroupSourceMap.get(groupId) || [];
+                if (!list.includes(type)) list.push(type);
+                mutantGroupSourceMap.set(groupId, list);
+            }
+            console.warn(`[配置] 已加载变异来源分组 (${mutantGroupSourceMap.size} 组)`);
+        }
+    } catch (e: any) {
+        console.warn('[配置] 加载变异概率/来源配置失败:', e.message);
+    }
+
+    // 作物生长阶段贴图清单（官方 Crop_* 阶段贴图，阶段 1-6）。
+    try {
+        const manifestPath = path.join(configDir, 'plant_images', 'manifest.json');
+        if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            plantPhaseImageMap.clear();
+            for (const [key, phases] of Object.entries(manifest || {})) {
+                const match = /^Crop_(\d+)$/.exec(key);
+                // 条目必须是 { 阶段: URL } 对象；数组会被展开成裸数字，直接跳过。
+                if (!match || !phases || typeof phases !== 'object' || Array.isArray(phases)) continue;
+                const cropKey = Number(match[1]);
+                if (cropKey <= 0) continue;
+                const phaseMap = new Map<number, string>();
+                for (const [phaseKey, url] of Object.entries(phases as Record<string, string>)) {
+                    const phase = Number(phaseKey);
+                    if (!Number.isInteger(phase) || phase <= 0 || !String(url || '').trim()) continue;
+                    phaseMap.set(phase, String(url).trim());
+                }
+                if (phaseMap.size > 0) plantPhaseImageMap.set(cropKey, phaseMap);
+            }
+            console.warn(`[配置] 已加载作物阶段贴图 (${plantPhaseImageMap.size} 种)`);
+        }
+    } catch (e: any) {
+        console.warn('[配置] 加载 plant_images/manifest.json 失败:', e.message);
     }
 
     try {
@@ -439,20 +677,127 @@ function getPlantByFruitId(fruitId: number): PlantItem | undefined {
     return fruitToPlant.get(fruitId);
 }
 
+/**
+ * 解析 Plant.mutant_group_ids（形如 "2001;1"、"1001"），得到参与变异的组 ID。
+ */
+function parseMutationGroupIds(raw: any): number[] {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!text) return [];
+    const ids = text.split(/[;,_\s]+/).map(value => Number(value) || 0).filter(id => id > 0);
+    return [...new Set(ids)];
+}
+
+/** 该变异组允许的触发来源（自然变异/天气变异/狗狗技能变异/藏品变异…）。 */
+function getMutationSources(plant: PlantItem): string[] {
+    const sources: string[] = [];
+    for (const groupId of parseMutationGroupIds(plant.mutant_group_ids)) {
+        for (const source of mutantGroupSourceMap.get(groupId) || []) {
+            if (!sources.includes(source)) sources.push(source);
+        }
+    }
+    return sources;
+}
+
+/**
+ * 该作物可触发的变异效果。
+ * 官方没有下发「组 → 具体效果」的映射，因此按效果自身的适用范围给：
+ * - tag 为空/「无」的常规变异对所有作物生效；
+ * - 「藏品」变异只在变异组允许藏品变异时列出；
+ * - 「装扮」变异只对装扮果实列出；
+ * - 「活动」变异依附具体活动，不在这里兜底，避免虚报。
+ */
+function getMutationEffectsForSeed(plant: PlantItem): SeedMutationEffect[] {
+    const sources = getMutationSources(plant);
+    const illustratedType = getIllustratedTypeByParam(Number(plant.fruit && plant.fruit.id) || 0);
+    const allowCollection = sources.includes('藏品变异');
+    const allowDecoration = illustratedType === '装扮果实';
+    const effects: SeedMutationEffect[] = [];
+    for (const effect of mutantEffectMap.values()) {
+        const tag = String(effect && effect.tag || '').trim();
+        const isDecoration = tag === '装扮';
+        const isActivity = tag === '活动';
+        const isCollection = tag === '藏品';
+        if (isActivity) continue;
+        if (isDecoration && !allowDecoration) continue;
+        if (isCollection && !allowCollection) continue;
+        if (effect && effect.hide_ui) continue;
+        const probabilities = mutantPublicityMap.get(Number(effect.id)) || [];
+        const percent = probabilities.length
+            ? Math.max(...probabilities.map(entry => Number(entry.percent) || 0))
+            : null;
+        const dto = toMutantEffectDto(effect, Number(effect.id));
+        effects.push({
+            id: dto.id,
+            name: dto.name,
+            icon: dto.icon,
+            description: dto.description,
+            tag,
+            probabilityPercent: percent,
+        });
+    }
+    return effects.sort((a, b) => (b.probabilityPercent || 0) - (a.probabilityPercent || 0) || a.id - b.id);
+}
+
+/**
+ * 查询作物在指定生长阶段的官方贴图（plant_images/Crop_<编号>/<阶段>.png）。
+ * manifest 键用官方资源编号：普通作物 = 协议作物ID - 1020000（1020084 → Crop_84，
+ * 1029004 → Crop_9004），同时兼容直接用完整作物 ID 做键的清单。
+ * 阶段 1-6（种子/发芽/小叶/大叶/开花/成熟）；缺失精确阶段时回退到不大于目标的
+ * 最近贴图，连最低阶段都比目标大时回退最小可用阶段，避免出现空图。
+ */
+function getPlantPhaseImage(plantId: number, phase: number): string {
+    const id = Number(plantId) || 0;
+    if (!Number.isSafeInteger(id) || id <= 0) return '';
+    const candidates = id >= 1020000 ? [id - 1020000, id] : [id];
+    for (const candidate of candidates) {
+        const phaseMap = plantPhaseImageMap.get(candidate);
+        if (!phaseMap || phaseMap.size === 0) continue;
+        const target = Number(phase) || 0;
+        if (!Number.isInteger(target) || target <= 0) return '';
+        const exact = phaseMap.get(Math.min(target, 6));
+        if (exact) return exact;
+        let fallback = '';
+        let fallbackPhase = 0;
+        let smallest = '';
+        let smallestPhase = Number.MAX_SAFE_INTEGER;
+        for (const [candidatePhase, url] of phaseMap) {
+            if (candidatePhase <= target && candidatePhase > fallbackPhase) {
+                fallback = url;
+                fallbackPhase = candidatePhase;
+            }
+            if (candidatePhase < smallestPhase) {
+                smallest = url;
+                smallestPhase = candidatePhase;
+            }
+        }
+        return fallback || smallest;
+    }
+    return '';
+}
+
 function getAllSeeds(): SeedInfo[] {
-    return Array.from(seedToPlant.values()).map(p => ({
-        seedId: p.seed_id!,
-        name: p.name,
-        requiredLevel: (() => { const si = seedItemMap.get(p.seed_id!); return si ? (Number(si.level) || 0) : (Number(p.land_level_need) || 0); })(),
-        price: getSeedPrice(p.seed_id!),
-        image: getSeedImageBySeedId(p.seed_id!),
-        seasons: Number(p.seasons) || 1,
-        exp: Number(p.exp) || 0,
-        growPhases: p.grow_phases || '',
-        growTime: getPlantGrowTime(p.id),
-        size: Number(p.size) || 0,
-        harvestCount: Number(p.fruit.count) || 0,
-    }));
+    const seeds: SeedInfo[] = [];
+    for (const p of seedToPlant.values()) {
+        // 无效植物（白萝卜 29999 等）不进出种子列表：种不出来也买不到。
+        if (!p.seed_id || isInvalidPlant(p)) continue;
+        seeds.push({
+            seedId: p.seed_id,
+            name: p.name,
+            requiredLevel: (() => { const si = seedItemMap.get(p.seed_id!); return si ? (Number(si.level) || 0) : (Number(p.land_level_need) || 0); })(),
+            price: getSeedPrice(p.seed_id!),
+            image: getSeedImageBySeedId(p.seed_id!),
+            seasons: Number(p.seasons) || 1,
+            exp: Number(p.exp) || 0,
+            growPhases: p.grow_phases || '',
+            growTime: getPlantGrowTime(p.id),
+            size: Number(p.size) || 0,
+            harvestCount: Number(p.fruit && p.fruit.count) || 0,
+            mutationGroupIds: parseMutationGroupIds(p.mutant_group_ids),
+            mutationSources: getMutationSources(p),
+            mutationEffects: getMutationEffectsForSeed(p),
+        });
+    }
+    return seeds.sort((a, b) => a.seedId - b.seedId);
 }
 
 function getMappedSeedImage(targetId: number): string {
@@ -473,6 +818,16 @@ function getItemImageById(itemId: number): string {
         // 复用配置明确指向的同一图标；解锁卡也可使用其对应作物的模型图。
         imageId = iconImageIds.get(getItemImageKey(item, 'icon_res'))
             || assetImageIds.get(getItemImageKey(item, 'asset_name')) || 0;
+        if (!imageId) {
+            // 物品图标文件缺失时，按 asset_name 的 Crop_<编号> 回退到阶段贴图
+            //（果实/变异果实用成熟阶段，种子用种子阶段）；目录缺失时返回空串走占位图。
+            const cropKey = /(?:^|\/)Crop_(\d+)$/.exec(getItemImageKey(item, 'asset_name').split(':').pop() || '');
+            if (cropKey) {
+                const phase = Number(item.type) === 5 ? 1 : 6;
+                const phaseImage = getPlantPhaseImage(Number(cropKey[1]), phase);
+                if (phaseImage) return phaseImage;
+            }
+        }
     }
     return imageId ? `/game-config/seed_images_named/seed_images/${imageId}.png` : '';
 }
@@ -551,7 +906,7 @@ function getFruitPrice(fruitId: number): number {
 }
 
 function getAllPlants(): PlantItem[] {
-    return Array.from(plantMap.values());
+    return filterInvalidPlants(Array.from(plantMap.values()));
 }
 
 function getAllFruits(): ItemInfo[] {
@@ -743,6 +1098,7 @@ module.exports = {
     getPlantNameBySeedId,
     getPlantGrowTime,
     getPlantGrowPhases,
+    getPlantPhaseImage,
     getPlantExp,
     formatGrowTime,
     // 果实配置
@@ -768,6 +1124,9 @@ module.exports = {
     getMutantEffectById,
     getMutantEffectsByIds,
     getMutantTypeNames,
+    isInvalidSeedId,
+    isInvalidPlant,
+    filterInvalidPlants,
     getIllustratedTypeByParam,
     getIllustratedSortByParam,
     getIllustratedBuffsByLevel,

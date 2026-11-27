@@ -15,6 +15,8 @@ export interface Land {
   plantName?: string
   phaseName?: string
   seedImage?: string
+  /** 作物当前生长阶段的官方贴图（plant_images），缺失时回退 seedImage。 */
+  plantImage?: string
   status: string
   matureInSec: number
   needWater?: boolean
