@@ -66,13 +66,21 @@ message YshfShopQueryReply {
 
 比价就是 cmd 92 逐个查好友铺子（只读、不占对方额度），按 `totalPrice` 降序排：
 
-- **好友数上限**（默认 20，可 1–50）：单轮最多扫这么多家；
-- **比价间隔**（默认 30 分钟，可 5–720）：间隔内复用上一轮的排序结果，不重复扫；
+- **好友数上限**（默认 50，可 1–200）：单轮最多扫这么多家；自动卖薯另有一条下限
+  `AUTO_SCAN_MIN_LIMIT = 50`，即使旧配置写成 20 也按 50 扫，避免候选池后半段的最优价
+  被永久挡在窗口外（曾出现「有 372 的铺子却卖了 299」）；
+- **比价间隔**（默认 120 分钟，可 5–720）：间隔内复用上一轮的排序结果，不重复扫；
 - **贪心换铺**：最高价那家额度够就一次卖完；不够就吃满它的剩余额度，再换第二高，依次往下；
 - **单轮上限**：最多切 3 家铺子，笔间隔 1200ms，剩下的留到下一轮；
 - **兜底**：好友都收满时默认把剩下的卖给自己铺子（可关）。
 
 「额度不足 / 铺子查不到」只换下一家，不算失败；回包金额不符这类错误直接停手。
+
+每轮比价会打一条 `event=以薯换福自动` 的 `action=scan` 明细日志：候选池家数、本轮扫描家数、
+剩余待轮换家数、前 5 名「名称:总价」，用来核查「最高价到底有没有进窗口」。
+
+好友池是**面板所有账号的好友**汇总（`core/data/known_friend_gids/<accountId>.json` 全量去重），
+不只是当前账号的好友；候选池超过上限时按 `friendScanRotation` 游标滚动扫描。
 
 ## 配置项
 
@@ -80,7 +88,9 @@ message YshfShopQueryReply {
 
 - `yishu_claim_seed`、`yishu_share`、`yishu_claim_commission`、`yishu_auto_sell`；
 - `yishu_sell_fallback_own`（默认 true）；
-- `yishu_scan_friend_limit`（20）、`yishu_scan_interval_minutes`（30）、`yishu_sell_min_count`（1）。
+- `yishu_scan_friend_limit`（50）、`yishu_scan_interval_minutes`（120）、`yishu_sell_min_count`（1）；
+- `yishu_sell_after_time`（默认 `'14:00'`，空串表示不限制）：到点后才开始售卖比价。
+  它是 `"HH:MM"` 字符串，归一化时必须走 `normalizeSellAfterTime`，否则会被通用 `!!value` 折成 `true`。
 
 数值项在 `normalizeAutomationValue` 里显式夹取，否则会被通用的 `!!value` 折成 `true`（与
 `fertilizer_smart_seconds` 同一个坑）。设置页在「牧歌初启」与「神秘商人」之间新增以薯换福卡片。
@@ -90,8 +100,9 @@ message YshfShopQueryReply {
 - 固定抓包数值：144 = 111 + 33、165 = 99 + 66、记录 `total=4320 / commission=86`、`130.11=86`、
   cmd 99 回包 `32156`；
 - `core/tests/yishuhuanfu-proto.test.js`、`yishuhuanfu-service.test.js`、`yishuhuanfu-auto.test.js`
-  共 48 项；自动任务侧钉死「已领过不再写」「按价换铺」「单轮最多 3 家」「比价节流」「余额阈值」；
-- 全量 core 429 项 / 通过 420 / 失败 9（既有 9 项不变），前端 26 项通过；`typecheck:web`、
+  共 58 项；自动任务侧钉死「已领过不再写」「按价换铺」「单轮最多 3 家」「比价节流」「余额阈值」
+  「配置上限太小也要扫满 50 家并选中最高价」；
+- 全量 core 446 项 / 通过 437 / 失败 9（既有 9 项不变），前端 33 项通过；`typecheck:web`、
   `build:core`、`build:web` 通过。
 
 自动化部分只有离线的桩调用验证，尚未在实服跑满一天；实服观察点在日志 `event=以薯换福自动`：
