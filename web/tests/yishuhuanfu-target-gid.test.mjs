@@ -24,8 +24,15 @@ function loadTabComponent() {
     },
   })
   const module = { exports: {} }
+  // 组件内部会 import 别的 .vue 组件（别名 `@/…` 只有打包器认识），
+  // 测试里换成占位实现即可——这些子组件不参与 setup 逻辑的断言。
+  const stubRequire = (id) => {
+    if (id.startsWith('@/') && id.endsWith('.vue'))
+      return { default: { name: 'StubComponent', template: '<div />' } }
+    return require(id)
+  }
   // eslint-disable-next-line no-new-func
-  new Function('require', 'module', 'exports', outputText)(require, module, module.exports)
+  new Function('require', 'module', 'exports', outputText)(stubRequire, module, module.exports)
   return module.exports.default
 }
 
@@ -141,4 +148,24 @@ test('账号切换由父级 v-if 卸载页面完成，组件内不再需要自�
   const centerSource = readFileSync(new URL('../src/views/ActivityCenter.vue', import.meta.url), 'utf8')
   assert.match(centerSource, /watch\(currentAccountId, \(\) => \{[\s\S]*?selectedActivity\.value = null/)
   assert.match(centerSource, /YishuHuanfuActivityPage[\s\S]{0,80}v-else-if="selectedActivity === 'yishuhuanfu'"/)
+})
+
+test('移出比价要二次确认，确认后才通知父级', () => {
+  const { state, emitted } = mountTab()
+  const shop = { gid: '900001', name: 'A号', own: false }
+
+  state.askForgetShop(shop)
+  assert.equal(state.forgetTarget.value?.gid, '900001')
+  assert.equal(emitted.length, 0, '点按钮只弹确认框，不能直接删')
+
+  state.confirmForgetShop()
+  assert.equal(state.forgetTarget.value, null, '确认后关闭弹窗')
+  assert.deepEqual(emitted.at(-1), ['forgetShop', '900001'])
+})
+
+test('自己的铺子不给移出，弹窗不会打开', () => {
+  const { state, emitted } = mountTab()
+  state.askForgetShop({ gid: '1000000000', name: '自己', own: true })
+  assert.equal(state.forgetTarget.value, null)
+  assert.equal(emitted.length, 0)
 })

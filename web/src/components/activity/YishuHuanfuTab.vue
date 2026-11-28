@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { YishuHuanfuActivityDto, YishuHuanfuCatalogEntryDto, YishuHuanfuFriendShopDto, YishuHuanfuRecordDto } from '@/stores/activity-center'
 import { computed, ref } from 'vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
 const props = defineProps<{
   activity: YishuHuanfuActivityDto | null
@@ -258,6 +259,29 @@ function toggleAddShop() {
     addShopGid.value = ''
     addShopKey.value = ''
   }
+}
+
+// 移出比价要二次确认：删掉的是本地保存的分享标识，点错了得重新找对方要一次链接。
+const forgetTarget = ref<YishuHuanfuFriendShopDto | null>(null)
+const forgetMessage = computed(() => {
+  const shop = forgetTarget.value
+  if (!shop)
+    return ''
+  return `确定把「${shop.name || shop.gid}」移出比价列表吗？删掉的是本地保存的分享标识；`
+    + '如果它是面板账号，下次分享铺子还会重新出现。'
+})
+
+function askForgetShop(shop: YishuHuanfuFriendShopDto) {
+  if (shop.own || props.pendingForgetShop)
+    return
+  forgetTarget.value = shop
+}
+
+function confirmForgetShop() {
+  const target = forgetTarget.value
+  forgetTarget.value = null
+  if (target)
+    emit('forgetShop', target.gid)
 }
 
 function submitAddShop() {
@@ -830,16 +854,16 @@ function scanAgo() {
           >
             {{ shop.own ? '卖自己' : '卖给他' }}
           </button>
-          <!-- 自己的铺子不能移除；别人家移除 = 删掉它的标识存档，下次它分享会重新回来。 -->
+          <!-- 自己的铺子不能移除，但按钮照样留着并置灰：少一个按钮整行会歪，
+               和「卖给他」并排看着更整齐。 -->
           <button
-            v-if="!shop.own"
             type="button"
             class="compare-remove"
-            :disabled="pendingForgetShop"
-            title="把这家移出比价列表（删掉它的分享标识存档）"
-            @click="emit('forgetShop', shop.gid)"
+            :disabled="pendingForgetShop || shop.own"
+            :title="shop.own ? '自己的铺子不能移出比价' : '把这家移出比价列表（删掉它的分享标识存档）'"
+            @click="askForgetShop(shop)"
           >
-            ×
+            移出
           </button>
         </article>
       </div>
@@ -847,6 +871,17 @@ function scanAgo() {
         还没有比价结果，点「重新比价」扫一遍自己和面板账号的铺子。
       </p>
     </section>
+
+    <ConfirmModal
+      :show="forgetTarget !== null"
+      title="移出比价列表"
+      type="danger"
+      :message="forgetMessage"
+      confirm-text="移出"
+      :loading="pendingForgetShop"
+      @confirm="confirmForgetShop"
+      @cancel="forgetTarget = null"
+    />
 
     <section v-if="activity?.rules?.paragraphs?.length" class="yshf-panel rules-panel">
       <div class="section-heading">
@@ -1507,27 +1542,28 @@ function scanAgo() {
 }
 
 /* 行尾的「移出比价」小按钮。 */
+/* 和「卖给他」同一套药丸形制（同样 padding / 圆角 / 字号），只换警示色，
+   这样并排两个按钮宽度一致、基线对齐；自己的铺子置灰但仍占位。 */
 .compare-remove {
   flex: none;
-  width: 20px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--ui-muted);
-  font-size: 16px;
-  line-height: 1;
+  min-width: 64px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--yshf-accent-soft) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--yshf-accent-soft);
+  font-size: 12px;
+  line-height: 1.4;
   cursor: pointer;
-  opacity: 0.6;
 }
 
 .compare-remove:hover:not(:disabled) {
-  color: var(--yshf-accent-soft);
-  opacity: 1;
+  background: color-mix(in srgb, var(--yshf-accent-soft) 10%, transparent);
 }
 
 .compare-remove:disabled {
-  cursor: default;
-  opacity: 0.3;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* 比价页的手动添加入口。 */
