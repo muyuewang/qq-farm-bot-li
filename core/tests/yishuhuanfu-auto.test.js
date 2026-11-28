@@ -544,3 +544,31 @@ test('比价池里最高价直接成交，不再二次筛标识', async () => {
     assert.equal(sells[0][1], '900', '池里最高价直接卖，不做额外筛选');
     assert.ok(harness.logs.some(entry => String(entry.message).includes('卖出 30 个蜜薯')));
 });
+
+// 2026-11-28 晚：铺主重新分享会让旧链接作废（服务端 1034184）。
+// 自动任务遇到它必须换下一家继续卖 —— 服务层已经删了那条死链，
+// 下轮它自然不在候选池，但这一轮剩下的蜜薯不能因此不卖。
+test('售卖撞到分享链接失效时换下一家，不判整轮失败', async () => {
+    const harness = createHarness({
+        snapshot: makeSnapshot({ sweetPotatoBalance: '30' }),
+        shops: [
+            makeShop({ gid: '900', name: '旧链接', totalPrice: '400', quota: '1000' }),
+            makeShop({ gid: '901', name: '正常', totalPrice: '300', quota: '1000' }),
+        ],
+        sell: (friendGid, count) => {
+            if (friendGid === '900') {
+                const error = new Error('900 的分享链接已失效（对方多半重新分享过一次）');
+                error.code = 'YSHF_SHARE_KEY_EXPIRED';
+                throw error;
+            }
+            return { count, price: '300', income: String(Number(count) * 300) };
+        },
+    });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    assert.deepEqual(harness.sells().map(entry => entry[1]), ['900', '901']);
+    assert.ok(harness.logs.some(entry => String(entry.message).includes('换下一家')));
+    assert.ok(harness.logs.some(entry => String(entry.message).includes('卖出 30 个蜜薯')));
+    // 不能报「卖薯失败」：那是留给真正该停手的情况（回包不可信等）。
+    assert.equal(harness.logs.some(entry => String(entry.message).includes('卖薯失败')), false);
+});

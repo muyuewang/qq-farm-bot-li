@@ -167,7 +167,33 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 分享按钮改成「补分享标识」并可点；自动任务同样会补一次（每天只试一次，避免服务端当天不下发
 `shop_ref` 时每轮白打网关）。
 
-### 三、兑换档位的剩余次数（cmd 97 field 6 / cmd 96 field 4-5）
+### 三、分享链接会中途作废（1034184）
+
+「当天 key 固定不变」只在**对方没再分享**的前提下成立。铺主一旦重新分享，
+之前那条链接立刻被服务端作废，任何拿旧链接来的请求都会回：
+
+```
+gamepb.activitypb.ActivityService.Operate code=1034184 分享链接已失效，请重新联系店主分享
+```
+
+这不是网络抖动，重试同一串 key 永远不会成功，所以按「凭据失效」处理，而不是「查询失败」：
+
+- 非自己铺子的 cmd 92 / cmd 93 撞到 1034184 → 立刻删掉 `core/data/yishu_share_keys/<gid>.json`，
+  抛 `YSHF_SHARE_KEY_EXPIRED`，文案直说「让对方重新分享一次，或重新贴一次他刚发的那条链接」；
+- 识别不能只看 `error.code`：真实链路经过 worker / IPC 序列化后，可能只剩拼在 message 里的
+  `code=1034184`，所以 `code` / `errorMessage` / message 里的 `code=` / 「分享链接已失效」文案四处都判；
+- 比价结果把失效的铺子单独放进 `expiredShops`（另有 `expiredKeyCount`），界面与「查询失败」分开提示：
+  前者点重试没用，得等对方重新分享；
+- 一轮扫描里失效累计到 3 条就中止剩余批次（`SHARE_KEY_EXPIRED_ABORT`）。成片失效通常不是巧合，
+  继续打完只会把请求量放大、更像脚本；剩下的留给下一轮，那时存档已清，不会再撞；
+- 批次之间隔 350ms（`FRIEND_SCAN_BATCH_GAP_MS`），一轮十几家不再是一串连发；
+- 自动任务把 `YSHF_SHARE_KEY_EXPIRED` 归入「这家卖不进去」，换下一家继续，不判整轮失败。
+
+**操作建议**：面板账号开了「自动-分享铺子」之后，当天尽量别再手动点分享 ——
+每多点一次，旧链接就作废一次，别的号手里那条 key 也跟着失效。
+手填的标识尤其容易过期：它不随对方的重新分享自动更新，对方再分享一次就得重贴。
+
+### 四、兑换档位的剩余次数（cmd 97 field 6 / cmd 96 field 4-5）
 
 `YshfCatalogGoods` 的 6 号位是**累计已兑换次数**，不是布尔标记：
 
@@ -176,7 +202,7 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 
 所以剩余可兑 = `limit − exchanged`，界面必须显示 `剩余/上限`，兑换成功后要重拉 cmd 97（目录不在活动快照里，不重拉就一直挂着兑换前的次数）。7 号位除第 1 档外恒为 1，与是否兑换过不对应，语义仍未取证，未做断言。
 
-### 四、代码落点
+### 五、代码落点
 
 | 改动 | 文件 |
 | --- | --- |
@@ -190,3 +216,5 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 | 比价行完整展示 `share_key`（含自己那条）、行尾「移出比价」 | 同上 |
 | 移出比价：`removeYishuShareKey` → `forgetYishuHuanfuShareKey` → `POST /yishuhuanfu/share-key/remove` | `core/src/models/store/yishu-share-keys.ts`、服务、`yishuhuanfu-routes.ts` |
 | 写接口不回快照时保住活动详情（否则页面变空壳） | `web/src/stores/activity-center.ts` 的 `DETAIL_SNAPSHOT_KEYS` |
+| 1034184 识别（code / errorMessage / message 三处）、删死链、`YSHF_SHARE_KEY_EXPIRED`、失效熔断、批次间隔 | `core/src/services/activity-center/yishuhuanfu.ts` |
+| 失效铺子单列提示（`expiredShops`） | `web/src/stores/activity-center.ts`、`YishuHuanfuTab.vue`、`YishuHuanfuActivityPage.vue` |

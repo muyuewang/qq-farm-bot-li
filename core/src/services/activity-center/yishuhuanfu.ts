@@ -66,10 +66,32 @@ const AUTO_BALANCE_STALE_MAX_MS = 60 * 60 * 1000;
 
 /** 好友比价结果缓存时间：cmd 92 是实时行情，短缓存只为防连点刷屏。 */
 const FRIEND_SCAN_TTL_MS = 3 * 60 * 1000;
-// 候选池现在是「本账号好友 + 面板其它账号好友」，上限放宽到 200；超出时按轮换窗口扫。
+// 候选池 = 本账号 + 面板里当天分享过的账号，上限放宽到 200；超出时按轮换窗口扫。
 const FRIEND_SCAN_DEFAULT_LIMIT = 60;
 const FRIEND_SCAN_MAX_LIMIT = 200;
 const FRIEND_SCAN_CONCURRENCY = 4;
+
+/**
+ * 分享标识失效的业务码：1034184「分享链接已失效，请重新联系店主分享」。
+ *
+ * 2026-11-28 18:00 实测：铺主重新分享一次后，之前那条链接立刻作废。所以「当天 key
+ * 固定不变」只在「对方没再分享」的前提下成立——对方再分享一次，存档里那条就成了死链。
+ * 遇到这个码不能只记一次失败：那条标识已经没用，继续拿它打网关既不拿价、又白增请求量。
+ * 处理方式是直接删存档（对方下次分享会重新落盘），并把它从当轮比价里剔掉。
+ */
+const SHARE_KEY_EXPIRED_CODES = new Set(['1034184']);
+/**
+ * 一轮比价里连续撞到这么多条失效就中止剩余扫描。
+ * 失效成片出现通常不是巧合（服务端换规则、或这一批号被判定异常），
+ * 继续打完只会放大请求量，留给下一轮更安全。
+ */
+const SHARE_KEY_EXPIRED_ABORT = 3;
+/**
+ * 批与批之间的间隔。一轮比价可能连着打十几个 cmd 92，一次性连发在服务端看来
+ * 很像脚本：间隔 350ms 后总耗时只多一点，但请求曲线平滑很多。
+ * 只有一批（<=4 家）时不额外等待，常规比价几乎无感。
+ */
+const FRIEND_SCAN_BATCH_GAP_MS = 350;
 
 /**
  * 兑换目录（cmd 97）只下发序号与价格，商品由客户端静态配置按序号映射。
@@ -194,6 +216,50 @@ function createYishuHuanfuActivityService(deps: any) {
         // 存档里没有日期（用户手填/导入）时按当天处理，有日期则必须与今天一致。
         if (dateKey && entry.dateKey && entry.dateKey !== dateKey) return null;
         return { activity_id: YSHF_ACTIVITY_ID, gid: targetGid, share_key: entry.shareKey };
+    }
+
+    /**
+     * 这条错误是不是「分享链接已失效」。
+     *
+     * 网关的非零 error_code 以 GatewayError 抛出，code 在 `error.code`（数字或字符串），
+     * 服务端文案在 `error.errorMessage`；但错误经过 worker / IPC 序列化后，也可能只剩
+     * 一句拼好的 `... code=1034184 ...` 的 message。三处都判，避免换个链路就认不出来。
+     */
+    function isShareKeyExpiredError(error: any): boolean {
+        if (!error) return false;
+        const code = String(error?.code ?? '').trim();
+        if (code && SHARE_KEY_EXPIRED_CODES.has(code)) return true;
+        const text = String(error?.errorMessage || error?.message || '');
+        const inText = (text.match(/\bcode=(\d+)\b/) || [])[1];
+        if (inText && SHARE_KEY_EXPIRED_CODES.has(inText)) return true;
+        return /分享链接已失效|重新联系店主分享/.test(text);
+    }
+
+    /**
+     * 把一条已失效的标识从存档里删掉（面板账号下次分享会重新落盘）。
+     * 返回是否真的删掉了文件，用来区分「确实是死链」和「本来就没存档」。
+     */
+    function dropExpiredShareKey(targetGid: string): boolean {
+        if (!targetGid) return false;
+        let removed = false;
+        try {
+            removed = !!shareKeyStore()?.removeYishuShareKey?.(targetGid);
+        } catch {
+            removed = false;
+        }
+        // 少了一家可卖铺子，界面上的比价表要让位给下一次重扫。
+        if (removed) friendScanCache = null;
+        return removed;
+    }
+
+    /** 统一给「链接失效」这个新错误码的文案，界面直接拿去提示。 */
+    function expiredShareKeyError(targetGid: string, removed: boolean, action: string) {
+        return businessError(
+            'YSHF_SHARE_KEY_EXPIRED',
+            `${targetGid} 的分享链接已失效（对方多半重新分享过一次，旧链接会被作废）。`
+            + `${removed ? '已把这条标识移出比价列表。' : ''}`
+            + `${action}让对方重新分享一次铺子，或重新贴一次他刚发的那条链接。`,
+        );
     }
 
     async function queryYshfGroupReply(): Promise<any> {
@@ -593,11 +659,22 @@ function createYishuHuanfuActivityService(deps: any) {
         }
         const params: any = { shop_gid: targetGid };
         if (shopRef) params.shop = shopRef;
-        const reply = await operateYshf(types.YshfShopQueryRequest, {
-            activity_id: YSHF_ACTIVITY_ID,
-            cmd: YSHF_CMD_SHOP_QUERY,
-            params,
-        });
+        let reply: any;
+        try {
+            reply = await operateYshf(types.YshfShopQueryRequest, {
+                activity_id: YSHF_ACTIVITY_ID,
+                cmd: YSHF_CMD_SHOP_QUERY,
+                params,
+            });
+        } catch (error: any) {
+            // 1034184：对方重新分享过，存档里这条链接已经作废。
+            // 删掉存档再抛出可读错误，下一轮它就不在候选池里了，不会反复拿死链打网关。
+            if (!sameAccount && isShareKeyExpiredError(error)) {
+                const removed = dropExpiredShareKey(targetGid);
+                throw expiredShareKeyError(targetGid, removed, '查价被拒，');
+            }
+            throw error;
+        }
         const quote = reply?.yshf_shop?.quote;
         const shop = quote?.shop;
         // 官方抓包（2026-11-25 13:51，好友 1006086548 风筝有风）：
@@ -749,16 +826,32 @@ function createYishuHuanfuActivityService(deps: any) {
         const slice = takeScanWindow(targets, limit, !!own);
 
         const shops: any[] = [];
+        // 本轮撞到「分享链接已失效」的铺子。它们的存档已经被删掉，
+        // 界面要单独提示一句「让对方重新分享」，而不是混进 failed 里当成网络错误。
+        const expiredShops: Array<{ gid: string; name: string }> = [];
         let failed = 0;
+        let attempted = 0;
         let failureMessage = '';
         for (let start = 0; start < slice.length; start += FRIEND_SCAN_CONCURRENCY) {
+            // 失效成片出现就停手：这不是偶发的单条死链，继续打完只会放大请求量，
+            // 反而更像异常流量。剩下的留给下一轮（那时存档已清，不会再撞）。
+            if (expiredShops.length >= SHARE_KEY_EXPIRED_ABORT) break;
+            // 批次之间喘口气：一轮十几家连着打最容易像脚本，隔一下请求曲线平滑很多。
+            if (start > 0) await new Promise(resolve => setTimeout(resolve, FRIEND_SCAN_BATCH_GAP_MS));
             const batch = slice.slice(start, start + FRIEND_SCAN_CONCURRENCY);
+            attempted += batch.length;
             const settled = await Promise.allSettled(batch.map(entry => fetchShopQuote(entry.gid, { shareKeys })));
             settled.forEach((result, index) => {
                 const entry = batch[index];
                 if (result.status === 'rejected') {
+                    const reason = result.reason;
+                    if (reason?.code === 'YSHF_SHARE_KEY_EXPIRED') {
+                        expiredShops.push({ gid: entry.gid, name: entry.name || '' });
+                        if (!failureMessage) failureMessage = reason.message;
+                        return;
+                    }
                     failed += 1;
-                    if (!failureMessage) failureMessage = result.reason?.message || '铺子行情查询失败';
+                    if (!failureMessage) failureMessage = reason?.message || '铺子行情查询失败';
                     return;
                 }
                 const quotedOwner = result.value.shop;
@@ -796,8 +889,11 @@ function createYishuHuanfuActivityService(deps: any) {
             shops,
             best: shops[0] || null,
             ownShop: shops.find(entry => entry.own) || null,
-            scanned: slice.length,
+            scanned: attempted,
             failed,
+            // 分享链接已失效的铺子：存档已删，需要对方重新分享一次才能回到比价池。
+            expiredShops,
+            expiredKeyCount: expiredShops.length,
             // 存档里存在但日期对不上的标识数：这些账号今天还没重新分享，重分享后自动回到比价池。
             staleKeyCount,
             // 候选池 = 本账号 + 有当天分享标识、能查能卖的账号。
@@ -808,9 +904,12 @@ function createYishuHuanfuActivityService(deps: any) {
             pendingCount: Math.max(0, targets.length - (own ? 1 : 0) - slice.filter(entry => !entry.own).length),
             limit,
             message: shops.length === 0
-                ? '没有可比的铺子：先让面板里的账号各分享一次铺子，面板外的好友贴一次分享链接'
+                ? (expiredShops.length
+                    ? `${expiredShops.length} 家铺子的分享链接已失效（对方重新分享过），让对方重新分享一次再比价`
+                    : '没有可比的铺子：先让面板里的账号各分享一次铺子，面板外的好友贴一次分享链接')
                 : `已扫描 ${shops.length} 个铺子${sellableCount ? `（含其它账号 ${sellableCount} 个）` : ''}，`
-                    + `最高收购价 ${shops[0].totalPrice}`,
+                    + `最高收购价 ${shops[0].totalPrice}`
+                    + (expiredShops.length ? `；${expiredShops.length} 家分享链接失效已移出` : ''),
             errorMessage: failureMessage,
             cached: false,
             scannedAt: now,
@@ -897,15 +996,28 @@ function createYishuHuanfuActivityService(deps: any) {
 
             const sellParams: any = { shop_gid: targetGid, count };
             if (shopRef) sellParams.shop = shopRef;
-            const reply = await operateYshf(types.YshfSellRequest, {
-                activity_id: YSHF_ACTIVITY_ID,
-                cmd: YSHF_CMD_SELL,
-                params: sellParams,
-            });
+            const isOwn = targetGid === own;
+            let reply: any;
+            try {
+                reply = await operateYshf(types.YshfSellRequest, {
+                    activity_id: YSHF_ACTIVITY_ID,
+                    cmd: YSHF_CMD_SELL,
+                    params: sellParams,
+                });
+            } catch (error: any) {
+                // 上面那次 cmd 92 用同一条标识能查到价，接着卖却回 1034184：
+                // 说明对方在这两步之间重新分享了（或者两个请求被差别对待）。
+                // 一律按「此链接作废」处理，删存档 + 给可读原因，别让用户对着
+                // 「分享链接已失效，请重新联系店主分享」猜。
+                if (!isOwn && isShareKeyExpiredError(error)) {
+                    const removed = dropExpiredShareKey(targetGid);
+                    throw expiredShareKeyError(targetGid, removed, '售卖被拒，');
+                }
+                throw error;
+            }
             const result = reply?.yshf_sell;
             // 成交会改变目标铺子的剩余额度与自己的福气币，比价缓存必须失效。
             friendScanCache = null;
-            const isOwn = targetGid === own;
             const soldCount = result ? int64String(result.count) : count;
             const price = result ? int64String(result.price) : '0';
             const total = result ? int64String(result.total) : '0';

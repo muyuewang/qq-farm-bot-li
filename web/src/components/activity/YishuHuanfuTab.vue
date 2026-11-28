@@ -17,6 +17,8 @@ const props = defineProps<{
   friendShopsLoading: boolean
   friendScanAt: number
   friendScanNote: string
+  // 上一轮因为分享链接失效（服务端 1034184）被移出比价的铺子。
+  expiredShops: { gid: string, name: string }[]
   records: YishuHuanfuRecordDto[]
   recordsLoading: boolean
   recordsNote: string
@@ -833,6 +835,15 @@ function scanAgo() {
       </div>
 
       <p v-if="friendScanNote" class="compare-note">{{ friendScanNote }}<template v-if="friendScanAt">（{{ scanAgo() }}）</template></p>
+      <!-- 失效的铺子单列出来：这不是网络错误，是对方重新分享过、旧链接被作废了。
+           点「重新比价」也不会好，必须等对方再分享一次（面板账号可以点「补分享标识」）。 -->
+      <p v-if="expiredShops.length" class="compare-note warning">
+        分享链接已失效（对方重新分享过，旧链接作废），已移出比价：
+        <span v-for="(shop, index) in expiredShops" :key="shop.gid">
+          {{ shop.name || shop.gid }}<template v-if="shop.name">（{{ shop.gid }}）</template>{{ index === expiredShops.length - 1 ? '' : '、' }}
+        </span>
+        。等对方重新分享一次铺子，或把他的新链接贴进来。
+      </p>
 
       <div v-if="friendShops.length" class="compare-list">
         <article v-for="(shop, index) in friendShops" :key="shop.gid" class="compare-row">
@@ -1194,6 +1205,11 @@ function scanAgo() {
   font-size: 12px;
   line-height: 1.6;
   color: var(--ui-muted);
+}
+
+/* 链接失效的提示要能被注意到（它和「查询失败」不是一回事，重试无用）。 */
+.compare-note.warning {
+  color: var(--ui-warning);
 }
 
 /* 提成领取按钮：与兑换按钮同一套暖色，可领时实心、不可领时描边。 */

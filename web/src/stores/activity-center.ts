@@ -478,6 +478,9 @@ export interface YishuHuanfuFriendScanDto {
   ownShop: YishuHuanfuFriendShopDto | null
   scanned: number
   failed: number
+  // 分享链接已失效（服务端 1034184）被移出比价的铺子：需要对方重新分享一次。
+  expiredShops: YishuHuanfuExpiredShopDto[]
+  expiredKeyCount: number
   friendCount: number
   panelFriendCount: number
   candidateCount: number
@@ -485,6 +488,11 @@ export interface YishuHuanfuFriendScanDto {
   friendListError: string
   scannedAt: number
   cached: boolean
+}
+
+export interface YishuHuanfuExpiredShopDto {
+  gid: string
+  name: string
 }
 
 export interface YishuHuanfuActivityDto {
@@ -2095,6 +2103,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const yishuHuanfuFriendShopsLoading = ref(false)
   const yishuHuanfuFriendScanAt = ref(0)
   const yishuHuanfuFriendScanNote = ref('')
+  // 这一轮因为「分享链接已失效」被移出比价的铺子：界面单独提示一句，
+  // 让用户知道不是网络问题，而是需要对方重新分享一次。
+  const yishuHuanfuExpiredShops = ref<YishuHuanfuExpiredShopDto[]>([])
   // 收购记录（cmd 95）是独立查询，不放在快照里，避免每次轮询都多打一次网关。
   // recordsAccountId 记录这份列表属于哪个账号：切号时必须整份丢掉，否则会把上一个账号的
   // 记录当成当前账号的显示（页面守卫还会因为「已有数据」直接跳过请求）。
@@ -2740,11 +2751,20 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       const friendListError = text(payload.friendListError, payload.friend_list_error)
       const panelFriendCount = finiteNumber(first(payload.panelFriendCount, payload.panel_friend_count)) || 0
       const pendingCount = finiteNumber(first(payload.pendingCount, payload.pending_count)) || 0
+      // 分享链接失效的铺子：后端已经删了它们的存档，这里只负责告诉用户「要让对方重新分享」。
+      const expiredRaw = Array.isArray(payload.expiredShops)
+        ? payload.expiredShops
+        : Array.isArray(payload.expired_shops) ? payload.expired_shops : []
+      yishuHuanfuExpiredShops.value = expiredRaw
+        .map((entry: any) => ({ gid: text(entry?.gid), name: text(entry?.name) }))
+        .filter((entry: YishuHuanfuExpiredShopDto) => !!entry.gid)
+      const expiredCount = yishuHuanfuExpiredShops.value.length
       yishuHuanfuFriendScanNote.value = friendListError
         || (scanned === 0
-          ? '没有可查询的铺子'
+          ? (expiredCount ? `${expiredCount} 家铺子的分享链接已失效，等对方重新分享` : '没有可查询的铺子')
           : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子`
             + `${panelFriendCount ? `（含其它账号 ${panelFriendCount} 个）` : ''}`
+            + `${expiredCount ? `，${expiredCount} 家分享链接失效已移出` : ''}`
             + `${failed ? `，${failed} 个查询失败` : ''}`
             + `${pendingCount ? `，还有 ${pendingCount} 个候选待下一轮轮换` : ''}`)
       return true
@@ -2778,10 +2798,12 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return result
   }
 
-  function clearYishuHuanfuFriendShops() {    yishuHuanfuFriendShops.value = []
+  function clearYishuHuanfuFriendShops() {
+    yishuHuanfuFriendShops.value = []
     yishuHuanfuFriendShopsLoading.value = false
     yishuHuanfuFriendScanAt.value = 0
     yishuHuanfuFriendScanNote.value = ''
+    yishuHuanfuExpiredShops.value = []
     yishuHuanfuFriendShopsAccountId.value = ''
   }
 
@@ -2942,6 +2964,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     yishuHuanfuFriendShopsLoading,
     yishuHuanfuFriendScanAt,
     yishuHuanfuFriendScanNote,
+    yishuHuanfuExpiredShops,
     charity,
     weather,
     weatherFriends,

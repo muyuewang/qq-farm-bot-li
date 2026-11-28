@@ -161,8 +161,9 @@ function createHarness(options = {}) {
             }
             if (method === 'Operate') {
                 const cmd = readRequestCmd(Buffer.from(body));
-                // 模拟服务端业务拒绝（比如 1034177 今日种子已领取）。
-                const thrown = options.operateThrows ? options.operateThrows(cmd) : null;
+                // 模拟服务端业务拒绝（比如 1034177 今日种子已领取）；
+                // 传 body 是为了让用例能按 gid 决定「哪一家」报错（1034184 是按铺子来的）。
+                const thrown = options.operateThrows ? options.operateThrows(cmd, Buffer.from(body)) : null;
                 if (thrown) throw thrown;
                 const payload = { activity_id: ACTIVITY_ID, operate_type: cmd };
                 // 默认给每个命令一个最小可用的回包，单个用例可以覆盖。
@@ -1139,4 +1140,112 @@ test('yishuhuanfu scan never pools keyless friends', async () => {
     // includeFriends 这个兼容入口已随查价收紧一并失效：传了也不会再并好友列表。
     const legacy = await harness.service.scanYishuHuanfuFriendShops({ force: true, includeFriends: true });
     assert.equal(legacy.shops.length, 1);
+});
+
+// 2026-11-28 实测：铺主重新分享一次后，之前那条链接立刻作废，
+// 服务端回 1034184「分享链接已失效，请重新联系店主分享」。
+// 存档里那条已经没用了 —— 必须清掉，否则每轮比价都拿死链打网关：
+// 既拿不到价，又平白多出一堆注定失败的请求。
+function shareKeyExpiredError() {
+    return Object.assign(
+        new Error('gamepb.activitypb.ActivityService.Operate code=1034184 分享链接已失效，请重新联系店主分享'),
+        { code: 1034184, errorMessage: '分享链接已失效，请重新联系店主分享' },
+    );
+}
+
+test('查价撞到 1034184 会删掉这家的标识，并从下一轮候选里消失', async () => {
+    const harness = createHarness({
+        shopQuotes: {
+            1220537209: { price: '100', quota: '8000' },
+            910001: { price: '260', quota: '2000', name: 'A号' },
+        },
+        shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
+        operateThrows: (cmd, body) => {
+            if (cmd !== 92) return null;
+            const gid = String(types.YshfShopQueryRequest.decode(body).params?.shop_gid ?? '');
+            return gid === '910001' ? shareKeyExpiredError() : null;
+        },
+    });
+
+    const first = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(first.expiredKeyCount, 1);
+    assert.deepEqual(first.expiredShops, [{ gid: '910001', name: '' }]);
+    // 失效的不算「查询失败」：这不是网络问题，重试也不会好。
+    assert.equal(first.failed, 0);
+    assert.equal(first.shops.some(entry => entry.gid === '910001'), false);
+    assert.match(first.message, /分享链接失效已移出/);
+    // 死链已经从存档里清掉，否则下一轮还会拿它打网关。
+    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+
+    const before = harness.operateRequest().length;
+    const second = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(second.expiredKeyCount, 0);
+    const queried = harness.operateRequest().slice(before)
+        .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
+    assert.deepEqual(queried, ['1220537209'], '死链不该再被请求');
+});
+
+test('错误只把 code 拼在 message 里也能认出 1034184', async () => {
+    // 真实链路里错误经过 worker / IPC 序列化后，可能只剩一句带 code= 的 message，
+    // error.code 已经丢了。只按 code 判会漏，必须同时看文案。
+    const harness = createHarness({
+        shopQuotes: {
+            1220537209: { price: '100', quota: '8000' },
+            910001: { price: '260', quota: '2000' },
+        },
+        shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
+        operateThrows: cmd => (cmd === 92 ? new Error('ActivityService.Operate code=1034184 分享链接已失效') : null),
+    });
+    const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    // 自己的查价也会撞上这个桩，只能确认「至少认出了一条」且存档被清。
+    assert.ok(result.expiredKeyCount >= 1);
+    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+});
+
+test('售卖撞到 1034184 抛 SHARE_KEY_EXPIRED 并清掉死链', async () => {
+    const harness = createHarness({
+        sweetPotato: '30',
+        shopQuotes: {
+            1220537209: { price: '100', quota: '8000' },
+            910001: { price: '260', quota: '2000', name: 'A号' },
+        },
+        shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
+        // cmd 92 正常（能查到价），cmd 93 被拒：模拟对方在这两步之间重新分享了。
+        operateThrows: cmd => (cmd === 93 ? shareKeyExpiredError() : null),
+    });
+    await assert.rejects(
+        () => harness.service.sellYishuHuanfuSweetPotato('910001', '30', { withSnapshot: false }),
+        (error) => {
+            assert.equal(error.code, 'YSHF_SHARE_KEY_EXPIRED');
+            assert.match(error.message, /重新分享/);
+            return true;
+        },
+    );
+    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+});
+
+test('失效成片出现时提前中止本轮，不再继续打网关', async () => {
+    // 5 家全部失效：第一批 4 个（含自己）撞到 3 条就停手，
+    // 剩下的留给下一轮（那时存档已清，不会再撞）。
+    const shareKeys = {};
+    for (let i = 1; i <= 5; i += 1)
+        shareKeys[`91000${i}`] = `a000000${i}-0000-4000-8000-00000000000${i}`;
+
+    const harness = createHarness({
+        shopQuotes: { 1220537209: { price: '100', quota: '8000' } },
+        shareKeys,
+        operateThrows: (cmd, body) => {
+            if (cmd !== 92) return null;
+            const gid = String(types.YshfShopQueryRequest.decode(body).params?.shop_gid ?? '');
+            return gid === '1220537209' ? null : shareKeyExpiredError();
+        },
+    });
+
+    const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(result.expiredKeyCount, 3);
+    // 只打了一批（自己 + 3 家），没把剩下两家也算成本轮已扫。
+    assert.equal(result.scanned, 4);
+    const queried = harness.operateRequest()
+        .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
+    assert.equal(queried.length, 4, '熔断后不该再发请求');
 });
