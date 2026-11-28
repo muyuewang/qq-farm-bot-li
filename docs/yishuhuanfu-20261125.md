@@ -8,12 +8,12 @@
 | cmd | 用途 | 请求 | 回包槽位 |
 | --- | --- | --- | --- |
 | 91 | 领当日红薯种子 | 空 | `grant{item_id,count}` |
-| 92 | 查铺子行情 | `shop_gid` | `yshf_shop.quote{base_price,bonus_price,quota,shop}` + `can_sell` |
-| 93 | 卖蜜薯 | `shop_gid,count` | `yshf_sell{count,price,total,quota,balance}` |
+| 92 | 查铺子行情 | `shop_gid`（+ 好友铺子要带 `shop{activity_id,gid,share_key}`） | `yshf_shop.quote{base_price,bonus_price,quota,shop}` + `can_sell` |
+| 93 | 卖蜜薯 | `shop_gid,count`（+ 卖好友要带 `shop{...}`） | `yshf_sell{count,price,total,quota,balance}` |
 | 95 | 收购记录列表 | 空 | `yshf_records.records[]` |
-| 96 | 兑换下单 | `index,count` | `yshf_exchange{price,balance,grant}` |
+| 96 | 兑换下单 | `index,count` | `yshf_exchange{price,grant,balance,count,exchanged}` |
 | 97 | 兑换目录 | 空 | `yshf_catalog.goods[]` |
-| 98 | 分享铺子 | 空 | `yshf_share{price,grant,shop.share_key}` |
+| 98 | 分享铺子 | 空 | `yshf_share{price,grant,shop{invite_key,shop_ref}}` |
 | 99 | 领取收购提成 | 空 | `yshf_commission{amount,balance}` |
 
 状态槽 `130` 的语义（早期版本理解反过，已按抓包改正）：
@@ -107,3 +107,62 @@ message YshfShopQueryReply {
 
 自动化部分只有离线的桩调用验证，尚未在实服跑满一天；实服观察点在日志 `event=以薯换福自动`：
 领种子/分享每天各一次成功、卖薯按价格降序且不超过 3 家、提成到账后一轮内被领掉。
+
+## 2026-11-28 热更：分享标识与兑换剩余次数
+
+游戏客户端 `1.17.1.13` 在活动期内改了服务端校验，两处必须跟着改，否则「卖给别人」和「兑换次数」都会失真。抓包：`gate-obt.nqf.qq.com` 2026-11-28 15:29:54（187 帧，含 8 条 Operate）。
+
+### 一、卖进好友铺子必须带当天的分享标识
+
+每天分享（cmd 98）后，分享出去的铺子卡片里带一个当天唯一的 `share_key`（UUID 形式，实机 `0d0e525c-1f3e-4133-89d6-da336d845e29`）。别人点卡片进来卖薯时，必须原样回传：
+
+```proto
+message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3; }
+// cmd 92 请求 params：1=shop_gid、2=shop(YshfShopRef)
+// cmd 93 请求 params：1=shop_gid、2=count、3=shop(YshfShopRef)
+```
+
+实机对比（同一个好友 1092751293）：
+
+- 查行情（cmd 92）只带 gid 的回包还是旧的铺主信息，但**卖薯会被拒**——这正是「以前按 gid 强卖」失效的原因；
+- 带 `shop{gid,share_key}` 后 cmd 93 正常成交：`600 × 309 = 185400`，额度 7820 → 7220，与界面「恭喜获得 18万 福气币」逐项对上。
+
+**别拿错 key。** cmd 98 回包里有两个容易混的值：
+
+| 位置 | 值（实机） | 是什么 |
+| --- | --- | --- |
+| `shop.invite_key`（2 号位） | `52ab5e16994b4110b4c7ff79367fce03` | 32 位邀请码，与 `FriendService.GetShareKey` 同值，不能用于卖薯 |
+| `shop.shop_ref.share_key`（5 号位） | `0d0e525c-1f3e-4133-89d6-da336d845e29` | 分享卡片里的标识，卖薯要回传的就是它 |
+
+早期 proto 把 2 号位当成 `share_key`，所以就算读出来也永远对不上。
+
+### 二、标识只能从分享回包拿，候选池要收窄
+
+服务端没有「按 gid 反查好友标识」的接口，`GetShareKey` 给的是另一个值。因此：
+
+- 每个账号分享成功后，把自己的 `{gid, share_key, dateKey}` 落到 `core/data/yishu_share_keys/<gid>.json`（按 gid 一文件，多进程各写各的，不会互相覆盖）；
+- 比价候选池 = **自己 + 所有带当天标识的 gid**。面板里自己登录、自己分享过的账号天然在里面；
+- 别人的好友查得到价但卖不进去，默认不再进候选池（`includeFriends: true` 才作价格参考，行上标「未分享·只能看价」）；
+- 面板外的真人好友：前端「分享标识」输入框贴对方分享的链接/卡片文本，后端用正则提取 UUID 后落盘（`POST /api/activity-center/yishuhuanfu/share-key`）。
+
+跨日自动失效：`dateKey` 对不上就当没有，因为服务端每天换新 key。
+
+### 三、兑换档位的剩余次数（cmd 97 field 6 / cmd 96 field 4-5）
+
+`YshfCatalogGoods` 的 6 号位是**累计已兑换次数**，不是布尔标记：
+
+- cmd 97：`limit = 28`、`exchanged = 13` → 游戏界面「限购 15/28」（28 − 13）；
+- 兑换 3 次后 cmd 96 回包：`count = 3`（4 号位）、`exchanged = 16`（5 号位）→ 界面「限购 12/28」（28 − 16）。
+
+所以剩余可兑 = `limit − exchanged`，界面必须显示 `剩余/上限`，兑换成功后要重拉 cmd 97（目录不在活动快照里，不重拉就一直挂着兑换前的次数）。7 号位除第 1 档外恒为 1，与是否兑换过不对应，语义仍未取证，未做断言。
+
+### 四、代码落点
+
+| 改动 | 文件 |
+| --- | --- |
+| `YshfShopRef` 与两个请求的 shop 字段、`YshfSelfShop` 重新定名、目录/兑换回包字段 | `core/src/proto/activitypb.proto` |
+| 标识存档（读写、跨日校验、链接解析） | `core/src/models/store/yishu-share-keys.ts`、`shared-state.ts` 的 `YISHU_SHARE_KEYS_DIR` |
+| 查行情/卖薯带 shop 引用、分享落盘、目录剩余量、兑换回写、导入接口 | `core/src/services/activity-center/yishuhuanfu.ts` |
+| 候选池收窄（只扫有标识的账号） | 同上 `scanYishuHuanfuFriendShops` |
+| 自动卖薯跳过无标识铺子（`YSHF_SHARE_KEY_MISSING` 计入换店错误） | `core/src/services/yishuhuanfu-auto.ts` |
+| 限购 `x/y`、未分享标记与按钮禁用、标识粘贴框 | `web/src/components/activity/YishuHuanfuTab.vue`、`web/src/stores/activity-center.ts` |

@@ -517,3 +517,22 @@ test('没配开始售卖时间时保持随时可卖', async () => {
     const summary = harness.logs.find(entry => entry.message === '以薯换福自动本轮开始');
     assert.equal(summary.meta.sellAfter, '不限');
 });
+
+// 2026-11-28 起，卖进好友铺子必须带对方当天的分享标识（share_key）。
+// 缺标识的铺子查得到价但一定成交不了，自动任务不能把单轮 3 次的写预算耗在它身上。
+test('没有分享标识的铺子不进候选，也不会浪费一次写', async () => {
+    const harness = createHarness({
+        snapshot: makeSnapshot({ sweetPotatoBalance: '30' }),
+        shops: [
+            makeShop({ gid: '900', name: '未分享', totalPrice: '400', quota: '1000', shareKeyKnown: false }),
+            makeShop({ gid: '901', name: '已分享', totalPrice: '300', quota: '1000', shareKeyKnown: true }),
+        ],
+    });
+    await harness.automation.runYishuAutomation(ALL_ON);
+
+    const sells = harness.sells();
+    assert.equal(sells.length, 1, '只会向有标识的铺子卖一次');
+    assert.equal(sells[0][1], '901', '价格更高但没标识的铺子必须跳过');
+    assert.ok(harness.logs.some(entry => String(entry.message).includes('没有今天的分享标识')));
+    assert.ok(harness.logs.some(entry => String(entry.message).includes('卖出 30 个蜜薯')));
+});

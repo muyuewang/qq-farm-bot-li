@@ -1,6 +1,6 @@
 # 新活动自研手册：从抓包到上线，不依赖上游
 
-> 适用场景：游戏上了新活动，上游仓库还没跟进（或者不打算再跟），需要在当天把活动做成可自动跑的功能。
+> 适用场景：游戏上了新活动，上游仓库还没跟进（或者不打算再跟），需要在当天把活动做成可自动跑的功能。  
 > 样板案例：2026-11 的「以薯换福」（活动组 `2026111707` / 主活动 `2026111708`）。这次全程没有 merge 上游任何提交，协议是从自己的抓包里解出来的，种子素材是从自己机器上微信小程序的游戏包里抠出来的。
 
 ## 0. 一句话方法论
@@ -19,16 +19,16 @@
 
 ## 1. 全景链路
 
-| 阶段 | 产物 | 落点 | 工具 / 入口 |
-| --- | --- | --- | --- |
-| ① 素材 | `ItemInfo.json`、`Plant.json`、种子/植物图片 | `core/src/gameConfig/`、`web/public/activity-assets/<name>/` | `tools/download-game-config.js`、`tools/download-game-images.js` |
-| ② 协议 | 新增/扩充 `.proto` | `core/src/proto/*.proto` | `tools/decode-latest-protocols.js` |
-| ③ 服务 | `<name>.ts` 读写状态与动作 | `core/src/services/activity-center/` | 手写，参照 `yishuhuanfu.ts` |
-| ④ 注册 | 活动能被目录、玩法、Worker 认出来 | 5 个注册点（见 §4.3） | — |
-| ⑤ 自动 | `<name>-auto.ts` 定时任务 | `core/src/services/` | 参照 `yishuhuanfu-auto.ts` |
-| ⑥ 配置 | 开关与数值项 | `models/store/shared-state.ts` + `web/src/views/Settings.vue` | — |
-| ⑦ 前端 | 页面 + Tab + store | `web/src/views/activity-center/`、`web/src/components/activity/`、`web/src/stores/` | — |
-| ⑧ 测试 | 协议/服务/自动三件套 | `core/tests/<name>-*.test.js` | `node --test` |
+| 阶段   | 产物                                   | 落点                                                                                | 工具 / 入口                                                         |
+| ---- | ------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| ① 素材 | `ItemInfo.json`、`Plant.json`、种子/植物图片 | `core/src/gameConfig/`、`web/public/activity-assets/<name>/`                       | `tools/download-game-config.js`、`tools/download-game-images.js` |
+| ② 协议 | 新增/扩充 `.proto`                       | `core/src/proto/*.proto`                                                          | `tools/decode-latest-protocols.js`                              |
+| ③ 服务 | `<name>.ts` 读写状态与动作                  | `core/src/services/activity-center/`                                              | 手写，参照 `yishuhuanfu.ts`                                          |
+| ④ 注册 | 活动能被目录、玩法、Worker 认出来                 | 5 个注册点（见 §4.3）                                                                    | —                                                               |
+| ⑤ 自动 | `<name>-auto.ts` 定时任务                | `core/src/services/`                                                              | 参照 `yishuhuanfu-auto.ts`                                        |
+| ⑥ 配置 | 开关与数值项                               | `models/store/shared-state.ts` + `web/src/views/Settings.vue`                     | —                                                               |
+| ⑦ 前端 | 页面 + Tab + store                     | `web/src/views/activity-center/`、`web/src/components/activity/`、`web/src/stores/` | —                                                               |
+| ⑧ 测试 | 协议/服务/自动三件套                          | `core/tests/<name>-*.test.js`                                                     | `node --test`                                                   |
 
 后一阶段依赖前一阶段。协议没定下来之前不要写服务，状态语义没定下来之前不要开自动任务——否则改一遍要动三个层。
 
@@ -119,24 +119,24 @@ pnpm -C core exec tsx ../tools/decode-latest-protocols.js <抓包目录> --summa
 ```
 gamepb.activitypb.ActivityService.Operate
   ├─ 请求 field 2：cmd（命令号，91 / 92 / 93 / ...）
-  ├─ 请求参数消息：挂在 190 + cmd 号槽位
-  └─ 回包：挂在同一个 190 + cmd 号槽位
+  ├─ 请求参数消息：挂在 100 + cmd 号槽位
+  └─ 回包：挂在同一个 100 + cmd 号槽位
 ```
 
-这和老的 `operate_type` 协议不一样。抓到 `Operate` 之后先看请求里的 `cmd`/`operate_type` 数值，再看回包里哪个 field 号变成了 `190 + cmd`，一一对上就能定位参数结构。
+这和老的 `operate_type` 协议不一样。抓到 `Operate` 之后先看请求里的 `cmd`/`operate_type` 数值，再看回包里哪个 field 号变成了 `100 + cmd`（91→191、92→192、93→193、98→198），一一对上就能定位参数结构。
 
 拿到的 cmd 表（详见 [yishuhuanfu-20261125.md](yishuhuanfu-20261125.md)）：
 
-| cmd | 用途 | 请求 | 回包槽位 |
-| --- | --- | --- | --- |
-| 91 | 领当日种子 | 空 | `grant{item_id,count}` |
-| 92 | 查铺子行情 | `shop_gid` | `quote{base_price,bonus_price,quota,shop}` + `can_sell` |
-| 93 | 卖蜜薯 | `shop_gid,count` | `sell{count,price,total,quota,balance}` |
-| 95 | 收购记录 | 空 | `records[]` |
-| 96 | 兑换下单 | `index,count` | `exchange{price,balance,grant}` |
-| 97 | 兑换目录 | 空 | `catalog.goods[]` |
-| 98 | 分享铺子 | 空 | `share{price,grant,shop.share_key}` |
-| 99 | 领收购提成 | 空 | `commission{amount,balance}` |
+| cmd | 用途    | 请求               | 回包槽位                                                    |
+| --- | ----- | ---------------- | ------------------------------------------------------- |
+| 91  | 领当日种子 | 空                | `grant{item_id,count}`                                  |
+| 92  | 查铺子行情 | `shop_gid`       | `quote{base_price,bonus_price,quota,shop}` + `can_sell` |
+| 93  | 卖蜜薯   | `shop_gid,count` | `sell{count,price,total,quota,balance}`                 |
+| 95  | 收购记录  | 空                | `records[]`                                             |
+| 96  | 兑换下单  | `index,count`    | `exchange{price,balance,grant}`                         |
+| 97  | 兑换目录  | 空                | `catalog.goods[]`                                       |
+| 98  | 分享铺子  | 空                | `share{price,grant,shop.share_key}`                     |
+| 99  | 领收购提成 | 空                | `commission{amount,balance}`                            |
 
 ### 3.5 从「一堆未知槽位」到「可用协议」的四步法
 
@@ -174,7 +174,19 @@ if (hasCanSell && reply.can_sell === false) throw businessError('YSHF_SHOP_CLOSE
 - 新活动单独开注释块，写清活动组 ID、主活动 ID、`type`、有效期；
 - 每条 cmd 在注释里写请求/回包槽位号；
 - 每个语义字段注释里带实机证据（时间点、数值、出现条件）；
-- 改过的错误理解要留在注释里（例如「旧文档把 5/6 写反过，勿再混用」），防止下一轮重新踩。
+- 改过的错误理解要留在注释里（例如「旧文档把 5/6 写反过，勿再混用」），防止下一轮再踩。
+
+### 3.8 活动期中协议会变：设计时就要留出「重查」的路
+
+以薯换福在活动第 4 天（2026-11-28）被服务端加了校验：卖进好友铺子必须带对方当天的分享标识，只带 gid 的老路直接失效；同一版还开始下发兑换档位的已兑次数。两次都没有公告，只有抓包能看出来。
+
+这类热更改不掉「协议层」，但会改掉**上层设计**，所以要提前留好三个口子：
+
+1. **写请求带一份「引用对象」而不是只带 ID。** 现在 cmd 92/93 的 params 里除了 `shop_gid`，还带 `shop{activity_id,gid,share_key}`。字段可缺省，缺省时退回旧行为；服务端一加校验，只要填上就能继续用，不用改协议结构。
+2. **候选池永远按「可成交性」筛，不按「能查到价」筛。** 能查到价不等于卖得进去。候选池的准入条件写成「拿得到对方当天的分享标识」，缺标识的只展示不给按钮，自动任务直接跳过（否则一轮 3 次的写预算全浪费在被拒的请求上）。
+3. **回包里的每个计数都要能回写界面。** cmd 96 的 `count` / `exchanged` 不是日志字段，是用来更新「限购 x/y」的数据源；目录又不在活动快照里，所以兑换成功后必须重拉 cmd 97，否则界面一直显示兑换前的次数。
+
+顺带一条经验：**同一个回包里出现两个「像 key 的东西」时，先确认哪个是服务端真正校验的**。cmd 98 的 2 号位是 32 位邀请码（与 `GetShareKey` 同值），5 号位才是卡片里的 UUID 标识；早期 proto 把 2 号位当 `share_key`，读出来永远对不上，还查不出原因。
 
 ---
 
@@ -192,20 +204,20 @@ core/tests/<name>-auto.test.js
 
 ### 4.2 服务骨架要点
 
-- 用 `sendMsgAsync('gamepb.activitypb.ActivityService', 'Operate', body)` 发包，`Operate` 请求统一构造：`{ operate_type / cmd, [190+cmd]: params }`；
+- 用 `sendMsgAsync('gamepb.activitypb.ActivityService', 'Operate', body)` 发包，`Operate` 请求统一构造：`{ operate_type / cmd, [100+cmd]: params }`；
 - 读状态走 `GetGroup` 一次拿全，别为每个字段单独发一次请求；
 - 写接口暴露 `withSnapshot` 选项，自动任务调用时传 `false`——写操作后重建整份活动中心快照要读 7 个活动，代价远高于一次写；
 - 余额统一从 `refreshBalances()` 走，`currentBalances()` 只同步读内存，别在活动服务里另开一条打网关的路。
 
 ### 4.3 五个注册点（漏一个就「活动能开但点不动」）
 
-| # | 文件 | 要加什么 |
-| --- | --- | --- |
-| 1 | `core/src/services/activity-center.ts` | `require('./activity-center/<name>')`、`createXxxService({...})`、把方法挂到导出对象、加入 `buildActivityDirectory` 的形参与 `available` / `errors` 汇总 |
-| 2 | `core/src/services/activity-gameplay-registry.ts` | `ActivityDetailTarget` 联合类型加一项；`bindings` 里加 `{ gameplayKey, detailTarget, priority, activityIds }` |
-| 3 | `core/src/core/worker.ts` | `require` 自动任务，并在两个启动点（首启 + 重载配置）都调一次 `startXxxTimer(workerScheduler, () => loginReady)` |
-| 4 | `core/src/controllers/admin/activity-center/index.ts` + `<name>-routes.ts` | 后台接口路由挂载（页面按钮走的就是这些） |
-| 5 | `core/src/models/store/shared-state.ts` | 自动化开关与数值项的默认值 + `normalizeAutomationValue` 归一化分支 |
+| # | 文件                                                                         | 要加什么                                                                                                                                 |
+| - | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 | `core/src/services/activity-center.ts`                                     | `require('./activity-center/<name>')`、`createXxxService({...})`、把方法挂到导出对象、加入 `buildActivityDirectory` 的形参与 `available` / `errors` 汇总 |
+| 2 | `core/src/services/activity-gameplay-registry.ts`                          | `ActivityDetailTarget` 联合类型加一项；`bindings` 里加 `{ gameplayKey, detailTarget, priority, activityIds }`                                  |
+| 3 | `core/src/core/worker.ts`                                                  | `require` 自动任务，并在两个启动点（首启 + 重载配置）都调一次 `startXxxTimer(workerScheduler, () => loginReady)`                                             |
+| 4 | `core/src/controllers/admin/activity-center/index.ts` + `<name>-routes.ts` | 后台接口路由挂载（页面按钮走的就是这些）                                                                                                                 |
+| 5 | `core/src/models/store/shared-state.ts`                                    | 自动化开关与数值项的默认值 + `normalizeAutomationValue` 归一化分支                                                                                     |
 
 `activity-windows.ts` 不用改：活动时间窗是从服务端 `ActivityService.List` 动态拉的，新活动上线后会自动出现在窗口表里。
 
@@ -262,11 +274,11 @@ web/src/components/activity/gameplays/<name>/index.ts  # 玩法模块声明
 
 ### 5.3 三个交互坑（都踩过）
 
-| 症状 | 原因 | 修法 |
-| --- | --- | --- |
-| 选中好友铺子后按钮「自己变回卖给自己」 | `watch` 依赖里放了会随快照刷新的 `shop.gid` | watch 只依赖 `accountId` + `activityId` |
-| 面板好友比价池永远是空 | `require('../models/store')` 在二级目录下指错路径，异常被 `try/catch` 吞掉 | 用 `require('../../models/store')`，并加一条「池为空时打日志」 |
-| 前端类型检查报缺字段 | `Settings.vue` 的缺省对象没同步新字段 | 三处默认对象一起补 |
+| 症状                  | 原因                                                         | 修法                                              |
+| ------------------- | ---------------------------------------------------------- | ----------------------------------------------- |
+| 选中好友铺子后按钮「自己变回卖给自己」 | `watch` 依赖里放了会随快照刷新的 `shop.gid`                            | watch 只依赖 `accountId` + `activityId`            |
+| 面板好友比价池永远是空         | `require('../models/store')` 在二级目录下指错路径，异常被 `try/catch` 吞掉 | 用 `require('../../models/store')`，并加一条「池为空时打日志」 |
+| 前端类型检查报缺字段          | `Settings.vue` 的缺省对象没同步新字段                                 | 三处默认对象一起补                                       |
 
 第三条尤其容易漏：`syncLocalAutomationSettings()` 有多个缺省分支，新增配置项要全部补齐，否则 `vue-tsc` 直接红。
 
@@ -289,6 +301,7 @@ TSDK 是登录与心跳的底座，活动更新一般**不需要**动它；只�
 2. 备份旧文件（`core/src/utils/tsdk*.wasm`）；
 3. 计算哈希：`sha256sum core/src/utils/tsdk.wasm core/src/utils/tsdk-wx.wasm`；
 4. 更新 `core/src/utils/tsdk-runtime.ts` 的 `TSDK_BUILDS`（每个平台三项：`file` / `version` / `sha256`）。
+
 
 当前基线（2026-11-25 抓包对齐）：
 
@@ -355,19 +368,22 @@ TSDK 是登录与心跳的底座，活动更新一般**不需要**动它；只�
 [ ] 8. pnpm build:core + node --test core/tests，与既有失败基线比对
 [ ] 9. typecheck:web + build:web
 [ ] 10. 前端素材路径、活动名识别分支是否还需要补
+[ ] 11. 活动期中也要定期抓包：服务端会在不通知的情况下加校验（以薯换福第 4 天加了分享标识），
+       重点是「写请求多了什么字段」「回包多了什么计数」
 ```
 
 「既有失败基线」要记住：本项目 core 全量里一直有若干项失败（公益小红花、客户端版本、TSDK、QQ/微信登录等），做改动前先跑一遍记下失败集合，改完只对比集合有没有变大，不要被既有红点带偏。
 
 ---
 
-## 8. 自力更生的五条铁律
+## 8. 自力更生的六条铁律
 
 1. **只信实机抓包，不信推测。** 界面上的数字是最好的校验器：价格、余额、数量三项能对上，协议才算通了。
 2. **语义没证据就叫 `field_N`。** 猜错的字段会被上层当真，比缺失危险十倍。
 3. **布尔永远按三态处理。** 「没下发」不等于 `false`。
 4. **写操作必须闭口。** 数量/金额/余额对不上就停手，不重试，不猜。
 5. **每个结论都留证据。** proto 注释里写抓包时间和实机数值，文档里写版本号和哈希。半年后回来看，这些注释就是唯一的资产。
+6. **能查到价 ≠ 能卖进去。** 服务端随时可能加校验（分享标识就是例子），候选池的准入条件要按「拿得到成交所需凭据」来定，不能按「查得到数据」来定。
 
 ---
 
@@ -376,12 +392,13 @@ TSDK 是登录与心跳的底座，活动更新一般**不需要**动它；只�
 | 步骤 | 做了什么 | 产出 |
 | --- | --- | --- |
 | 1 | 微信小程序包里抠 `ItemInfo.json`，定位红薯种子 `item_id 20307`，下载对应图标 | `core/src/gameConfig/`、`seed_images/20307.png` |
-| 2 | 抓包，解出 `Operate` 的 cmd 91–99 与槽位 `190+cmd` | `activitypb.proto` 的 Yshf 段 |
+| 2 | 抓包，解出 `Operate` 的 cmd 91–99 与槽位 `100+cmd` | `activitypb.proto` 的 Yshf 段 |
 | 3 | 差分 `GetGroup` 定位状态槽 130 及 8 个子槽，用 111+33=144 交叉验证 | 状态语义表 |
 | 4 | 写服务层，暴露领种子/卖薯/查行情/兑换/分享/提成 9 个方法 | `services/activity-center/yishuhuanfu.ts` |
 | 5 | 五个注册点接线，活动出现在目录里且按钮可用 | `activity-center.ts`、`activity-gameplay-registry.ts`、`worker.ts`、admin routes、`shared-state.ts` |
 | 6 | 自动任务：10 分钟一轮、相位 4、首跑 260s，领种子/分享/卖薯/领提成 | `services/yishuhuanfu-auto.ts` |
 | 7 | 前端页面 + Tab + store，设置页新增卡片 | `web/src/views/activity-center/YishuHuanfuActivityPage.vue` 等 |
 | 8 | 三件套测试 58 项，实机修正（面板好友池、选中铺子被重置、漏卖最高价） | `core/tests/yishuhuanfu-*.test.js` |
+| 9 | 活动第 4 天服务端热更：卖好友要带分享标识、目录开始下发已兑次数 → 协议加 `YshfShopRef`、标识落盘、候选池收窄、限购改 `x/y` | `yishu-share-keys.ts`、`yishuhuanfu.ts`、`YishuHuanfuTab.vue` |
 
 自动任务上线后的观察点：日志 `event=以薯换福自动` 里，领种子/分享每天各一次成功、卖薯按价格降序且单轮不超过 3 家、提成到账后一轮内被领掉、每轮比价日志能看到候选池/扫描数/前 5 名价格。

@@ -10,6 +10,7 @@ const props = defineProps<{
   pendingExchange: boolean
   pendingQuote: boolean
   pendingCommission: boolean
+  pendingImportKey: boolean
   friendShops: YishuHuanfuFriendShopDto[]
   friendShopsLoading: boolean
   friendScanAt: number
@@ -36,6 +37,8 @@ const emit = defineEmits<{
   refreshQuote: []
   claimCommission: []
   loadRecords: []
+  // 手动导入好友当天分享标识：贴分享链接/卡片文本或 UUID。
+  importShareKey: [gid: string, text: string]
 }>()
 
 type TabKey = 'shop' | 'store' | 'compare'
@@ -204,13 +207,26 @@ function submitSell() {
 // 点开弹窗再填数量（参考同类工具的做法：避免误触一换就是多份）。
 const exchangeTarget = ref<YishuHuanfuCatalogEntryDto | null>(null)
 const exchangeQty = ref(1)
+// 手动粘贴对方的分享标识（链接/卡片文本都行），用于面板外的真人好友。
+const shareKeyText = ref('')
+
+function submitShareKey() {
+  const gid = targetGid.value.trim()
+  const text = shareKeyText.value.trim()
+  if (!gid || !text || props.pendingImportKey)
+    return
+  emit('importShareKey', gid, text)
+  shareKeyText.value = ''
+}
 
 // 上限取「本档剩余可兑」和「福气币够买几次」的较小值；余额为 0 时仍然允许 1，交给服务端裁决。
-function maxCountOf(entry: { index: number, price: string, limit: string }) {
+// 剩余量用后端算好的 remaining（limit − 已兑换），兑换后会被回写，不能拿 limit 当剩余用。
+function maxCountOf(entry: { index: number, price: string, limit: string, remaining: string }) {
   const price = Number(entry.price || '0')
   const limit = Number(entry.limit || '0')
+  const remaining = Number(entry.remaining || '0')
   const byBalance = price > 0 ? Math.floor(luckCoin.value / price) : 1
-  const byLimit = limit > 0 ? limit : Number.POSITIVE_INFINITY
+  const byLimit = limit > 0 ? remaining : Number.POSITIVE_INFINITY
   const max = Math.min(Number.isFinite(byBalance) ? byBalance : 1, byLimit)
   return Math.max(1, Number.isFinite(max) ? Math.floor(max) : 1)
 }
@@ -251,8 +267,11 @@ function confirmExchange() {
   exchangeTarget.value = null
 }
 
-function canExchangeEntry(entry: { index: number, price: string, limit: string, exchangeable: boolean }) {
+function canExchangeEntry(entry: { index: number, price: string, limit: string, remaining: string, exchangeable: boolean }) {
   if (!entry.exchangeable)
+    return false
+  // 剩余次数为 0 直接置灰，别再让用户点进弹窗后被后端拒一次。
+  if (Number(entry.limit || '0') > 0 && Number(entry.remaining || '0') <= 0)
     return false
   // 余额没读到时不要一棍子打死：放行到下单接口，由后端按真实余额给出准话。
   if (activity.value?.luckCoinBalance === null || activity.value?.luckCoinBalance === undefined)
@@ -492,6 +511,26 @@ function scanAgo() {
             填好 GID 后点「查行情」，先确认单价和剩余额度再卖。
           </p>
 
+          <!-- 2026-11-28 起卖给别人要带对方当天的分享标识；面板外的真人好友只能手动贴一次。
+               面板账号会自己分享、标识自动落盘，不会出现这一行。 -->
+          <label v-if="targetShop && !targetShop.own && !targetShop.shareKeyKnown" class="sell-input">
+            <span>分享标识</span>
+            <input
+              v-model="shareKeyText"
+              type="text"
+              autocomplete="off"
+              placeholder="粘贴对方分享的链接或标识"
+            >
+            <button
+              type="button"
+              class="link"
+              :disabled="pendingImportKey || !shareKeyText.trim()"
+              @click="submitShareKey"
+            >
+              {{ pendingImportKey ? '保存中…' : '保存' }}
+            </button>
+          </label>
+
           <label class="sell-input">
             <span>出售数量</span>
             <input
@@ -547,7 +586,7 @@ function scanAgo() {
             <span v-else class="catalog-placeholder">#{{ entry.index }}</span>
           </div>
           <p class="catalog-name">{{ goodsTitle(entry) }}</p>
-          <p class="catalog-limit">限购 {{ entry.limit }}</p>
+          <p class="catalog-limit">限购 {{ entry.remaining }}/{{ entry.limit }}</p>
           <p class="catalog-price">{{ formatPrice(entry.price) }} 福气币 / 次</p>
           <button
             type="button"
@@ -581,7 +620,8 @@ function scanAgo() {
         </button>
       </div>
       <p class="compare-hint">
-        用 GID 逐个查今日收购价（只读命令，不占用对方额度，对方也收不到通知）；候选包含面板里其它账号的好友，非好友也能卖。
+        用 GID 逐个查今日收购价（只读命令，不占用对方额度，对方也收不到通知）。候选只包含自己 + 有当天分享标识的账号：
+        2026-11-28 起卖给别人必须带对方分享卡片里的标识，别人的好友查得到价也卖不进去。
         {{ ranking || '挑个价高的铺子卖，比卖给自己更划算。' }}
       </p>
       <p v-if="friendScanNote" class="compare-note">{{ friendScanNote }}<template v-if="friendScanAt">（{{ scanAgo() }}）</template></p>
@@ -593,7 +633,7 @@ function scanAgo() {
             <strong>
               {{ shop.name || shop.gid }}
               <em v-if="shop.own">自己</em>
-              <em v-else-if="shop.via === 'panel'" class="panel-source" :title="shop.panelAccount ? `${shop.panelAccount} 的好友` : '面板其它账号的好友'">其它号好友</em>
+              <em v-else-if="shop.via === 'panel'" class="panel-source" :title="shop.shareKeyKnown ? '拿到了对方当天的分享标识，可以直接卖' : '没有对方今天的分享标识，只能看价'">已分享</em>
             </strong>
             <span>GID {{ shop.gid }}</span>
           </div>
@@ -603,11 +643,12 @@ function scanAgo() {
             <span v-if="shop.unlimited">还可收 不限</span>
             <span v-else>还可收 {{ formatNumber(shop.quota) }}</span>
             <span v-if="shop.canSell === false" class="closed">当前不收</span>
+            <span v-else-if="!shop.shareKeyKnown" class="closed" title="2026-11-28 起，卖给好友要带对方当天的分享标识">未分享·只能看价</span>
           </div>
           <button
             type="button"
             class="catalog-buy narrow"
-            :disabled="shop.canSell === false || (!shop.unlimited && Number(shop.quota || '0') <= 0)"
+            :disabled="shop.canSell === false || !shop.shareKeyKnown || (!shop.unlimited && Number(shop.quota || '0') <= 0)"
             @click="pickTarget(shop.own ? '' : shop.gid)"
           >
             {{ shop.own ? '卖自己' : '卖给他' }}
@@ -615,7 +656,7 @@ function scanAgo() {
         </article>
       </div>
       <p v-else-if="!friendShopsLoading" class="catalog-empty">
-        还没有比价结果，点「重新比价」把好友铺子扫一遍。
+        还没有比价结果，点「重新比价」扫一遍自己和面板账号的铺子。
       </p>
     </section>
 
@@ -640,7 +681,7 @@ function scanAgo() {
             <img v-if="exchangeTarget.image" :src="exchangeTarget.image" :alt="goodsTitle(exchangeTarget)">
             <div>
               <strong>{{ goodsTitle(exchangeTarget) }}</strong>
-              <span>{{ formatPrice(exchangeTarget.price) }} 福气币 / 个 · 限购 {{ exchangeTarget.limit }}</span>
+              <span>{{ formatPrice(exchangeTarget.price) }} 福气币 / 个 · 限购 {{ exchangeTarget.remaining }}/{{ exchangeTarget.limit }}</span>
             </div>
           </div>
           <button type="button" class="exchange-close" aria-label="关闭" @click="closeExchange">×</button>

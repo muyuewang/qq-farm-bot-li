@@ -82,6 +82,36 @@ const DEFAULT_CATALOG = [
     { index: '10', price: '7000', status: '2', limit: '50' },
 ];
 
+/**
+ * 内存版分享标识存档。生产实现落在 core/data/yishu_share_keys/<gid>.json，
+ * 测试里换成 Map，既不碰真实存档，也能直接断言「分享后写进去了什么」。
+ */
+function createMemoryShareKeyStore() {
+    const entries = new Map();
+    const store = {
+        readYishuShareKey: gid => entries.get(String(gid)) || null,
+        writeYishuShareKey: (gid, entry) => {
+            const shareKey = String(entry?.shareKey || '');
+            if (!gid || !shareKey) return false;
+            entries.set(String(gid), {
+                gid: String(gid),
+                shareKey,
+                activityId: String(entry?.activityId || ''),
+                dateKey: String(entry?.dateKey || ''),
+                updatedAt: Date.now(),
+            });
+            return true;
+        },
+        listYishuShareKeys: () => new Map(entries),
+        normalizeShareKey: (value) => {
+            const match = String(value || '').match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+            return match ? match[0].toLowerCase() : '';
+        },
+    };
+    store.entries = entries;
+    return store;
+}
+
 // cmd 92 的回包：base_price 是基础收购价、bonus_price 是分享暴击加成、quota 是剩余接收额度，
 // can_sell 是这个铺子当前收不收薯（字段 2）。entry.canSell 传 null 表示回包不带该字段。
 function shopQuotePayload(gid, entry) {
@@ -100,6 +130,19 @@ function shopQuotePayload(gid, entry) {
 function createHarness(options = {}) {
     const built = makeGroupReply(options);
     const requests = [];
+    const dateKeyOf = (nowMs) => {
+        const ms = typeof nowMs === 'number' ? nowMs : built.now * 1000;
+        return new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    };
+    // 分享标识存档：默认注入内存表；options.shareKeys 用来预置「对方今天已分享」。
+    const shareKeyStore = options.shareKeyStore || createMemoryShareKeyStore();
+    for (const [gid, shareKey] of Object.entries(options.shareKeys || {})) {
+        shareKeyStore.writeYishuShareKey(gid, {
+            shareKey,
+            activityId: ACTIVITY_ID,
+            dateKey: options.shareKeyDateKey || dateKeyOf(),
+        });
+    }
     const service = createYishuHuanfuActivityService({
         types,
         sendMsgAsync: async (service_, method, body) => {
@@ -164,9 +207,10 @@ function createHarness(options = {}) {
         getAllFriends: options.getAllFriends || (async () => ({ game_friends: [] })),
         // 面板其它账号的好友默认空，测试可注入以覆盖跨账号候选池。
         getPanelFriendGids: options.getPanelFriendGids || (() => []),
+        shareKeyStore,
     });
     const operateRequest = () => requests.filter(entry => entry.method === 'Operate');
-    return { service, requests, built, operateRequest };
+    return { service, requests, built, operateRequest, shareKeyStore, dateKey: dateKeyOf() };
 }
 
 test('yishuhuanfu snapshot maps the price slot and gates actions by balance', async () => {
@@ -329,6 +373,8 @@ test('yishuhuanfu sell to a friend carries the friend gid and honours an explici
         sweetPotato: '480',
         // 卖好友铺子前会先 cmd 92 查一次行情，确认铺主与剩余额度。
         shopQuotes: { 1014343107: { price: '99', quota: '8000', name: '测试好友' } },
+        // 2026-11-28 起卖给好友必须带对方当天的分享标识，这里预置一条。
+        shareKeys: { 1014343107: '7b946b00-c609-4364-996d-46adb2f3d131' },
         operateReply: (cmd) => (cmd === 93
             ? { yshf_sell: { count: '155', price: '99', total: '15345', quota: '8000', balance: '84465' } }
             : {}),
@@ -342,6 +388,37 @@ test('yishuhuanfu sell to a friend carries the friend gid and honours an explici
     const sent = types.YshfSellRequest.decode(sellCall.body);
     assert.equal(String(sent.params.shop_gid), '1014343107');
     assert.equal(String(sent.params.count), '155');
+    // 分享引用：activity_id + gid + share_key，服务端靠它确认「这家铺子今天被分享过」。
+    assert.equal(String(sent.params.shop.activity_id), ACTIVITY_ID);
+    assert.equal(String(sent.params.shop.gid), '1014343107');
+    assert.equal(sent.params.shop.share_key, '7b946b00-c609-4364-996d-46adb2f3d131');
+});
+
+test('yishuhuanfu sell refuses a friend shop without a usable share key', async () => {
+    const harness = createHarness({
+        sweetPotato: '480',
+        shopQuotes: { 1014343107: { price: '99', quota: '8000', name: '测试好友' } },
+    });
+    // 没有标识就注定被服务端拒，本地直接拦下，不打任何写请求。
+    await assert.rejects(
+        () => harness.service.sellYishuHuanfuSweetPotato('1014343107', 100),
+        error => error.code === 'YSHF_SHARE_KEY_MISSING' && /分享标识/.test(error.message),
+    );
+    assert.equal(harness.operateRequest().filter(entry => readRequestCmd(Buffer.from(entry.body)) === 93).length, 0);
+});
+
+test('yishuhuanfu sell ignores a share key recorded on a previous day', async () => {
+    const harness = createHarness({
+        sweetPotato: '480',
+        shopQuotes: { 1014343107: { price: '99', quota: '8000', name: '测试好友' } },
+        // 昨天的标识跨日失效：服务端当天会换新 key，拿旧的卖薯会被拒。
+        shareKeys: { 1014343107: '7b946b00-c609-4364-996d-46adb2f3d131' },
+        shareKeyDateKey: '2000-01-01',
+    });
+    await assert.rejects(
+        () => harness.service.sellYishuHuanfuSweetPotato('1014343107', 100),
+        error => error.code === 'YSHF_SHARE_KEY_MISSING',
+    );
 });
 
 test('yishuhuanfu sell rejects a count larger than the bag', async () => {
@@ -380,19 +457,35 @@ test('yishuhuanfu shop query is read-only and returns the quota', async () => {
     assert.equal(String(sent.params.shop_gid), '1220537209');
 });
 
-test('yishuhuanfu share sends cmd 98 once per day', async () => {
+test('yishuhuanfu share sends cmd 98 once per day and records the shop share key', async () => {
     const harness = createHarness({
         operateReply: () => ({
             yshf_share: {
                 grant: { item_id: '20307', count: '4' },
                 price: '33',
-                shop: { gid: '1220537209', share_key: '42169456c4b948e9a52a383e708ecd31' },
+                shop: {
+                    gid: '1220537209',
+                    // 2 号位是 GetShareKey 那种 32 位邀请码，不是卡片标识。
+                    invite_key: '52ab5e16994b4110b4c7ff79367fce03',
+                    // 5 号位才是分享卡片里的铺子标识，别人点卡片卖薯要回传它。
+                    shop_ref: {
+                        activity_id: ACTIVITY_ID,
+                        gid: '1220537209',
+                        share_key: '0d0e525c-1f3e-4133-89d6-da336d845e29',
+                    },
+                },
             },
         }),
     });
     const result = await harness.service.shareYishuHuanfuShop();
     assert.equal(result.count, '4');
-    assert.equal(result.shareKey, '42169456c4b948e9a52a383e708ecd31');
+    assert.equal(result.shareKey, '0d0e525c-1f3e-4133-89d6-da336d845e29');
+    assert.equal(result.shareKeyGid, '1220537209');
+    assert.equal(result.shareKeySaved, true);
+    // 标识落盘后，别的账号（同面板）扫描时就能卖进这个铺子。
+    const stored = harness.shareKeyStore.readYishuShareKey('1220537209');
+    assert.equal(stored.shareKey, '0d0e525c-1f3e-4133-89d6-da336d845e29');
+    assert.equal(stored.dateKey, harness.dateKey);
 
     const sent = types.YshfShareRequest.decode(harness.operateRequest()[0].body);
     assert.equal(Number(sent.cmd), 98);
@@ -400,6 +493,22 @@ test('yishuhuanfu share sends cmd 98 once per day', async () => {
     await assert.rejects(
         () => harness.service.shareYishuHuanfuShop(),
         error => error.code === 'YSHF_SHARE_ALREADY_DONE',
+    );
+});
+
+test('yishuhuanfu imports a share key from a pasted link', async () => {
+    const harness = createHarness();
+    const result = await harness.service.importYishuHuanfuShareKey(
+        '1014343107',
+        'https://game.qq.com/x?share_key=7B946B00-C609-4364-996D-46ADB2F3D131&from=card',
+    );
+    assert.equal(result.gid, '1014343107');
+    assert.equal(result.shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
+    assert.equal(harness.shareKeyStore.readYishuShareKey('1014343107').shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
+
+    await assert.rejects(
+        () => harness.service.importYishuHuanfuShareKey('1014343107', '完全不是标识的一段文字'),
+        error => error.code === 'INVALID_YSHF_SHARE_KEY',
     );
 });
 
@@ -421,6 +530,67 @@ test('yishuhuanfu catalog maps ten static tiers and is exchangeable', async () =
 
     const sent = types.YshfCatalogRequest.decode(harness.operateRequest()[0].body);
     assert.equal(Number(sent.cmd), 97);
+});
+
+test('yishuhuanfu catalog exposes remaining = limit - exchanged', async () => {
+    const harness = createHarness({
+        catalog: [
+            // 2026-11-28 抓包实况：限购 28、已兑 13 → 游戏界面「限购 15/28」。
+            { index: '2', price: '60000', status: '2', limit: '28', exchanged: '13' },
+            { index: '3', price: '40000', status: '2', limit: '40' },
+            { index: '4', price: '40000', status: '2', limit: '40', exchanged: '40' },
+        ],
+    });
+    const { catalog } = await harness.service.queryYishuHuanfuCatalog();
+    assert.equal(catalog[0].limit, '28');
+    assert.equal(catalog[0].exchanged, '13');
+    assert.equal(catalog[0].remaining, '15');
+    assert.equal(catalog[0].exchangeable, true);
+    // 没下发 exchanged 的档位按 0 已兑处理，剩余等于上限。
+    assert.equal(catalog[1].remaining, '40');
+    // 已兑满：界面置灰，且兑换接口会在本地就拦下。
+    assert.equal(catalog[2].remaining, '0');
+    assert.equal(catalog[2].exchangeable, false);
+});
+
+test('yishuhuanfu exchange writes the remaining count back from the reply', async () => {
+    const harness = createHarness({
+        stateLuckCoin: '222828',
+        catalog: [{ index: '2', price: '60000', status: '2', limit: '28', exchanged: '13' }],
+        operateReply: cmd => (cmd === 96
+            ? {
+                yshf_exchange: {
+                    price: '180000',
+                    grant: { item_id: '101627', count: '3' },
+                    balance: '42828',
+                    count: '3',
+                    exchanged: '16',
+                },
+            }
+            : {}),
+    });
+    const result = await harness.service.exchangeYishuHuanfuGoods(2, 3);
+    assert.equal(result.count, '3');
+    // 回包 5 号位直接给「兑换后累计已兑次数」，前端据此把 15/28 改成 12/28。
+    assert.equal(result.exchanged, '16');
+    assert.equal(result.remaining, '12');
+    assert.equal(result.balance, '42828');
+});
+
+test('yishuhuanfu exchange refuses to exceed the remaining count', async () => {
+    const harness = createHarness({
+        stateLuckCoin: '100000000',
+        catalog: [{ index: '2', price: '60000', status: '2', limit: '28', exchanged: '13' }],
+    });
+    // 剩余 15 次，想兑 16 次：本地拦下，不打 cmd 96。
+    await assert.rejects(
+        () => harness.service.exchangeYishuHuanfuGoods(2, 16),
+        error => error.code === 'YSHF_EXCEED_LIMIT' && /剩余可兑换 15 次/.test(error.message),
+    );
+    assert.equal(
+        harness.operateRequest().filter(entry => readRequestCmd(Buffer.from(entry.body)) === 96).length,
+        0,
+    );
 });
 
 test('yishuhuanfu exchange sends cmd 96 and returns the real item id', async () => {
@@ -533,16 +703,14 @@ test('yishuhuanfu friend scan ranks shops by price and includes the own shop', a
             900001: { price: '220', quota: '3000', name: '阿甲' },
             900002: { price: '145', quota: '800', name: '阿乙' },
         },
-        getAllFriends: async () => ({
-            game_friends: [
-                { gid: '900001', name: '阿甲', level: '40' },
-                { gid: '900002', name: '阿乙', level: '32' },
-                { gid: '900001', name: '阿甲重复行', level: '40' },
-            ],
-        }),
+        // 候选池现在只认「有当天分享标识」的账号：面板里能登录、今天分享过的铺子。
+        shareKeys: {
+            900001: '11111111-1111-4111-8111-111111111111',
+            900002: '22222222-2222-4222-8222-222222222222',
+        },
     });
     const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    // 自己 + 两个去重后的好友。
+    // 自己 + 两个有标识的账号。
     assert.equal(result.scanned, 3);
     assert.equal(result.friendCount, 2);
     // 排序按游戏界面显示的成交价（基础价 + 加成）：220 > 116+66=182 > 145。
@@ -556,9 +724,30 @@ test('yishuhuanfu friend scan ranks shops by price and includes the own shop', a
     // 自家不占好友额度：unlimited 为真，界面显示「不限」；好友行照常给剩余额度。
     assert.equal(result.ownShop.unlimited, true);
     assert.equal(result.shops.find(entry => entry.gid === '900002').unlimited, false);
-    // can_sell 逐行透传，默认桩值为可收。
+    // can_sell 逐行透传，默认桩值为可收；有标识的铺子都能卖。
     assert.equal(result.ownShop.canSell, true);
+    assert.ok(result.shops.every(entry => entry.shareKeyKnown !== false));
     assert.equal(result.failed, 0);
+});
+
+test('yishuhuanfu scan sends the friend share key with cmd 92 but never for the own shop', async () => {
+    const harness = createHarness({
+        shopQuotes: {
+            1220537209: { price: '116', quota: '7000' },
+            900001: { price: '220', quota: '3000' },
+        },
+        shareKeys: { 900001: '11111111-1111-4111-8111-111111111111' },
+    });
+    await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    const queries = harness.operateRequest()
+        .filter(entry => readRequestCmd(Buffer.from(entry.body)) === 92)
+        .map(entry => types.YshfShopQueryRequest.decode(entry.body));
+    const friendQuery = queries.find(q => String(q.params.shop_gid) === '900001');
+    const ownQuery = queries.find(q => String(q.params.shop_gid) === '1220537209');
+    assert.equal(friendQuery.params.shop.share_key, '11111111-1111-4111-8111-111111111111');
+    assert.equal(String(friendQuery.params.shop.gid), '900001');
+    // 查自己铺子不带分享引用（实机抓包同样没有这一段）。
+    assert.equal(ownQuery.params.shop, null);
 });
 
 test('yishuhuanfu sell refuses a shop whose can_sell is false', async () => {
@@ -566,6 +755,7 @@ test('yishuhuanfu sell refuses a shop whose can_sell is false', async () => {
         sweetPotato: '480',
         // 额度还剩很多，但对方当前不收蜜薯——只看 quota 会误判成可以卖。
         shopQuotes: { 900003: { price: '300', quota: '5000', name: '关张铺子', canSell: false } },
+        shareKeys: { 900003: '33333333-3333-4333-8333-333333333333' },
     });
     await assert.rejects(
         () => harness.service.sellYishuHuanfuSweetPotato('900003', 10),
@@ -583,6 +773,7 @@ test('yishuhuanfu sell proceeds when the reply omits can_sell', async () => {
         sweetPotato: '100',
         // 老版本/精简回包不带字段 2：不能当成 false 把可卖的铺子拦下来。
         shopQuotes: { 900004: { price: '150', quota: '5000', name: '老回包', canSell: null } },
+        shareKeys: { 900004: '44444444-4444-4444-8444-444444444444' },
         operateReply: (cmd) => (cmd === 93
             ? { yshf_sell: { count: '10', price: '150', total: '1500', quota: '4990', balance: '1500' } }
             : {}),
@@ -594,9 +785,8 @@ test('yishuhuanfu sell proceeds when the reply omits can_sell', async () => {
 test('yishuhuanfu friend scan tolerates a failing friend and caches the result', async () => {
     const harness = createHarness({
         shopQuotes: { 1220537209: { price: '116', quota: '7000' } },
-        getAllFriends: async () => ({
-            game_friends: [{ gid: '900001', name: '离线好友' }],
-        }),
+        // 有标识但行情查失败：复刻「对方分享过、当前网络/网关抽风」的情况。
+        shareKeys: { 900001: '55555555-5555-4555-8555-555555555555' },
     });
     const first = await harness.service.scanYishuHuanfuFriendShops({ force: true });
     // 好友查询失败不中断整轮，只计一次失败，自己那行照常返回。
@@ -630,6 +820,7 @@ test('yishuhuanfu sell forwards the requested count to cmd 93', async () => {
     const harness = createHarness({
         sweetPotato: '660',
         shopQuotes: { 900001: { price: '220', quota: '3000' } },
+        shareKeys: { 900001: '66666666-6666-4666-8666-666666666666' },
     });
     await harness.service.sellYishuHuanfuSweetPotato('900001', '120');
     const sellRequest = harness.operateRequest().find(entry => readRequestCmd(Buffer.from(entry.body)) === 93);
@@ -736,28 +927,27 @@ test('yishuhuanfu commission stays unclaimable when nobody sold into the shop', 
     assert.equal(snapshot.commission.claimable, false);
 });
 
-test('yishuhuanfu scan pools friends from every panel account, dedupes and rotates the window', async () => {
+test('yishuhuanfu scan pools every account with a share key and rotates the window', async () => {
     const quotes = {
         1220537209: { price: '100', quota: '8000', name: '自己' },
-        900001: { price: '210', quota: '3000', name: '本号好友' },
-        910001: { price: '260', quota: '2000', name: 'A号好友甲' },
-        910002: { price: '230', quota: '2000', name: 'A号好友乙' },
-        910003: { price: '180', quota: '2000', name: 'B号好友' },
+        910001: { price: '260', quota: '2000', name: 'A号' },
+        910002: { price: '230', quota: '2000', name: 'B号' },
+        910003: { price: '180', quota: '2000', name: 'C号' },
+        910004: { price: '170', quota: '2000', name: 'D号' },
     };
     const harness = createHarness({
         shopQuotes: quotes,
-        getAllFriends: async () => ({ game_friends: [{ gid: '900001', name: '本号好友' }] }),
-        getPanelFriendGids: () => [
-            { gid: '910001', accountName: 'A号' },
-            { gid: '910002', accountName: 'A号' },
-            // 和本号好友重复：只能算一次，不能重复打 cmd 92。
-            { gid: '900001', accountName: 'B号' },
-            { gid: '910003', accountName: 'B号' },
-        ],
+        // 面板里 4 个账号今天都分享过：它们的标识各自落盘，本账号读到就能卖进去。
+        shareKeys: {
+            910001: 'a0000001-0000-4000-8000-000000000001',
+            910002: 'a0000002-0000-4000-8000-000000000002',
+            910003: 'a0000003-0000-4000-8000-000000000003',
+            910004: 'a0000004-0000-4000-8000-000000000004',
+        },
     });
-    // 上限 4：自己 + 3 个候选，候选池 4 个好友里有一个要等下一轮。
+    // 上限 4：自己 + 3 个候选，4 个候选账号里有一个要等下一轮。
     const result = await harness.service.scanYishuHuanfuFriendShops({ force: true, limit: 4 });
-    assert.equal(result.panelFriendCount, 3);
+    assert.equal(result.panelFriendCount, 4);
     assert.equal(result.friendCount, 4);
     assert.equal(result.scanned, 4);
     assert.equal(result.pendingCount, 1);
@@ -765,18 +955,40 @@ test('yishuhuanfu scan pools friends from every panel account, dedupes and rotat
 
     const queried = harness.operateRequest()
         .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
-    assert.equal(new Set(queried).size, queried.length, '重复 GID 不能查两次');
+    assert.equal(new Set(queried).size, queried.length, '同一 GID 不能查两次');
 
+    // 面板账号没有本地备注，界面上用 cmd 92 回包的铺主昵称补齐。
     const panelRows = result.shops.filter(entry => entry.via === 'panel');
     assert.ok(panelRows.length >= 1);
-    // 面板好友没有本地备注，界面上用 cmd 92 回包的铺主昵称补齐。
     assert.ok(panelRows.every(entry => entry.name && entry.name !== entry.gid));
-    assert.ok(panelRows.every(entry => entry.panelAccount === 'A号' || entry.panelAccount === 'B号'));
-    assert.equal(result.shops.find(entry => entry.gid === '900001').via, 'friend');
+    assert.ok(panelRows.every(entry => entry.shareKeyKnown === true));
     assert.equal(result.shops.find(entry => entry.gid === '1220537209').via, 'own');
 
     // 下一轮从游标接着扫：上一轮没轮到的 GID 必须出现，且自己的铺子仍在。
     const next = await harness.service.scanYishuHuanfuFriendShops({ force: true, limit: 4 });
     const allGids = new Set([...result.shops, ...next.shops].map(entry => entry.gid));
-    assert.equal(allGids.size, 5, '两轮轮换应覆盖自己 + 4 个候选好友');
+    assert.equal(allGids.size, 5, '两轮轮换应覆盖自己 + 4 个候选账号');
+});
+
+test('yishuhuanfu scan leaves out friends without a share key unless explicitly asked', async () => {
+    const harness = createHarness({
+        shopQuotes: {
+            1220537209: { price: '100', quota: '8000' },
+            900001: { price: '300', quota: '2000', name: '普通好友' },
+            900002: { price: '250', quota: '2000', name: '别号好友' },
+        },
+        // 好友列表照旧能拉到，但对方没有分享标识 —— 卖不进去，默认不进候选池。
+        getAllFriends: async () => ({ game_friends: [{ gid: '900001', name: '普通好友' }] }),
+        getPanelFriendGids: () => [{ gid: '900002', accountName: '别号' }],
+    });
+    const byDefault = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(byDefault.shops.length, 1);
+    assert.equal(byDefault.shops[0].own, true);
+
+    const withFriends = await harness.service.scanYishuHuanfuFriendShops({ force: true, includeFriends: true });
+    const friendRow = withFriends.shops.find(entry => entry.gid === '900001');
+    assert.ok(friendRow, '显式要求时仍可看价');
+    // 只作价格参考：界面会标「未分享·只能看价」，自动任务也不会选它。
+    assert.equal(friendRow.shareKeyKnown, false);
+    assert.equal(withFriends.shareKeyMissing, 2);
 });

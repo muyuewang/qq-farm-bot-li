@@ -419,9 +419,12 @@ export interface YishuHuanfuCatalogEntryDto {
   nameKnown: boolean
   price: string
   status: number
+  // 限购总数（界面「限购 x/y」的 y）。
   limit: string
-  // 兑换后服务端补的今日已兑次数（field 5），仅作展示参考。
-  exchangedToday: string
+  // 该档累计已兑换次数（cmd 97 field 6），剩余可兑 = limit − exchanged。
+  exchanged: string
+  // 剩余可兑换次数（后端算好下发），界面「限购 x/y」的 x 用它。
+  remaining: string
   image: string
   exchangeable: boolean
 }
@@ -441,9 +444,11 @@ export interface YishuHuanfuFriendShopDto {
   quotaUsed: string
   // cmd 92 的 can_sell：true 收薯 / false 明确不收 / null 回包没带该字段（按可卖处理）。
   canSell: boolean | null
+  // 是否拿到了对方当天的分享标识。false 表示只能查价、卖不进去（服务端会拒）。
+  shareKeyKnown: boolean
   // 自家铺子不占好友额度，界面显示「不限」而不是「还可收 N 个」。
   unlimited: boolean
-  // 候选来源：本账号好友 / 面板里其它账号的好友 / 自己。其它账号好友也可能收蜜薯。
+  // 候选来源：自己 / 有当天分享标识的账号（面板账号或导入过标识的好友）/ 好友（仅看价）。
   via: 'own' | 'friend' | 'panel'
   panelAccount: string
 }
@@ -622,7 +627,7 @@ export interface ActivityCenterSnapshotDto {
   actions: ActivityActionsDto
 }
 
-export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew' | 'claimCharitySeeds' | 'donateCharityLove' | 'claimCharityDailyGift' | 'claimCharityProgress' | 'lightWeatherResearch' | 'buyWeatherBottle' | 'scanWeatherFriends' | 'collectWeatherBottle' | 'summonWeatherRain' | 'claimYishuHuanfuSeed' | 'sellYishuHuanfuSweetPotato' | 'shareYishuHuanfuShop' | 'exchangeYishuHuanfuGoods' | 'refreshYishuHuanfuQuote' | 'claimYishuHuanfuCommission'
+export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew' | 'claimCharitySeeds' | 'donateCharityLove' | 'claimCharityDailyGift' | 'claimCharityProgress' | 'lightWeatherResearch' | 'buyWeatherBottle' | 'scanWeatherFriends' | 'collectWeatherBottle' | 'summonWeatherRain' | 'claimYishuHuanfuSeed' | 'sellYishuHuanfuSweetPotato' | 'shareYishuHuanfuShop' | 'exchangeYishuHuanfuGoods' | 'refreshYishuHuanfuQuote' | 'claimYishuHuanfuCommission' | 'importYishuHuanfuShareKey'
 
 function isRecord(value: unknown): value is ActivityRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -657,6 +662,18 @@ function finiteNumber(value: unknown): number | null {
     return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+// 限购剩余 = 总数 − 已兑换。用 BigInt 兜大数值，解析不了就退化成 0（宁可显示兑完，
+// 也不显示一个比总数还大的剩余量）。
+function subtractText(total: string, used: string): string {
+  try {
+    const diff = BigInt(total || '0') - BigInt(used || '0')
+    return diff > 0n ? diff.toString() : '0'
+  }
+  catch {
+    return '0'
+  }
 }
 
 function toMilliseconds(value: unknown): number | null {
@@ -1283,7 +1300,9 @@ function normalizeYishuHuanfu(value: unknown): YishuHuanfuActivityDto | null {
       price: text(entry.price),
       status: finiteNumber(first(entry.status)) || 0,
       limit: text(entry.limit),
-      exchangedToday: text(entry.exchangedToday, entry.exchanged_today, '0'),
+      exchanged: text(entry.exchanged, '0'),
+      // 后端没给 remaining 时按 limit − exchanged 兜底，保证界面不会永远显示满额。
+      remaining: text(entry.remaining, subtractText(text(entry.limit), text(entry.exchanged, '0'))),
       image: text(entry.image),
       // 可兑性由 cmd 97 的 exchangeable 决定；缺这个字段（例如后端只透传了目录骨架）
       // 时按“可兑”处理，价格够不够再由渲染层按余额判一次。
@@ -2044,6 +2063,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     summonWeatherRain: false,
     claimYishuHuanfuSeed: false,
     exchangeYishuHuanfuGoods: false,
+  importYishuHuanfuShareKey: false,
     sellYishuHuanfuSweetPotato: false,
     shareYishuHuanfuShop: false,
     refreshYishuHuanfuQuote: false,
@@ -2112,7 +2132,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     loadedAccountId.value = ''
     serverClockOffset.value = 0
     clearWeatherFriends()
-    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false, claimCharitySeeds: false, donateCharityLove: false, claimCharityDailyGift: false, claimCharityProgress: false, lightWeatherResearch: false, buyWeatherBottle: false, scanWeatherFriends: false, collectWeatherBottle: false, summonWeatherRain: false, claimYishuHuanfuSeed: false, sellYishuHuanfuSweetPotato: false, shareYishuHuanfuShop: false, exchangeYishuHuanfuGoods: false, refreshYishuHuanfuQuote: false, claimYishuHuanfuCommission: false }
+    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false, claimCharitySeeds: false, donateCharityLove: false, claimCharityDailyGift: false, claimCharityProgress: false, lightWeatherResearch: false, buyWeatherBottle: false, scanWeatherFriends: false, collectWeatherBottle: false, summonWeatherRain: false, claimYishuHuanfuSeed: false, sellYishuHuanfuSweetPotato: false, shareYishuHuanfuShop: false, exchangeYishuHuanfuGoods: false, refreshYishuHuanfuQuote: false, claimYishuHuanfuCommission: false, importYishuHuanfuShareKey: false }
   }
 
   function clearActionMessages() {
@@ -2470,8 +2490,13 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   }
 
   // 兑换下单：index 是目录序号，count 是数量。
-  function exchangeYishuHuanfuGoods(accountId: string, index: number, count = 1) {
-    return mutate('exchangeYishuHuanfuGoods', '/yishuhuanfu/exchange', accountId, { index, count })
+  async function exchangeYishuHuanfuGoods(accountId: string, index: number, count = 1) {
+    const result = await mutate('exchangeYishuHuanfuGoods', '/yishuhuanfu/exchange', accountId, { index, count })
+    // 兑换会改变这一档的剩余可兑次数，而目录（cmd 97）不在快照里：
+    // 不重拉的话界面会一直显示兑换前的「限购 15/28」，用户看不到次数被扣。
+    if (result)
+      await loadYishuHuanfuCatalog(accountId)
+    return result
   }
 
   // 目录是独立命令，进入活动页时单独拉一次，并把结果并回当前快照。
@@ -2498,7 +2523,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         price: text(entry.price),
         status: finiteNumber(first(entry.status)) || 0,
         limit: text(entry.limit),
-        exchangedToday: text(entry.exchangedToday, entry.exchanged_today),
+        exchanged: text(entry.exchanged, '0'),
+        remaining: text(entry.remaining, subtractText(text(entry.limit), text(entry.exchanged, '0'))),
         image: text(entry.image),
         exchangeable: bool(entry.exchangeable),
       }))
@@ -2564,6 +2590,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       quotaCap: text(payload.quotaCap, payload.quota_cap),
       quotaUsed: text(payload.quotaUsed, payload.quota_used),
       canSell: payload.canSell === null || payload.canSell === undefined ? null : bool(payload.canSell, payload.can_sell),
+      // 后端没带这个字段时按「有标识」处理，避免查询接口一升级就把按钮全变灰。
+      shareKeyKnown: payload.shareKeyKnown === undefined && payload.share_key_known === undefined
+        ? true
+        : bool(payload.shareKeyKnown, payload.share_key_known),
       unlimited: bool(payload.own),
       via: 'friend',
       panelAccount: '',
@@ -2656,6 +2686,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
             : bool(entry.canSell, entry.can_sell),
           // 自家铺子不占好友额度，界面固定显示「不限」。
           unlimited: bool(entry.unlimited) || bool(entry.own),
+          // 缺字段时按「有标识」处理，否则一次后端升级会把整排按钮变灰。
+          shareKeyKnown: entry.shareKeyKnown === undefined && entry.share_key_known === undefined
+            ? true
+            : bool(entry.shareKeyKnown, entry.share_key_known),
           via: (text(entry.via) || (bool(entry.own) ? 'own' : 'friend')) as 'own' | 'friend' | 'panel',
           panelAccount: text(entry.panelAccount, entry.panel_account),
         }
@@ -2684,8 +2718,16 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     }
   }
 
-  function clearYishuHuanfuFriendShops() {
-    yishuHuanfuFriendShops.value = []
+  // 手动导入好友当天的分享标识：面板外的真人好友只有先导入标识才卖得进去。
+  // 导入后立即重扫一次比价，让「能不能卖」的标记跟着变。
+  async function importYishuHuanfuShareKey(accountId: string, gid: string, text: string) {
+    const result = await mutate('importYishuHuanfuShareKey', '/yishuhuanfu/share-key', accountId, { gid, text })
+    if (result)
+      await scanYishuHuanfuFriendShops(accountId, true)
+    return result
+  }
+
+  function clearYishuHuanfuFriendShops() {    yishuHuanfuFriendShops.value = []
     yishuHuanfuFriendShopsLoading.value = false
     yishuHuanfuFriendScanAt.value = 0
     yishuHuanfuFriendScanNote.value = ''
@@ -2879,6 +2921,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     shareYishuHuanfuShop,
     refreshYishuHuanfuQuote,
     exchangeYishuHuanfuGoods,
+    importYishuHuanfuShareKey,
     loadYishuHuanfuCatalog,
     loadYishuHuanfuShop,
     queryYishuHuanfuShopQuote,

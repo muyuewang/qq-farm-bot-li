@@ -1354,6 +1354,9 @@ async function handleApiCall(msg) {
                     case 'shareYishuHuanfuShop':
                         result = await require('../services/activity-center').shareYishuHuanfuShop();
                         break;
+                    case 'importYishuHuanfuShareKey':
+                        result = await require('../services/activity-center').importYishuHuanfuShareKey(args[0], args[1]);
+                        break;
                     case 'giftQixiSachet':
                         result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);
                         break;

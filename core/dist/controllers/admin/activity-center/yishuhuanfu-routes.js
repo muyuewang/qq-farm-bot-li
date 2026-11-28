@@ -22,5 +22,8 @@ function mountYishuHuanfuActivityRoutes({ app, ctx, withAccount, mountGet }) {
     // 领取收购提成（cmd 99）。
     app.post('/api/activity-center/yishuhuanfu/commission/claim', withAccount((accountId) => ctx.provider.claimYishuHuanfuCommission(accountId)));
     app.post('/api/activity-center/yishuhuanfu/share', withAccount((accountId) => ctx.provider.shareYishuHuanfuShop(accountId)));
+    // 手动导入好友当天分享标识（贴分享链接/卡片文本或 UUID）。
+    // 服务端没有按 gid 反查好友标识的接口，面板外的真人好友只能靠这个入口变得可售。
+    app.post('/api/activity-center/yishuhuanfu/share-key', withAccount((accountId, req) => (ctx.provider.importYishuHuanfuShareKey(accountId, req.body?.gid, req.body?.text))));
 }
 //# sourceMappingURL=yishuhuanfu-routes.js.map

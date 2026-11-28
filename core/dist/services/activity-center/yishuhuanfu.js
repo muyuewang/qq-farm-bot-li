@@ -5,7 +5,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  *
  * 协议来自两轮实机抓包：活动组 2026111707，主模块 2026111708（type=26）承载
  * 状态槽 field 130 与全部命令。命令走 ActivityService.Operate 的 cmd 字段，
- * 参数与回包挂在 190+cmd 号槽位：
+ * 参数与回包挂在 100+cmd 号槽位：
  *   cmd 91 领每日红薯种子（回包 191：item_id=20307 / count=28）
  *   cmd 92 查指定铺子行情（参数 192.shop_gid；回包 192：价格 / 额度 / 铺主）
  *   cmd 93 卖蜜薯（参数 193：shop_gid + count；回包 193：数量 / 单价 / 总额 / 额度 / 余额）
@@ -87,7 +87,9 @@ function createYishuHuanfuActivityService(deps) {
     // 好友列表默认懒加载，测试可注入桩函数，避免拉起真实的网关请求。
     getAllFriends: getAllFriendsDep, 
     // 面板其它账号的好友同样可注入，测试不必读写磁盘存档。
-    getPanelFriendGids: getPanelFriendGidsDep, } = deps;
+    getPanelFriendGids: getPanelFriendGidsDep, 
+    // 分享标识存档可注入：测试用内存表，生产走 core/data/yishu_share_keys。
+    shareKeyStore: shareKeyStoreDep, } = deps;
     // 状态槽 130 的 4 号子槽只保留最近一次动作，不能用它判断“今天是否已领”，
     // 因此每日动作按服务器日期在本地记账，服务端报错时再回滚。
     let seedClaimedDateKey = '';
@@ -110,6 +112,41 @@ function createYishuHuanfuActivityService(deps) {
     function ownGid() {
         const gid = int64String(getUserState()?.gid);
         return gid === '0' ? '' : gid;
+    }
+    /**
+     * 分享标识存档（按 gid 一文件，跨账号可读）。
+     * 走 require 而不是顶层 import：测试环境不落地磁盘，存档层缺失时整条链路要能降级成
+     * 「只能查价、不能卖好友」，而不是让服务创建就失败。
+     */
+    function shareKeyStore() {
+        if (shareKeyStoreDep)
+            return shareKeyStoreDep;
+        try {
+            return require('../../models/store/yishu-share-keys');
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * 拼好友铺子的分享引用 {activity_id, gid, share_key}。
+     * 只认当天的标识：跨日服务端会换新 key，拿旧 key 卖薯会被拒。
+     * known 传 Map 时按表查（比价一次扫几十家，避免每家读一次盘）。
+     */
+    function shareRefFor(targetGid, known) {
+        if (!targetGid)
+            return null;
+        const store = shareKeyStore();
+        if (!store)
+            return null;
+        const dateKey = getSystemDateKey();
+        const entry = known ? known.get(targetGid) : store.readYishuShareKey(targetGid);
+        if (!entry || !entry.shareKey)
+            return null;
+        // 存档里没有日期（用户手填/导入）时按当天处理，有日期则必须与今天一致。
+        if (dateKey && entry.dateKey && entry.dateKey !== dateKey)
+            return null;
+        return { activity_id: YSHF_ACTIVITY_ID, gid: targetGid, share_key: entry.shareKey };
     }
     async function queryYshfGroupReply() {
         const body = Buffer.from(types.GetGroupRequest.encode(types.GetGroupRequest.create({
@@ -251,9 +288,15 @@ function createYishuHuanfuActivityService(deps) {
             const matched = !!template && template.price === price;
             const itemId = matched ? template.itemId : null;
             const limit = int64String(entry?.limit || '0');
-            // 兑换后服务端会补 field 5/6，实机均取 1，疑似今日已兑次数，语义待定，
-            // 因此只作为参考值透出，剩余可兑数量仍以 limit 为上限。
-            const exchangedToday = int64String(entry?.field_5 || '0');
+            // 6 号位是「累计已兑换次数」。2026-11-28 抓包实证：limit 28、已兑 13 时
+            // 游戏界面显示「限购 15/28」；再兑 3 次后 cmd 96 回包给 16，界面变 12/28。
+            // 之前读的是 5 号位（恒缺省），所以界面上永远显示满额，兑换后也不回写。
+            const exchanged = int64String(entry?.exchanged || '0');
+            const limitValue = BigInt(limit);
+            const usedValue = BigInt(exchanged);
+            const remaining = limitValue > usedValue ? (limitValue - usedValue).toString() : '0';
+            // limit 为 0 表示服务端没下发限额（理论不会），这种情况不拦兑换。
+            const soldOut = limitValue > 0n && remaining === '0';
             return {
                 index,
                 itemId,
@@ -263,9 +306,10 @@ function createYishuHuanfuActivityService(deps) {
                 price,
                 status: int64Number(entry?.status),
                 limit,
-                exchangedToday,
+                exchanged,
+                remaining,
                 image: itemId ? itemDto({ item_id: itemId, count: '1' }).image : '',
-                exchangeable: true,
+                exchangeable: !soldOut,
             };
         });
     }
@@ -543,11 +587,17 @@ function createYishuHuanfuActivityService(deps) {
      * 查单个铺子的今日行情（cmd 92）。只读，不产生成交，可以拿任意 gid 查，
      * 好友铺子比价就是靠它逐个扫。
      */
-    async function fetchShopQuote(targetGid) {
+    async function fetchShopQuote(targetGid, options = {}) {
+        const sameAccount = targetGid === ownGid();
+        // 查好友铺子要带对方当天的分享标识（2026-11-28 起服务端校验）；查自己铺子不带。
+        const shopRef = sameAccount ? null : shareRefFor(targetGid, options.shareKeys);
+        const params = { shop_gid: targetGid };
+        if (shopRef)
+            params.shop = shopRef;
         const reply = await operateYshf(types.YshfShopQueryRequest, {
             activity_id: YSHF_ACTIVITY_ID,
             cmd: YSHF_CMD_SHOP_QUERY,
-            params: { shop_gid: targetGid },
+            params,
         });
         const quote = reply?.yshf_shop?.quote;
         const shop = quote?.shop;
@@ -560,7 +610,6 @@ function createYishuHuanfuActivityService(deps) {
         const totalPrice = (BigInt(price) + BigInt(bonus)).toString();
         // quota 是“还能再收多少”，额度上限实机恒为 8000，用来算已用量。
         const cap = BigInt(YSHF_SHOP_QUOTA_CAP) > BigInt(quota) ? YSHF_SHOP_QUOTA_CAP : quota;
-        const own = targetGid === ownGid();
         // can_sell = 这个铺子现在收不收薯。三态：true 可收 / false 明确拒收 / null 回包没这个字段。
         // protobufjs 对 bool 取默认值 false，读到的 false 分不清「明确 0」和「没下发」，
         // 所以先用 hasOwnProperty 判断字段是否真的在报文里，否则整排铺子会被误判成关张。
@@ -570,7 +619,7 @@ function createYishuHuanfuActivityService(deps) {
         const canSell = hasCanSell ? !!shopReply.can_sell : null;
         return {
             gid: targetGid,
-            own,
+            own: sameAccount,
             price,
             totalPrice,
             quota,
@@ -578,6 +627,8 @@ function createYishuHuanfuActivityService(deps) {
             quotaUsed: (BigInt(cap) - BigInt(quota)).toString(),
             bonus,
             canSell,
+            // 只有拿到对方当天标识才可能卖进去；自家铺子不需要标识。
+            shareKeyKnown: sameAccount || !!shopRef,
             shop: shop ? {
                 gid: int64String(shop.gid),
                 name: shop.name || '',
@@ -607,12 +658,17 @@ function createYishuHuanfuActivityService(deps) {
         };
     }
     /**
-     * 好友铺子比价：把好友列表里每个 gid 丢给 cmd 92 扫一遍，按收购价从高到低排序。
-     * 这就是外面说的“拿 gid 私自看别人的价”——协议本来就是一个只读查询，
-     * 只要知道 gid 就能查，不需要对方同意，也不占用对方额度。
+     * 可出售铺子的比价：把候选 gid 逐个丢给 cmd 92 扫一遍，按收购价从高到低排序。
      *
-     * 好友列表来自 FriendService/GetAll。单个好友查失败不中断整轮扫描，
-     * 失败项单独计数返回，避免一个失联账号拖垮整张比价表。
+     * 候选池的范围在 2026-11-28 收窄了。以前是「本账号好友 + 面板其它账号的全部好友」，
+     * 靠 gid 就能把蜜薯强卖进去；现在服务端要求带上对方当天的分享标识（share_key），
+     * 而标识只在对方分享的回包里下发、没有按 gid 反查的接口，所以：
+     *   - 默认只扫「本账号 + 有当天标识的账号」，也就是面板里自己登录、自己分享过的账号；
+     *   - 别人的好友即使查得到价，也卖不进去，纳入候选池只会让自动任务白跑一趟；
+     *   - 真要卖进面板外的真人好友铺子，得先导入对方分享卡片里的标识（见 importYishuHuanfuShareKey）。
+     *
+     * options.includeFriends=true 时仍会把好友列表并进来（只作价格参考，
+     * shareKeyKnown=false，自动任务不会选它）。
      */
     async function scanYishuHuanfuFriendShops(options = {}) {
         const limitRaw = Number(options?.limit);
@@ -629,60 +685,83 @@ function createYishuHuanfuActivityService(deps) {
             throw businessError('YSHF_INACTIVE', '以薯换福活动未在活动期内');
         }
         const own = ownGid();
-        let friends = [];
-        let friendListError = '';
-        try {
-            const loader = typeof getAllFriendsDep === 'function'
-                ? getAllFriendsDep
-                : () => require('../friend/api').getAllFriends(false, 'low');
-            const reply = await loader(false, 'low');
-            if (Array.isArray(reply?.game_friends))
-                friends = reply.game_friends;
-            else if (Array.isArray(reply?.gameFriends))
-                friends = reply.gameFriends;
-        }
-        catch (error) {
-            friendListError = error?.message || '好友列表获取失败';
-        }
-        const panelFriends = collectPanelFriendGids();
+        const dateKey = getSystemDateKey();
+        // 一次读出所有账号落盘的分享标识：按 gid 查表，别让每家铺子都读一次盘。
+        // 这份表本身就是「今天能卖进去的铺子」清单。
+        const shareKeys = shareKeyStore()?.listYishuShareKeys?.() || new Map();
+        const keyIsFresh = (entry) => {
+            if (!entry?.shareKey)
+                return false;
+            // 存档没日期（手填/导入）按当天算；有日期必须与今天一致。
+            return !(entry.dateKey && dateKey && entry.dateKey !== dateKey);
+        };
         const targets = [];
         const seen = new Set();
         if (own) {
             targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0', via: 'own' });
             seen.add(own);
         }
-        for (const friend of friends) {
-            const gid = int64String(friend?.gid);
-            if (!gid || gid === '0' || seen.has(gid))
+        let sellableCount = 0;
+        for (const [gid, entry] of shareKeys) {
+            if (!gid || gid === '0' || seen.has(gid) || !keyIsFresh(entry))
                 continue;
             seen.add(gid);
+            sellableCount += 1;
             targets.push({
                 gid,
-                own: gid === own,
-                name: friend?.remark || friend?.name || gid,
-                avatar: friend?.avatar_url || '',
-                level: int64String(friend?.level),
-                via: 'friend',
-            });
-        }
-        // 面板里其它账号的好友同样并进来：蜜薯能卖给任何开着铺子的人，
-        // 不限于本账号好友，候选池越大越容易挑到当日最高价。
-        let panelCount = 0;
-        for (const entry of panelFriends) {
-            if (seen.has(entry.gid))
-                continue;
-            seen.add(entry.gid);
-            panelCount += 1;
-            targets.push({
-                gid: entry.gid,
                 own: false,
                 // 名字靠 cmd 92 回包里的铺主信息补，界面没有名字时会退化成显示 GID。
                 name: '',
                 avatar: '',
                 level: '0',
                 via: 'panel',
-                panelAccount: entry.accountName,
             });
+        }
+        // 兼容入口：显式要求时把好友列表并进来，只用于看价，不具备可售性。
+        let friends = [];
+        let friendListError = '';
+        if (options?.includeFriends === true) {
+            try {
+                const loader = typeof getAllFriendsDep === 'function'
+                    ? getAllFriendsDep
+                    : () => require('../friend/api').getAllFriends(false, 'low');
+                const reply = await loader(false, 'low');
+                if (Array.isArray(reply?.game_friends))
+                    friends = reply.game_friends;
+                else if (Array.isArray(reply?.gameFriends))
+                    friends = reply.gameFriends;
+            }
+            catch (error) {
+                friendListError = error?.message || '好友列表获取失败';
+            }
+            for (const friend of friends) {
+                const gid = int64String(friend?.gid);
+                if (!gid || gid === '0' || seen.has(gid))
+                    continue;
+                seen.add(gid);
+                targets.push({
+                    gid,
+                    own: gid === own,
+                    name: friend?.remark || friend?.name || gid,
+                    avatar: friend?.avatar_url || '',
+                    level: int64String(friend?.level),
+                    via: 'friend',
+                });
+            }
+            for (const entry of collectPanelFriendGids()) {
+                if (seen.has(entry.gid))
+                    continue;
+                seen.add(entry.gid);
+                targets.push({
+                    gid: entry.gid,
+                    own: false,
+                    name: '',
+                    avatar: '',
+                    level: '0',
+                    via: 'panel',
+                    panelAccount: entry.accountName,
+                });
+            }
         }
         const slice = takeScanWindow(targets, limit, !!own);
         const shops = [];
@@ -690,7 +769,7 @@ function createYishuHuanfuActivityService(deps) {
         let failureMessage = '';
         for (let start = 0; start < slice.length; start += FRIEND_SCAN_CONCURRENCY) {
             const batch = slice.slice(start, start + FRIEND_SCAN_CONCURRENCY);
-            const settled = await Promise.allSettled(batch.map(entry => fetchShopQuote(entry.gid)));
+            const settled = await Promise.allSettled(batch.map(entry => fetchShopQuote(entry.gid, { shareKeys })));
             settled.forEach((result, index) => {
                 const entry = batch[index];
                 if (result.status === 'rejected') {
@@ -714,6 +793,8 @@ function createYishuHuanfuActivityService(deps) {
                     quotaUsed: result.value.quotaUsed,
                     bonus: result.value.bonus,
                     canSell: result.value.canSell,
+                    // 没有对方当天的分享标识时，只能查价、不能卖（服务端会拒）。
+                    shareKeyKnown: result.value.shareKeyKnown !== false,
                     // 自家铺子不占好友额度：界面显示「不限」，也只能靠 can_sell 判断能不能卖。
                     unlimited: result.value.own === true,
                 });
@@ -733,17 +814,19 @@ function createYishuHuanfuActivityService(deps) {
             ownShop: shops.find(entry => entry.own) || null,
             scanned: slice.length,
             failed,
-            // 候选池 = 本账号好友 + 面板里其它账号的已知好友（去重后）。
+            // 有价但缺当天分享标识的铺子数：这些只能查价，卖不进去。
+            shareKeyMissing: shops.filter(entry => !entry.own && entry.shareKeyKnown === false).length,
+            // 候选池 = 本账号 + 有当天分享标识、能卖进去的账号（默认不再并别人的好友）。
             friendCount: targets.length - (own ? 1 : 0),
-            panelFriendCount: panelCount,
+            panelFriendCount: sellableCount,
             candidateCount: targets.length - (own ? 1 : 0),
             // 候选池超过本轮上限时按轮换窗口扫，这里告诉界面还有多少没轮到。
             pendingCount: Math.max(0, targets.length - (own ? 1 : 0) - slice.filter(entry => !entry.own).length),
             limit,
             friendListError,
             message: shops.length === 0
-                ? (friendListError || '没有可查询的铺子')
-                : `已扫描 ${shops.length} 个铺子${panelCount ? `（含其它账号好友 ${panelCount} 个）` : ''}，`
+                ? (friendListError || '没有可比的铺子：先让面板里的账号各分享一次铺子')
+                : `已扫描 ${shops.length} 个铺子${sellableCount ? `（可售卖 ${sellableCount + 1} 个）` : ''}，`
                     + `最高收购价 ${shops[0].totalPrice}`,
             errorMessage: failureMessage,
             cached: false,
@@ -794,7 +877,16 @@ function createYishuHuanfuActivityService(deps) {
             // 卖给好友铺子前先查一次行情（cmd 92）：确认铺主 gid 与请求一致、
             // 对方现在收不收（can_sell）、剩余接收额度够用，避免“卖出去才发现
             // 铺子不是这个人的 / 已经收满关张”。自己的铺子不限量，不需要这一步。
+            //
+            // 2026-11-28 起，卖给好友还多了一道服务端校验：必须带上对方当天的分享标识
+            // （分享卡片里的 share_key）。没有标识就一定会被拒，与其发一条注定失败的
+            // 写请求，不如在这里直接说清原因。
+            const shopRef = targetGid === own ? null : shareRefFor(targetGid);
             if (targetGid !== own) {
+                if (!shopRef) {
+                    throw businessError('YSHF_SHARE_KEY_MISSING', `${targetGid} 今天还没有可用的分享标识，卖不进去。让对方在游戏里分享一次铺子，`
+                        + '或把对方分享的铺子卡片/链接里的标识填进来后再试');
+                }
                 const quote = await fetchShopQuote(targetGid);
                 if (!quote.shop || quote.shop.gid !== targetGid) {
                     throw businessError('YSHF_SHOP_UNKNOWN', `无法确认铺子 ${targetGid} 的主人，本次未出售`);
@@ -808,10 +900,13 @@ function createYishuHuanfuActivityService(deps) {
                     throw businessError('YSHF_SHOP_QUOTA_INSUFFICIENT', `${quote.shop.name || targetGid} 的铺子今日只剩 ${quote.quota} 个接收额度，不足 ${count} 个`);
                 }
             }
+            const sellParams = { shop_gid: targetGid, count };
+            if (shopRef)
+                sellParams.shop = shopRef;
             const reply = await operateYshf(types.YshfSellRequest, {
                 activity_id: YSHF_ACTIVITY_ID,
                 cmd: YSHF_CMD_SELL,
-                params: { shop_gid: targetGid, count },
+                params: sellParams,
             });
             const result = reply?.yshf_sell;
             // 成交会改变目标铺子的剩余额度与自己的福气币，比价缓存必须失效。
@@ -954,9 +1049,11 @@ function createYishuHuanfuActivityService(deps) {
             }
             const cost = BigInt(goods.price) * BigInt(count);
             const limit = BigInt(goods.limit || '0');
-            // limit 是这一档“剩余可兑”次数，超了服务端会整单拒绝，这里提前拦住。
-            if (limit > 0n && BigInt(count) > limit) {
-                throw businessError('YSHF_EXCEED_LIMIT', `本档剩余可兑换 ${limit} 次，本次选择了 ${count} 次`);
+            // remaining = limit − 已兑换次数（见 catalogDto），超了服务端会整单拒绝，
+            // 这里提前拦住；以前拿 limit 当剩余量，兑满后还能点、点了才报错。
+            const remaining = BigInt(goods.remaining || '0');
+            if (limit > 0n && BigInt(count) > remaining) {
+                throw businessError('YSHF_EXCEED_LIMIT', `本档剩余可兑换 ${remaining} 次，本次选择了 ${count} 次`);
             }
             const balance = snapshot.luckCoin.balance;
             if (balance !== null && BigInt(balance) < cost) {
@@ -972,6 +1069,17 @@ function createYishuHuanfuActivityService(deps) {
             const itemId = grant ? int64String(grant.item_id) : (goods.itemId || '');
             const granted = grant ? int64String(grant.count) : count;
             const nextBalance = result ? int64String(result.balance) : null;
+            // 兑换后要把这一档的剩余次数写回界面：服务端 cmd 96 回包的 5 号位就是
+            // 「兑换后累计已兑次数」（实测 13 + 3 = 16），直接用它，比本地 +count 可靠。
+            const exchangedAfter = result && int64String(result.exchanged) !== '0'
+                ? int64String(result.exchanged)
+                : (BigInt(goods.exchanged || '0') + BigInt(granted)).toString();
+            const limitValue = BigInt(goods.limit || '0');
+            const remainingAfter = limitValue > BigInt(exchangedAfter)
+                ? (limitValue - BigInt(exchangedAfter)).toString()
+                : '0';
+            // 目录是独立命令（cmd 97），不在活动快照里；这里把本档的最新剩余次数带回去，
+            // 前端兑换成功后再拉一次目录，其余档位也会一起对齐（见 store 的兑换动作）。
             return {
                 index: Number(index),
                 count: granted,
@@ -981,8 +1089,12 @@ function createYishuHuanfuActivityService(deps) {
                 price: result ? int64String(result.price) : goods.price,
                 cost: cost.toString(),
                 balance: nextBalance,
+                limit: goods.limit,
+                exchanged: exchangedAfter,
+                remaining: remainingAfter,
                 reward: itemId ? itemDto({ item_id: itemId, count: granted }) : null,
-                message: `兑换成功：${goods.nameKnown ? goods.name : `第 ${index} 档`} × ${granted}`,
+                message: `兑换成功：${goods.nameKnown ? goods.name : `第 ${index} 档`} × ${granted}`
+                    + `（本档还剩 ${remainingAfter} 次）`,
                 snapshot: await getActivityCenterSnapshot(),
             };
         });
@@ -1035,17 +1147,63 @@ function createYishuHuanfuActivityService(deps) {
             const share = reply?.yshf_share;
             const grant = share?.grant;
             const count = grant ? int64String(grant.count) : YSHF_SHARE_SEED_FALLBACK;
+            // 分享回包的 5 号位才是分享卡片里的铺子标识（UUID），别人点卡片卖薯要用它。
+            // 2 号位是 GetShareKey 那种 32 位邀请码，回传它服务端不认。
+            const shopRef = share?.shop?.shop_ref;
+            const shareKey = String(shopRef?.share_key || '');
+            const shareKeyGid = int64String(shopRef?.gid || '0');
+            const keyGid = shareKeyGid && shareKeyGid !== '0' ? shareKeyGid : ownGid();
+            let shareKeySaved = false;
+            if (shareKey && keyGid) {
+                // 落盘后，面板里其它账号扫描比价时就能拿这个标识卖进本账号的铺子。
+                shareKeySaved = !!shareKeyStore()?.writeYishuShareKey?.(keyGid, {
+                    shareKey,
+                    activityId: YSHF_ACTIVITY_ID,
+                    // 标识每天换新，按服务器日期记账，跨日自动失效。
+                    dateKey: getSystemDateKey(),
+                });
+            }
             return {
                 count,
                 seedReward: grant ? itemDto({ item_id: int64String(grant.item_id), count }) : null,
                 price: share ? int64String(share.price) : snapshot.shop.price,
-                shareKey: share?.shop?.share_key || '',
+                shareKey,
+                shareKeyGid: keyGid,
+                shareKeySaved,
                 shareReported,
                 shareReportError,
                 message: count === '0' ? '铺子分享成功' : `铺子分享成功，额外获得 ${count} 个红薯种子`,
                 snapshot: options.withSnapshot === false ? null : await getActivityCenterSnapshot(),
             };
         });
+    }
+    /**
+     * 手动导入好友的分享标识。
+     * 服务端没有「按 gid 查好友分享标识」的接口，标识只在对方分享的卡片/链接里，
+     * 面板账号之间的标识会自动落盘，面板外的真人好友只能靠这个入口补一次。
+     * 接受整条分享链接、卡片文本，或直接粘贴 32 位十六进制 / UUID。
+     */
+    async function importYishuHuanfuShareKey(gidInput, textInput) {
+        const gid = positiveDecimal(gidInput, 'INVALID_YSHF_SHOP_GID', 'gid');
+        if (!gid)
+            throw businessError('YSHF_GID_UNKNOWN', '缺少铺主 GID');
+        const store = shareKeyStore();
+        if (!store)
+            throw businessError('YSHF_SHARE_KEY_STORE_MISSING', '分享标识存档不可用');
+        const shareKey = store.normalizeShareKey(textInput);
+        if (!shareKey) {
+            throw businessError('INVALID_YSHF_SHARE_KEY', '没从这段内容里认出分享标识（应为 32 位十六进制或 8-4-4-4-12 的 UUID）');
+        }
+        const saved = store.writeYishuShareKey(gid, {
+            shareKey,
+            activityId: YSHF_ACTIVITY_ID,
+            dateKey: getSystemDateKey(),
+        });
+        if (!saved)
+            throw businessError('YSHF_SHARE_KEY_SAVE_FAILED', '分享标识没能写入存档');
+        // 标识变了，「这家铺子能不能卖」的判断要重算，缓存必须失效。
+        friendScanCache = null;
+        return { gid, shareKey, message: `已记录 ${gid} 今日的分享标识` };
     }
     // 进程起来后先预热一次背包。首个快照最容易被网关并发挤掉，而这时进程里还没有
     // “上次成功值”可回退，界面就会一路 "--" 到下一次成功为止。提前拉一次把兜底填上。
@@ -1066,6 +1224,7 @@ function createYishuHuanfuActivityService(deps) {
         claimYishuHuanfuCommission,
         exchangeYishuHuanfuGoods,
         shareYishuHuanfuShop,
+        importYishuHuanfuShareKey,
     };
 }
 module.exports = { createYishuHuanfuActivityService };

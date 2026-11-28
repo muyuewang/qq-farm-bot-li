@@ -31,7 +31,8 @@ const catalogEntry = overrides => ({
   price: '8500',
   status: 2,
   limit: '50',
-  exchangedToday: '0',
+  exchanged: '0',
+  remaining: '50',
   image: '',
   ...overrides,
 })
@@ -50,7 +51,8 @@ test('catalog entries keep the server exchangeable flag through snapshot normali
   // 之前这里被写死成 false，cmd 97 拉到的目录经 applySnapshot 再归一化后整排变「暂不可兑」。
   assert.equal(snapshot.yishuHuanfu.catalog[0].exchangeable, true)
   assert.equal(snapshot.yishuHuanfu.catalog[1].exchangeable, false)
-  assert.equal(snapshot.yishuHuanfu.catalog[0].exchangedToday, '0')
+  assert.equal(snapshot.yishuHuanfu.catalog[0].exchanged, '0')
+  assert.equal(snapshot.yishuHuanfu.catalog[0].remaining, '50')
 })
 
 test('catalog entries without an exchangeable field stay clickable', () => {
@@ -60,4 +62,18 @@ test('catalog entries without an exchangeable field stay clickable', () => {
   const snapshot = normalizeActivitySnapshot({ yishuHuanfu: { activityId: '2026111707', active: true, catalog: [withoutFlag] } })
   // 缺字段按可兑处理，价格够不够交给渲染层与下单接口判，避免多一层可能对不上的开关。
   assert.equal(snapshot.yishuHuanfu.catalog[0].exchangeable, true)
+})
+
+test('catalog remaining falls back to limit - exchanged when the backend omits it', () => {
+  const { normalizeActivitySnapshot } = loadStoreModule()
+  const snapshot = normalizeActivitySnapshot({
+    yishuHuanfu: {
+      activityId: '2026111707',
+      active: true,
+      // 2026-11-28 抓包：限购 28、已兑 13 → 界面「限购 15/28」；后端没给 remaining 时前端要能算。
+      catalog: [catalogEntry({ index: 2, limit: '28', exchanged: '13', remaining: undefined })],
+      catalogLoaded: true,
+    },
+  })
+  assert.equal(snapshot.yishuHuanfu.catalog[0].remaining, '15')
 })

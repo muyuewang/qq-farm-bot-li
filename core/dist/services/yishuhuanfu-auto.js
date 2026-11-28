@@ -30,12 +30,14 @@ const YISHU_INITIAL_DELAY_MS = 260000;
 const YISHU_STEP_SPACER_MS = 1200;
 // 单轮最多切换几家铺子：每卖一家就是一次 cmd 93 写，铺子越多越像脚本。
 const YISHU_MAX_SHOPS_PER_RUN = 3;
-// 这两种错误说明「这家现在卖不进去」，换下一家即可，不当作本轮失败。
+// 这几种错误说明「这家现在卖不进去」，换下一家即可，不当作本轮失败。
 const YISHU_SKIP_SHOP_CODES = new Set([
     'YSHF_SHOP_QUOTA_INSUFFICIENT',
     'YSHF_SHOP_UNKNOWN',
     // can_sell = false：这家铺子当前不收蜜薯，换下一家，不算整轮失败。
     'YSHF_SHOP_CLOSED',
+    // 对方当天没分享 / 标识过期：没有 share_key 服务端不认这条成交，换下一家。
+    'YSHF_SHARE_KEY_MISSING',
 ]);
 // 自动卖薯的比价下限：候选池通常几十家，只扫前 20 家会把窗口外的最优价永远挡在外面，
 // 只能反复卖次高价。这里保证至少扫 50 家，用户配得更大就按用户的来（上限 200）。
@@ -186,9 +188,19 @@ function createYishuAutomation(deps) {
             failed('scan', `好友铺子比价失败: ${e?.message || e}`);
             return;
         }
-        const candidates = options.fallbackOwn ? shops : shops.filter((shop) => !shop.own);
+        // 只留「能真的卖进去」的铺子：自家铺子不需要分享标识，别人家的必须有对方当天的
+        // 标识（2026-11-28 起服务端校验）。缺标识的店查得到价但一定成交不了，
+        // 留在候选里只会把单轮 3 次的写预算浪费掉。
+        const withKey = shops.filter((shop) => shop.own || shop.shareKeyKnown !== false);
+        const keyless = shops.length - withKey.length;
+        if (keyless > 0) {
+            skip('sell', `${keyless} 家铺子没有今天的分享标识，只能看价不能卖，已跳过`);
+        }
+        const candidates = options.fallbackOwn ? withKey : withKey.filter((shop) => !shop.own);
         if (!candidates.length) {
-            skip('sell', shops.length ? '只把自己的铺子留在候选里，但已关闭卖给自己' : '没有可卖的好友铺子');
+            skip('sell', shops.length
+                ? '候选铺子里没有可卖的（缺分享标识或已关闭卖给自己）'
+                : '没有可卖的好友铺子：先让面板里的账号各分享一次铺子');
             return;
         }
         let switched = 0;

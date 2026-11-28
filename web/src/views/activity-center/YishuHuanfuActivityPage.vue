@@ -177,6 +177,19 @@ async function onClaimCommission() {
   if (ok)
     loadRecords(true)
 }
+
+// 导入好友当天的分享标识后，重新查一次该铺子行情：这次会带上标识，
+// 「未分享·只能看价」的提示会随之消失，按钮才真正可用。
+async function onImportShareKey(gid: string, shareKey: string) {
+  const id = accountId()
+  if (!id)
+    return
+  const ok = await activityStore.importYishuHuanfuShareKey(id, gid, shareKey)
+  if (ok) {
+    manualQuoteGid.value = ''
+    await onQueryShop(gid)
+  }
+}
 </script>
 
 <template>
@@ -243,6 +256,7 @@ async function onClaimCommission() {
         :pending-exchange="pendingActions.exchangeYishuHuanfuGoods"
         :pending-quote="pendingActions.refreshYishuHuanfuQuote"
         :pending-commission="pendingActions.claimYishuHuanfuCommission"
+        :pending-import-key="pendingActions.importYishuHuanfuShareKey"
         :friend-shops="yishuHuanfuFriendShops"
         :friend-shops-loading="yishuHuanfuFriendShopsLoading"
         :friend-scan-at="yishuHuanfuFriendScanAt"
@@ -264,6 +278,7 @@ async function onClaimCommission() {
         @refresh-quote="activityStore.refreshYishuHuanfuQuote(accountId())"
         @claim-commission="onClaimCommission"
         @load-records="activityStore.loadYishuHuanfuRecords(accountId(), true)"
+        @import-share-key="(gid, text) => onImportShareKey(gid, text)"
       />
     </template>
   </section>

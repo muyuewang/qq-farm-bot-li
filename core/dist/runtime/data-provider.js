@@ -165,6 +165,7 @@ function createDataProvider(options) {
         sellYishuHuanfuSweetPotato: (accountRef, friendGid, count) => (callWorkerApi(resolveAccountRefId(accountRef), 'sellYishuHuanfuSweetPotato', friendGid, count)),
         refreshYishuHuanfuQuote: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'refreshYishuHuanfuQuote'),
         shareYishuHuanfuShop: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'shareYishuHuanfuShop'),
+        importYishuHuanfuShareKey: (accountRef, gid, text) => (callWorkerApi(resolveAccountRefId(accountRef), 'importYishuHuanfuShareKey', gid, text)),
         giftQixiSachet: (accountRef, friendGid, messageTextId = 15) => (callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)),
         exchangeWeatherCollectorBottle: (accountRef) => (callWorkerApi(resolveAccountRefId(accountRef), 'exchangeWeatherCollectorBottle')),
         getWeatherFriends: (accountRef) => (callWorkerApi(resolveAccountRefId(accountRef), 'getWeatherFriends')),

@@ -13,6 +13,9 @@ const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
 const configStorage = createConfigStorage(STORE_FILE);
 const KNOWN_FRIEND_GIDS_DIR = getDataFile('known_friend_gids');
+// 以薯换福的「好友铺子分享标识」按 gid 一文件存放：每个账号进程只写自己那一个，
+// 别的账号进程只读，避免多进程同时改同一个 JSON 互相覆盖。
+const YISHU_SHARE_KEYS_DIR = getDataFile('yishu_share_keys');
 const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
 const ALLOWED_BAG_SEED_FALLBACK_STRATEGIES = ALLOWED_PLANTING_STRATEGIES.filter((s) => s !== 'bag_priority');
 const DEFAULT_FERTILIZER_LAND_TYPES = ['purple-gold', 'gold', 'black', 'red', 'normal'];
@@ -651,6 +654,7 @@ module.exports = {
     configStorage,
     ACCOUNTS_FILE,
     KNOWN_FRIEND_GIDS_DIR,
+    YISHU_SHARE_KEYS_DIR,
     // Constants
     ALLOWED_PLANTING_STRATEGIES,
     ALLOWED_BAG_SEED_FALLBACK_STRATEGIES,
