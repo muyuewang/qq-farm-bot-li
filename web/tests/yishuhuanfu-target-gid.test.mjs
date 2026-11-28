@@ -169,3 +169,23 @@ test('自己的铺子不给移出，弹窗不会打开', () => {
   assert.equal(state.forgetTarget.value, null)
   assert.equal(emitted.length, 0)
 })
+
+test('出售数量变成数字也不再抛 trim is not a function', () => {
+  const { state, emitted } = mountTab()
+  // 线上事故：`<input type="number" v-model>` 在 Vue 3 会把值转成 number，
+  // 之后 sellCountText.value.trim() 直接崩（应用错误: c.value.trim is not a function）。
+  state.sellCountText.value = 20
+  assert.equal(state.sellCount.value, 20)
+  assert.equal(state.expectedIncome.value, 20 * 144)
+
+  state.submitSell()
+  assert.equal(emitted.at(-1)[1].count, 20)
+})
+
+test('出售数量输入框只留数字', () => {
+  const { state } = mountTab()
+  state.onSellCountInput('12a3个')
+  assert.equal(state.sellCountText.value, '123')
+  state.onSellCountInput('')
+  assert.equal(state.sellCountText.value, '')
+})

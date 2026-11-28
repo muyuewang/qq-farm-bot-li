@@ -155,7 +155,7 @@ function resetShareKeyInput() {
 }
 
 function queryTargetQuote() {
-  const gid = targetGid.value.trim()
+  const gid = asText(targetGid.value)
   if (!gid || props.targetQuoteLoading)
     return
   emit('queryShop', gid)
@@ -173,7 +173,7 @@ const unitPrice = computed(() => {
 })
 
 const sellCount = computed(() => {
-  const raw = sellCountText.value.trim()
+  const raw = asText(sellCountText.value)
   if (!raw)
     return sweetPotatoCount.value
   const parsed = Math.floor(Number(raw))
@@ -223,6 +223,20 @@ function pickTarget(gid: string) {
   tab.value = 'shop'
 }
 
+/**
+ * 取输入框里的文本。
+ * 教训：`<input type="number" v-model="x">` 在 Vue 3 里会把 x 自动转成 **number**，
+ * 之后任何 `x.value.trim()` 都会抛 "trim is not a function"。所以这里不再假设
+ * ref 一定是字符串——统一过一遍 String()，同时数字输入框也改成了 text + 自己过滤。
+ */
+function asText(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function onSellCountInput(value: string) {
+  sellCountText.value = String(value || '').replace(/\D/g, '').slice(0, 9)
+}
+
 function fillMax() {
   sellCountText.value = String(sweetPotatoCount.value)
 }
@@ -233,7 +247,7 @@ function submitSell() {
   emit('sell', {
     friendGid: targetGid.value,
     // 空输入表示卖出背包全部，交给后端按当前余额裁决。
-    count: sellCountText.value.trim() ? sellCount.value : null,
+    count: asText(sellCountText.value) ? sellCount.value : null,
   })
 }
 
@@ -251,7 +265,7 @@ const shareKeyEditing = ref(false)
 const addShopOpen = ref(false)
 const addShopGid = ref('')
 const addShopKey = ref('')
-const addShopValid = computed(() => /^\d{5,20}$/.test(addShopGid.value.trim()) && addShopKey.value.trim().length >= 16)
+const addShopValid = computed(() => /^\d{5,20}$/.test(asText(addShopGid.value)) && asText(addShopKey.value).length >= 16)
 
 function toggleAddShop() {
   addShopOpen.value = !addShopOpen.value
@@ -287,7 +301,7 @@ function confirmForgetShop() {
 function submitAddShop() {
   if (!addShopValid.value || props.pendingImportKey)
     return
-  emit('importShareKey', addShopGid.value.trim(), addShopKey.value.trim())
+  emit('importShareKey', asText(addShopGid.value), asText(addShopKey.value))
   // 标识是一次性凭据，落盘后就没必要留在输入框里；GID 也清掉，避免重复提交同一个。
   addShopGid.value = ''
   addShopKey.value = ''
@@ -335,8 +349,8 @@ const shareKeyActionLabel = computed(() => {
 
 // 换目标 GID 时把上一个号的标识原文丢掉，避免顺手贴到别人头上。
 function submitShareKey() {
-  const gid = targetGid.value.trim()
-  const text = shareKeyText.value.trim()
+  const gid = asText(targetGid.value)
+  const text = asText(shareKeyText.value)
   if (!gid || !text || props.pendingImportKey)
     return
   emit('importShareKey', gid, text)
@@ -670,7 +684,7 @@ function scanAgo() {
                 <button
                   type="button"
                   class="link"
-                  :disabled="pendingImportKey || !shareKeyText.trim()"
+                  :disabled="pendingImportKey || !asText(shareKeyText)"
                   @click="submitShareKey"
                 >
                   {{ shareKeyActionLabel }}
@@ -690,12 +704,12 @@ function scanAgo() {
           <label class="sell-input">
             <span>出售数量</span>
             <input
-              v-model="sellCountText"
-              type="number"
-              min="1"
-              :max="sweetPotatoCount"
+              :value="sellCountText"
+              type="text"
               :placeholder="`全部 ${formatNumber(sweetPotatoCount)}`"
               inputmode="numeric"
+              autocomplete="off"
+              @input="onSellCountInput(($event.target as HTMLInputElement).value)"
             >
             <button type="button" class="link" @click="fillMax">最大</button>
           </label>
