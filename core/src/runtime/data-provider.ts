@@ -256,6 +256,9 @@ function createDataProvider(options: DataProviderOptions) {
         ),
         refreshYishuHuanfuQuote: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'refreshYishuHuanfuQuote'),
         shareYishuHuanfuShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'shareYishuHuanfuShop'),
+        forgetYishuHuanfuShareKey: (accountRef: string, gid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'forgetYishuHuanfuShareKey', gid)
+        ),
         importYishuHuanfuShareKey: (accountRef: string, gid: unknown, text: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'importYishuHuanfuShareKey', gid, text)
         ),

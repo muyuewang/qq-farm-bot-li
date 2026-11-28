@@ -141,6 +141,22 @@ function listYishuShareKeys() {
     }
     return result;
 }
+/** 删掉某个 gid 的标识：比价列表里「移除这家」走这里。 */
+function removeYishuShareKey(gid) {
+    const id = String(gid || '').trim();
+    if (!id)
+        return false;
+    try {
+        const file = shareKeyFile(id);
+        if (!fs.existsSync(file))
+            return false;
+        fs.unlinkSync(file);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 module.exports = {
     ensureYishuShareKeysDir,
     normalizeShareKey,
@@ -149,5 +165,6 @@ module.exports = {
     findYishuShareKey,
     writeYishuShareKey,
     listYishuShareKeys,
+    removeYishuShareKey,
 };
 //# sourceMappingURL=yishu-share-keys.js.map

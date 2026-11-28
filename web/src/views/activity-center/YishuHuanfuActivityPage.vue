@@ -180,6 +180,21 @@ async function onClaimCommission() {
 
 // 导入好友当天的分享标识后，重新查一次该铺子行情：这次会带上标识，
 // 「未分享·只能看价」的提示会随之消失，按钮才真正可用。
+// 把某家铺子移出比价列表：只删本地标识存档，不动对方的铺子。
+// 面板账号下次分享会重新落盘，所以这是「这次不想看它」，不是永久屏蔽。
+async function onForgetShop(gid: string) {
+  const id = accountId()
+  if (!id)
+    return
+  await activityStore.forgetYishuHuanfuShareKey(id, gid)
+  // 如果当前售卖目标就是这家，清掉行情回执，避免还挂着已删除铺子的单价。
+  if (manualQuoteGid.value === gid) {
+    manualQuote.value = null
+    manualQuoteNote.value = ''
+    manualQuoteGid.value = ''
+  }
+}
+
 async function onImportShareKey(gid: string, shareKey: string) {
   const id = accountId()
   if (!id)
@@ -257,6 +272,7 @@ async function onImportShareKey(gid: string, shareKey: string) {
         :pending-quote="pendingActions.refreshYishuHuanfuQuote"
         :pending-commission="pendingActions.claimYishuHuanfuCommission"
         :pending-import-key="pendingActions.importYishuHuanfuShareKey"
+        :pending-forget-shop="pendingActions.forgetYishuHuanfuShareKey"
         :friend-shops="yishuHuanfuFriendShops"
         :friend-shops-loading="yishuHuanfuFriendShopsLoading"
         :friend-scan-at="yishuHuanfuFriendScanAt"
@@ -279,6 +295,7 @@ async function onImportShareKey(gid: string, shareKey: string) {
         @claim-commission="onClaimCommission"
         @load-records="activityStore.loadYishuHuanfuRecords(accountId(), true)"
         @import-share-key="(gid, text) => onImportShareKey(gid, text)"
+        @forget-shop="onForgetShop"
       />
     </template>
   </section>

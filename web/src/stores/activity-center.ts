@@ -631,7 +631,7 @@ export interface ActivityCenterSnapshotDto {
   actions: ActivityActionsDto
 }
 
-export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew' | 'claimCharitySeeds' | 'donateCharityLove' | 'claimCharityDailyGift' | 'claimCharityProgress' | 'lightWeatherResearch' | 'buyWeatherBottle' | 'scanWeatherFriends' | 'collectWeatherBottle' | 'summonWeatherRain' | 'claimYishuHuanfuSeed' | 'sellYishuHuanfuSweetPotato' | 'shareYishuHuanfuShop' | 'exchangeYishuHuanfuGoods' | 'refreshYishuHuanfuQuote' | 'claimYishuHuanfuCommission' | 'importYishuHuanfuShareKey'
+export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew' | 'claimCharitySeeds' | 'donateCharityLove' | 'claimCharityDailyGift' | 'claimCharityProgress' | 'lightWeatherResearch' | 'buyWeatherBottle' | 'scanWeatherFriends' | 'collectWeatherBottle' | 'summonWeatherRain' | 'claimYishuHuanfuSeed' | 'sellYishuHuanfuSweetPotato' | 'shareYishuHuanfuShop' | 'exchangeYishuHuanfuGoods' | 'refreshYishuHuanfuQuote' | 'claimYishuHuanfuCommission' | 'importYishuHuanfuShareKey' | 'forgetYishuHuanfuShareKey'
 
 function isRecord(value: unknown): value is ActivityRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -1864,6 +1864,11 @@ function normalizeAction(actions: ActivityRecord, capabilities: ActivityRecord, 
   }
 }
 
+// 这些是「当前打开活动的详情」，由 loadDetails() 单独拉（/api/activity-center/<activity>），
+// 活动目录 /activities 里不带它们。写操作没回快照时 mutate 会重拉目录，
+// 如果不把这几项保住，页面会突然变成空壳。
+const DETAIL_SNAPSHOT_KEYS = ['yishuHuanfu', 'qixi', 'qingMei', 'charity', 'weather', 'constellation', 'solarTerms'] as const
+
 export function normalizeActivitySnapshot(value: unknown): ActivityCenterSnapshotDto {
   const envelope = record(value)
   const root = record(first(envelope.snapshot, envelope.data, value))
@@ -2074,6 +2079,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     claimYishuHuanfuSeed: false,
     exchangeYishuHuanfuGoods: false,
   importYishuHuanfuShareKey: false,
+  forgetYishuHuanfuShareKey: false,
     sellYishuHuanfuSweetPotato: false,
     shareYishuHuanfuShop: false,
     refreshYishuHuanfuQuote: false,
@@ -2142,7 +2148,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     loadedAccountId.value = ''
     serverClockOffset.value = 0
     clearWeatherFriends()
-    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false, claimCharitySeeds: false, donateCharityLove: false, claimCharityDailyGift: false, claimCharityProgress: false, lightWeatherResearch: false, buyWeatherBottle: false, scanWeatherFriends: false, collectWeatherBottle: false, summonWeatherRain: false, claimYishuHuanfuSeed: false, sellYishuHuanfuSweetPotato: false, shareYishuHuanfuShop: false, exchangeYishuHuanfuGoods: false, refreshYishuHuanfuQuote: false, claimYishuHuanfuCommission: false, importYishuHuanfuShareKey: false }
+    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false, claimCharitySeeds: false, donateCharityLove: false, claimCharityDailyGift: false, claimCharityProgress: false, lightWeatherResearch: false, buyWeatherBottle: false, scanWeatherFriends: false, collectWeatherBottle: false, summonWeatherRain: false, claimYishuHuanfuSeed: false, sellYishuHuanfuSweetPotato: false, shareYishuHuanfuShop: false, exchangeYishuHuanfuGoods: false, refreshYishuHuanfuQuote: false, claimYishuHuanfuCommission: false, importYishuHuanfuShareKey: false, forgetYishuHuanfuShareKey: false }
   }
 
   function clearActionMessages() {
@@ -2360,7 +2366,27 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         }
       }
       else {
+        // 这类写操作的接口不回快照，只能重拉活动目录（/activities）。
+        // 但目录里**没有**当前打开活动的详情（qixi / yishuHuanfu / charity …），
+        // 而 applySnapshot 是整份替换 —— 直接 load 会把详情清成 null，
+        // 页面就变成「目标单价 0、可用蜜薯 --、兑换商店未加载」的空壳。
+        // 所以先把已有的详情留一份，load 完再把丢掉的补回去。
+        const before = snapshot.value
+        const kept: Record<string, unknown> = {}
+        for (const key of DETAIL_SNAPSHOT_KEYS) {
+          const previous = (before as unknown as Record<string, unknown>)[key]
+          if (previous)
+            kept[key] = previous
+        }
         await load(requestedAccountId, true)
+        const after = snapshot.value as unknown as Record<string, unknown>
+        const missing = Object.keys(kept).filter(key => !after[key])
+        if (missing.length > 0) {
+          const restored: Record<string, unknown> = { ...after }
+          for (const key of missing)
+            restored[key] = kept[key]
+          snapshot.value = restored as unknown as ActivityCenterSnapshotDto
+        }
       }
       if (key === 'claimCharityProgress') {
         const claimedTarget = text(resultRecord.target)
@@ -2734,6 +2760,15 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
 
   // 手动导入好友当天的分享标识：面板外的真人好友只有先导入标识才卖得进去。
   // 导入后立即重扫一次比价，让「能不能卖」的标记跟着变。
+  // 把某家铺子移出比价列表：删掉它的分享标识存档，比价池自然就没这条了。
+  // 面板账号下次分享会重新落盘，所以这是「这次不想看它」，不是永久屏蔽。
+  async function forgetYishuHuanfuShareKey(accountId: string, gid: string) {
+    const result = await mutate('forgetYishuHuanfuShareKey', '/yishuhuanfu/share-key/remove', accountId, { gid })
+    if (result)
+      await scanYishuHuanfuFriendShops(accountId, true)
+    return result
+  }
+
   async function importYishuHuanfuShareKey(accountId: string, gid: string, text: string) {
     const result = await mutate('importYishuHuanfuShareKey', '/yishuhuanfu/share-key', accountId, { gid, text })
     // 补完标识后顺手重扫比价，但不等它：一次全量扫描要串几十个 cmd 92，
@@ -2938,6 +2973,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     refreshYishuHuanfuQuote,
     exchangeYishuHuanfuGoods,
     importYishuHuanfuShareKey,
+    forgetYishuHuanfuShareKey,
     loadYishuHuanfuCatalog,
     loadYishuHuanfuShop,
     queryYishuHuanfuShopQuote,

@@ -187,3 +187,6 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 | 无标识时拒绝查价（避免把自家行情当成对方价） | 同上 `fetchShopQuote` |
 | 自动卖薯不再二次筛标识（池子已保证可卖） | `core/src/services/yishuhuanfu-auto.ts` |
 | 限购 `x/y`、未分享标记与按钮禁用、标识粘贴框 | `web/src/components/activity/YishuHuanfuTab.vue`、`web/src/stores/activity-center.ts` |
+| 比价行完整展示 `share_key`（含自己那条）、行尾「移出比价」 | 同上 |
+| 移出比价：`removeYishuShareKey` → `forgetYishuHuanfuShareKey` → `POST /yishuhuanfu/share-key/remove` | `core/src/models/store/yishu-share-keys.ts`、服务、`yishuhuanfu-routes.ts` |
+| 写接口不回快照时保住活动详情（否则页面变空壳） | `web/src/stores/activity-center.ts` 的 `DETAIL_SNAPSHOT_KEYS` |

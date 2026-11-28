@@ -105,6 +105,7 @@ function createMemoryShareKeyStore() {
             return true;
         },
         listYishuShareKeys: () => new Map(entries),
+        removeYishuShareKey: gid => entries.delete(String(gid)),
         findYishuShareKey: (gid, dateKey) => {
             const entry = entries.get(String(gid));
             if (!entry) return null;
@@ -393,6 +394,11 @@ test('yishuhuanfu re-shares a keyless already-shared day to recover only the key
     assert.match(result.message, /只补了分享标识/);
 
     // 标识补上之后再点就没意义了，直接拦住，不再白打一次网关。
+    // 自己的标识要能读出来：比价列表第一行要显示它，方便对照别人贴进来的链接。
+    const scan = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    const ownRow = scan.shops.find(entry => entry.own);
+    assert.equal(ownRow.shareKey, 'f0000001-0000-4000-8000-000000000001');
+
     await assert.rejects(
         () => harness.service.shareYishuHuanfuShop(),
         error => error.code === 'YSHF_SHARE_ALREADY_DONE',
@@ -606,6 +612,30 @@ test('yishuhuanfu hand-typed key never overrides the account own share', async (
         harness.shareKeyStore.readYishuShareKey('900001').shareKey,
         'c0000002-0000-4000-8000-000000000002',
     );
+});
+
+test('yishuhuanfu forgets a shop and drops it from the pool', async () => {
+    const harness = createHarness({
+        shopQuotes: {
+            1220537209: { price: '100', quota: '8000', name: '自己' },
+            910001: { price: '260', quota: '2000', name: 'A号' },
+        },
+        shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
+    });
+    const before = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.ok(before.shops.some(entry => entry.gid === '910001'));
+
+    const removed = await harness.service.forgetYishuHuanfuShareKey('910001');
+    assert.equal(removed.removed, true);
+    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+
+    const after = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(after.shops.some(entry => entry.gid === '910001'), false);
+    assert.equal(after.shops.length, 1);
+
+    // 再删一次不报错，只是 nothing removed（界面连点两下不该弹出红字）。
+    const again = await harness.service.forgetYishuHuanfuShareKey('910001');
+    assert.equal(again.removed, false);
 });
 
 test('yishuhuanfu catalog maps ten static tiers and is exchangeable', async () => {

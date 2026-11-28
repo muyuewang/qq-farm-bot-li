@@ -1366,6 +1366,8 @@ async function handleApiCall(msg: any): Promise<void> {
                     break;
                 case 'importYishuHuanfuShareKey':
                     result = await require('../services/activity-center').importYishuHuanfuShareKey(args[0], args[1]);
+                case 'forgetYishuHuanfuShareKey':
+                    result = await require('../services/activity-center').forgetYishuHuanfuShareKey(args[0]);
                     break;
                 case 'giftQixiSachet':
                     result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);

@@ -584,5 +584,6 @@ module.exports = {
     exchangeYishuHuanfuGoods: yishuHuanfuService.exchangeYishuHuanfuGoods,
     shareYishuHuanfuShop: yishuHuanfuService.shareYishuHuanfuShop,
     importYishuHuanfuShareKey: yishuHuanfuService.importYishuHuanfuShareKey,
+    forgetYishuHuanfuShareKey: yishuHuanfuService.forgetYishuHuanfuShareKey,
 };
 //# sourceMappingURL=activity-center.js.map

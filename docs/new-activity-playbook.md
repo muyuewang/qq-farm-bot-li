@@ -190,6 +190,8 @@ if (hasCanSell && reply.can_sell === false) throw businessError('YSHF_SHOP_CLOSE
 
 最狠的一课在同一天下午补上：**读接口的权限也可能一起收紧，而且它不报错——直接退回你自己的数据。** 不带标识去查别人的 gid，cmd 92 回的是自己铺子的行情，字段结构一模一样，拿 `gid` 一贴就变成「好友的价」。所以凡是「按 ID 查别人资源」的读接口，都要有一条断言兜住：请求带了别人的 ID、服务端却没带上对应凭据时，宁可报错空着，也不要把回包当真。落地做法是在 `fetchShopQuote` 里先判 `!sameAccount && !shopRef` 直接抛错，一次网关请求都不发。
 
+还有一条纯前端的坑，加新写接口时必踩：**写操作的回包如果不带 snapshot，前端会重拉活动目录来刷新，而目录里没有「已选中活动的详情」**（qixi / yishuHuanfu / charity 都是单独一个 `GET /api/activity-center/<activity>` 拉的）。整份替换的结果就是页面突然变成空壳——目标单价 0、可用蜜薯 `--`、兑换商店「未加载」。要么让写接口像别的动作一样带回 snapshot，要么在重拉目录时把已有详情保住（本仓库的做法：`mutate` 里记录 `DETAIL_SNAPSHOT_KEYS`，load 完把丢掉的补回去）。
+
 ---
 
 ## 4. 第三步：后端接入（core）

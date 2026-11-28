@@ -705,8 +705,18 @@ function createYishuHuanfuActivityService(deps: any) {
         const targets: any[] = [];
         const seen = new Set<string>();
         if (own) {
-            // 自家铺子不需要标识，shareKey 留空，界面按「不需要」处理。
-            targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0', via: 'own', shareKey: '' });
+            // 自家铺子不需要标识（查/卖自己都不带 shop），但界面上要把自己的标识显示出来，
+            // 方便对照别人贴进来的链接，所以照样下发。
+            targets.push({
+                gid: own,
+                own: true,
+                name: '我的铺子',
+                avatar: '',
+                level: '0',
+                via: 'own',
+                shareKey: ownShareKeyToday(),
+                shareKeySource: 'share',
+            });
             seen.add(own);
         }
         let sellableCount = 0;
@@ -1239,6 +1249,28 @@ function createYishuHuanfuActivityService(deps: any) {
         return { gid, shareKey, message: `已记录 ${gid} 今日的分享标识` };
     }
 
+    /**
+     * 把某家铺子从比价池里移除（删掉它的分享标识存档）。
+     * 比价池完全由存档决定，删掉这条自然就没了。
+     * 面板账号下次分享会重新落盘，所以这里只是「这次不想看它」，不是永久屏蔽。
+     */
+    async function forgetYishuHuanfuShareKey(gidInput: unknown) {
+        const gid = positiveDecimal(gidInput, 'INVALID_YSHF_SHOP_GID', 'gid');
+        if (!gid) throw businessError('YSHF_GID_UNKNOWN', '缺少要移除的铺主 GID');
+        const store = shareKeyStore();
+        if (!store) throw businessError('YSHF_SHARE_KEY_STORE_MISSING', '分享标识存档不可用');
+        const removed = typeof store.removeYishuShareKey === 'function'
+            ? !!store.removeYishuShareKey(gid)
+            : false;
+        friendScanCache = null;
+        if (gid === ownGid()) ownKeyMemo = null;
+        return {
+            gid,
+            removed,
+            message: removed ? `已把 ${gid} 移出比价列表` : `${gid} 本来就不在比价列表里`,
+        };
+    }
+
     // 进程起来后先预热一次背包。首个快照最容易被网关并发挤掉，而这时进程里还没有
     // “上次成功值”可回退，界面就会一路 "--" 到下一次成功为止。提前拉一次把兜底填上。
     const warmupTimer: any = setTimeout(() => {
@@ -1259,6 +1291,7 @@ function createYishuHuanfuActivityService(deps: any) {
         exchangeYishuHuanfuGoods,
         shareYishuHuanfuShop,
         importYishuHuanfuShareKey,
+        forgetYishuHuanfuShareKey,
     };
 }
 

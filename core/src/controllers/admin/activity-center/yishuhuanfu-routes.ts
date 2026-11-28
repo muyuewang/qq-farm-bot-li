@@ -35,4 +35,9 @@ export function mountYishuHuanfuActivityRoutes({ app, ctx, withAccount, mountGet
     app.post('/api/activity-center/yishuhuanfu/share-key', withAccount((accountId: string, req: Request) => (
         ctx.provider.importYishuHuanfuShareKey(accountId, req.body?.gid, req.body?.text)
     )));
+    // 把某家铺子移出比价列表：比价池完全由标识存档决定，删掉这条就没了。
+    // 面板账号下次分享会重新落盘，所以这不是永久屏蔽。
+    app.post('/api/activity-center/yishuhuanfu/share-key/remove', withAccount((accountId: string, req: Request) => (
+        ctx.provider.forgetYishuHuanfuShareKey(accountId, req.body?.gid)
+    )));
 }

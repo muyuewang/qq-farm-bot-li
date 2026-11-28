@@ -11,6 +11,7 @@ const props = defineProps<{
   pendingQuote: boolean
   pendingCommission: boolean
   pendingImportKey: boolean
+  pendingForgetShop: boolean
   friendShops: YishuHuanfuFriendShopDto[]
   friendShopsLoading: boolean
   friendScanAt: number
@@ -39,6 +40,8 @@ const emit = defineEmits<{
   loadRecords: []
   // 手动导入好友当天分享标识：贴分享链接/卡片文本或 UUID。
   importShareKey: [gid: string, text: string]
+  // 把某家铺子移出比价列表（删掉标识存档，面板账号下次分享会重新出现）。
+  forgetShop: [gid: string]
 }>()
 
 type TabKey = 'shop' | 'store' | 'compare'
@@ -804,8 +807,12 @@ function scanAgo() {
               <em v-else-if="shop.via === 'panel'" class="panel-source" title="该账号自己分享后自动落盘的标识">已分享</em>
             </strong>
             <span>GID {{ shop.gid }}</span>
-            <!-- 标识原样显示（截断，完整值在 title 里）：用户靠它核对这家是哪条链接进来的。 -->
-            <span v-if="shop.shareKey" class="share-key-text" :title="shop.shareKey">标识 {{ shortKey(shop.shareKey) }}</span>
+            <!-- 标识要完整显示：这一行右侧有富余宽度，截断反而没法核对是哪条链接。
+                 自己的铺子也显示（自己那份用于对照别人贴进来的链接）。 -->
+            <span v-if="shop.shareKey" class="share-key-text" :title="shop.shareKey">
+              标识 {{ shop.shareKey }}
+            </span>
+            <span v-else-if="shop.own" class="share-key-text muted">标识 —（今天还没分享铺子）</span>
           </div>
           <div class="quote">
             <strong>{{ formatNumber(shop.totalPrice) }}</strong>
@@ -822,6 +829,17 @@ function scanAgo() {
             @click="pickTarget(shop.own ? '' : shop.gid)"
           >
             {{ shop.own ? '卖自己' : '卖给他' }}
+          </button>
+          <!-- 自己的铺子不能移除；别人家移除 = 删掉它的标识存档，下次它分享会重新回来。 -->
+          <button
+            v-if="!shop.own"
+            type="button"
+            class="compare-remove"
+            :disabled="pendingForgetShop"
+            title="把这家移出比价列表（删掉它的分享标识存档）"
+            @click="emit('forgetShop', shop.gid)"
+          >
+            ×
           </button>
         </article>
       </div>
@@ -1473,6 +1491,43 @@ function scanAgo() {
   color: var(--ui-muted);
   opacity: 0.85;
   cursor: help;
+}
+
+/* 比价行里完整显示标识：正常宽度下整串可见，窗口太窄才省略，完整值仍在 title 里。 */
+.compare-row .share-key-text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-key-text.muted {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 行尾的「移出比价」小按钮。 */
+.compare-remove {
+  flex: none;
+  width: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.compare-remove:hover:not(:disabled) {
+  color: var(--yshf-accent-soft);
+  opacity: 1;
+}
+
+.compare-remove:disabled {
+  cursor: default;
+  opacity: 0.3;
 }
 
 /* 比价页的手动添加入口。 */
