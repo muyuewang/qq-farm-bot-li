@@ -1356,6 +1356,7 @@ async function handleApiCall(msg) {
                         break;
                     case 'importYishuHuanfuShareKey':
                         result = await require('../services/activity-center').importYishuHuanfuShareKey(args[0], args[1]);
+                        break;
                     case 'forgetYishuHuanfuShareKey':
                         result = await require('../services/activity-center').forgetYishuHuanfuShareKey(args[0]);
                         break;
