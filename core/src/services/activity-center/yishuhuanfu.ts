@@ -139,6 +139,33 @@ function createYishuHuanfuActivityService(deps: any) {
     }
 
     /**
+     * 本账号今天的分享标识（没有则空串）。
+     * 用来判断「已分享过但标识没落盘」这种情况：这种状态下还能再分享一次，
+     * 只是拿不到暴击加成和种子奖励，但能把标识补回来（当天标识固定不变）。
+     *
+     * 快照会被前端高频轮询，所以这里带一层日期级缓存：同一进程既写又读，
+     * 写入时清掉即可，不必每次轮询都读一遍盘。
+     */
+    let ownKeyMemo: { dateKey: string; gid: string; shareKey: string } | null = null;
+    function ownShareKeyToday(): string {
+        const gid = ownGid();
+        if (!gid) return '';
+        const dateKey = getSystemDateKey();
+        if (ownKeyMemo && ownKeyMemo.gid === gid && ownKeyMemo.dateKey === dateKey) {
+            return ownKeyMemo.shareKey;
+        }
+        let shareKey = '';
+        try {
+            const entry = shareKeyStore()?.findYishuShareKey?.(gid, dateKey);
+            shareKey = String(entry?.shareKey || '');
+        } catch {
+            shareKey = '';
+        }
+        ownKeyMemo = { dateKey, gid, shareKey };
+        return shareKey;
+    }
+
+    /**
      * 分享标识存档（按 gid 一文件，跨账号可读）。
      * 走 require 而不是顶层 import：测试环境不落地磁盘，存档层缺失时整条链路要能降级成
      * 「只能查价、不能卖好友」，而不是让服务创建就失败。
@@ -294,6 +321,10 @@ function createYishuHuanfuActivityService(deps: any) {
         // 进程重启、跨设备、多端操作都能立刻体现。本地记账只作为兜底保留。
         const seedClaimed = !!claims.seed_claimed || seedClaimedDateKey === dateKey;
         const shared = !!claims.share_claimed || sharedDateKey === dateKey;
+        // 今天分享过 ≠ 标识已经落盘。进程重启 / 本次热更之前分享的账号，服务端记得
+        // 「已分享」，但本地没有那串 share_key，比价和卖薯都用不了它。
+        // 这种情况允许再分享一次补标识（当天标识固定，只是没有暴击和种子奖励）。
+        const shareKeySaved = !!ownShareKeyToday();
         const shareTimeSec = Number(int64String(shareState.timestamp || '0'));
         const sharedToday = Number.isFinite(shareTimeSec) && shareTimeSec > 0
             && getSystemDateKey(shareTimeSec * 1000) === dateKey;
@@ -364,6 +395,8 @@ function createYishuHuanfuActivityService(deps: any) {
                 shared,
                 // 130.2.3 是分享时间戳，落在今天说明今天触发过分享暴击。
                 sharedToday,
+                // 今天的分享标识有没有落盘：false 时「补标识」还可以再点一次分享。
+                shareKeySaved,
             },
             actions: {
                 claimSeed: {
@@ -377,8 +410,10 @@ function createYishuHuanfuActivityService(deps: any) {
                     availabilityKnown: balances !== null,
                 },
                 share: {
-                    enabled: active && !shared,
-                    available: active && !shared,
+                    // 今天没分享过 → 正常分享（有暴击和种子）；
+                    // 分享过但标识没落盘 → 还能再发一次，只补标识，没有奖励。
+                    enabled: active && (!shared || !shareKeySaved),
+                    available: active && (!shared || !shareKeySaved),
                     availabilityKnown: true,
                 },
                 exchange: {
@@ -1063,8 +1098,11 @@ function createYishuHuanfuActivityService(deps: any) {
             if (!snapshot.active) {
                 throw businessError('YSHF_INACTIVE', '以薯换福活动未在活动期内');
             }
-            if (snapshot.daily.shared) {
-                throw businessError('YSHF_SHARE_ALREADY_DONE', '今日已经分享过铺子，暴击涨价每日只触发一次');
+            // 已分享 + 标识已落盘：再发一次纯属浪费，暴击和种子都不会再来。
+            // 已分享 + 标识没落盘：放行，这次只要那串 share_key（当天标识固定不变）。
+            const rewardless = snapshot.daily.shared;
+            if (rewardless && snapshot.daily.shareKeySaved) {
+                throw businessError('YSHF_SHARE_ALREADY_DONE', '今天已经分享过，且标识已落盘，不需要再分享');
             }
 
             const reply = await operateYshf(types.YshfShareRequest, {
@@ -1124,6 +1162,8 @@ function createYishuHuanfuActivityService(deps: any) {
                     dateKey: getSystemDateKey(),
                     source: 'share',
                 });
+                // 自己那串变了就作废快照用的缓存，界面下一轮就能看到 daily.shareKeySaved=true。
+                ownKeyMemo = null;
             }
             return {
                 count,
@@ -1132,9 +1172,15 @@ function createYishuHuanfuActivityService(deps: any) {
                 shareKey,
                 shareKeyGid: keyGid,
                 shareKeySaved,
+                // true 表示这次是「已分享过、只为补标识」，没有暴击加成与种子奖励。
+                rewardless,
                 shareReported,
                 shareReportError,
-                message: count === '0' ? '铺子分享成功' : `铺子分享成功，额外获得 ${count} 个红薯种子`,
+                message: rewardless
+                    ? (shareKeySaved
+                        ? '今天已经分享过，这次只补了分享标识（没有暴击加成和种子奖励）'
+                        : '今天已经分享过，回包里没带分享标识（没有暴击加成和种子奖励）')
+                    : (count === '0' ? '铺子分享成功' : `铺子分享成功，额外获得 ${count} 个红薯种子`),
                 snapshot: options.withSnapshot === false ? null : await getActivityCenterSnapshot(),
             };
         });
@@ -1189,6 +1235,7 @@ function createYishuHuanfuActivityService(deps: any) {
         if (!saved) throw businessError('YSHF_SHARE_KEY_SAVE_FAILED', '分享标识没能写入存档');
         // 标识变了，「这家铺子能不能卖」的判断要重算，缓存必须失效。
         friendScanCache = null;
+        ownKeyMemo = null;
         return { gid, shareKey, message: `已记录 ${gid} 今日的分享标识` };
     }
 

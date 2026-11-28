@@ -527,7 +527,7 @@ export interface YishuHuanfuActivityDto {
   balanceError: string
   // true 表示这次没读到背包，当前数字是上一次成功值（可继续展示，不报错）。
   balanceStale: boolean
-  daily: { dateKey: string, seedClaimed: boolean, shared: boolean, sharedToday: boolean }
+  daily: { dateKey: string, seedClaimed: boolean, shared: boolean, sharedToday: boolean, shareKeySaved: boolean }
   actions: {
     claimSeed: ActivityActionDto
     sell: ActivityActionDto
@@ -1329,6 +1329,12 @@ function normalizeYishuHuanfu(value: unknown): YishuHuanfuActivityDto | null {
       seedClaimed: bool(daily.seedClaimed, daily.seed_claimed),
       shared: bool(daily.shared),
       sharedToday: bool(daily.sharedToday, daily.shared_today, daily.quoteGeneratedToday, daily.quote_generated_today),
+      // 今天的分享标识有没有落盘。false 且 shared=true 时还可以再分享一次「补标识」
+      // （当天标识固定不变，这次没有暴击和种子奖励）。老后端没这字段时按 true 处理，
+      // 免得升级期间把分享按钮一直亮着。
+      shareKeySaved: daily.shareKeySaved === undefined && daily.share_key_saved === undefined
+        ? true
+        : bool(daily.shareKeySaved, daily.share_key_saved),
     },
     actions: {
       claimSeed: action('claimSeed'),

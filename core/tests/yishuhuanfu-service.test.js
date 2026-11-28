@@ -105,6 +105,12 @@ function createMemoryShareKeyStore() {
             return true;
         },
         listYishuShareKeys: () => new Map(entries),
+        findYishuShareKey: (gid, dateKey) => {
+            const entry = entries.get(String(gid));
+            if (!entry) return null;
+            if (dateKey && entry.dateKey && entry.dateKey !== dateKey) return null;
+            return { shareKey: entry.shareKey, activityId: entry.activityId };
+        },
         normalizeShareKey: (value) => {
             const match = String(value || '').match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
             return match ? match[0].toLowerCase() : '';
@@ -344,7 +350,53 @@ test('yishuhuanfu trusts the server claims slot over the local date bookkeeping'
     assert.equal(snapshot.daily.seedClaimed, true);
     assert.equal(snapshot.daily.shared, true);
     assert.equal(snapshot.actions.claimSeed.enabled, false);
+    // 已分享但本地没标识：还允许再点一次「补分享标识」（当天标识固定不变，只是没奖励）。
+    assert.equal(snapshot.daily.shareKeySaved, false);
+    assert.equal(snapshot.actions.share.enabled, true);
+});
+
+test('yishuhuanfu disables share once today key is on disk', async () => {
+    const harness = createHarness({
+        seedClaimed: true,
+        shared: true,
+        shareKeys: { 1220537209: 'e0000001-0000-4000-8000-000000000001' },
+    });
+    const snapshot = await harness.service.getCurrentYishuHuanfuActivity();
+    assert.equal(snapshot.daily.shareKeySaved, true);
     assert.equal(snapshot.actions.share.enabled, false);
+});
+
+test('yishuhuanfu re-shares a keyless already-shared day to recover only the key', async () => {
+    // 真实场景：今天已经分享过（服务端记得），但那串 share_key 没被记下来
+    // （进程重启 / 热更之前分享的）。再分享一次只有标识、没有暴击和种子。
+    const harness = createHarness({
+        shared: true,
+        operateReply: () => ({
+            yshf_share: {
+                price: '33',
+                shop: {
+                    gid: '1220537209',
+                    shop_ref: {
+                        activity_id: ACTIVITY_ID,
+                        gid: '1220537209',
+                        share_key: 'f0000001-0000-4000-8000-000000000001',
+                    },
+                },
+            },
+        }),
+    });
+    const result = await harness.service.shareYishuHuanfuShop();
+    assert.equal(result.rewardless, true);
+    assert.equal(result.seedReward, null);
+    assert.equal(result.shareKeySaved, true);
+    assert.equal(harness.shareKeyStore.readYishuShareKey('1220537209').shareKey, 'f0000001-0000-4000-8000-000000000001');
+    assert.match(result.message, /只补了分享标识/);
+
+    // 标识补上之后再点就没意义了，直接拦住，不再白打一次网关。
+    await assert.rejects(
+        () => harness.service.shareYishuHuanfuShop(),
+        error => error.code === 'YSHF_SHARE_ALREADY_DONE',
+    );
 });
 
 test('yishuhuanfu sell defaults to the own shop and sends cmd 93 with the full balance', async () => {

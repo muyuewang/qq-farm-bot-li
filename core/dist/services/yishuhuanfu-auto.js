@@ -113,6 +113,9 @@ function createYishuAutomation(deps) {
     const skipLoggedOn = new Map();
     // 比价结果按「好友数上限 + 配置间隔」复用，避免每轮都把好友扫一遍。
     let scanCache = null;
+    // 「已分享但标识没落盘」的补标识尝试，每天只做一次：
+    // 万一服务端那天就是不下发 shop_ref，不该每轮都白打一次网关。
+    let keyRecoveryDateKey = '';
     function todayKey() {
         return new Date((getServerTimeSec() + 8 * 3600) * 1000).toISOString().slice(0, 10);
     }
@@ -325,24 +328,40 @@ function createYishuAutomation(deps) {
             }
         }
         if (shareEnabled) {
-            if (snapshot.daily?.shared) {
-                skip('share', '今日已经分享过铺子，暴击涨价每日只触发一次');
+            const alreadyShared = !!snapshot.daily?.shared;
+            // 已分享但本地没标识 → 还值得再发一次（只补标识，没有暴击和种子）。
+            const keyMissing = alreadyShared && !snapshot.daily?.shareKeySaved;
+            const canAttempt = !alreadyShared
+                || (keyMissing && keyRecoveryDateKey !== todayKey());
+            if (!canAttempt) {
+                skip('share', keyMissing
+                    ? '今天已尝试补分享标识仍没拿到，等下一次自然分享'
+                    : '今日已经分享过铺子，标识也已落盘');
             }
             else {
+                if (keyMissing)
+                    keyRecoveryDateKey = todayKey();
                 await spacing();
                 try {
                     const result = await shareShop({ withSnapshot: false });
                     wrote = true;
-                    const extra = result?.count && result.count !== '0' ? `，额外获得 ${result.count} 个红薯种子` : '';
-                    const report = result?.shareReported === false
-                        ? `（分享上报未生效：${result?.shareReportError || '未知原因'}，暴击加成可能没加上）`
-                        : '';
-                    done('share', `分享铺子完成${extra}${report}`);
+                    if (result?.rewardless) {
+                        done('share', result?.shareKeySaved
+                            ? '今天已分享过，补到分享标识（无暴击与种子）'
+                            : '今天已分享过，补标识失败：回包没带分享标识');
+                    }
+                    else {
+                        const extra = result?.count && result.count !== '0' ? `，额外获得 ${result.count} 个红薯种子` : '';
+                        const report = result?.shareReported === false
+                            ? `（分享上报未生效：${result?.shareReportError || '未知原因'}，暴击加成可能没加上）`
+                            : '';
+                        done('share', `分享铺子完成${extra}${report}`);
+                    }
                 }
                 catch (e) {
                     const code = String(e?.code || '');
                     if (code === 'YSHF_SHARE_ALREADY_DONE')
-                        skip('share', '今日已经分享过铺子');
+                        skip('share', '今日已经分享过铺子，标识已落盘');
                     else if (code === 'YSHF_INACTIVE')
                         skip('read', '不在开放窗口（尚未开始或已经结束）');
                     else

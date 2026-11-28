@@ -60,6 +60,23 @@ const sweetPotato = computed(() => activity.value?.sweetPotatoBalance ?? null)
 const sweetPotatoCount = computed(() => Number(sweetPotato.value || '0'))
 const luckCoin = computed(() => Number(activity.value?.luckCoinBalance ?? '0'))
 const canSell = computed(() => !!activity.value?.actions.sell.enabled && sweetPotatoCount.value > 0)
+// 已分享 ≠ 标识已落盘。真实情况是「今天分享过，但那串 share_key 没被记下来」
+// （进程重启、版本更新之前分享的）。这种账号还能再分享一次，只补标识、没有奖励。
+const shareKeyPending = computed(() => !!activity.value?.daily.shared && !activity.value?.daily.shareKeySaved)
+const shareStateText = computed(() => {
+  const daily = activity.value?.daily
+  if (!daily?.shared)
+    return '分享可触发暴击'
+  return daily.shareKeySaved ? '今日已分享' : '已分享·标识未记录'
+})
+const shareButtonText = computed(() => {
+  if (props.pendingShare)
+    return '分享中…'
+  const daily = activity.value?.daily
+  if (!daily?.shared)
+    return '分享收购价'
+  return daily.shareKeySaved ? '今日已分享' : '补分享标识'
+})
 const catalog = computed(() => activity.value?.catalog || [])
 const canExchange = computed(() => !!activity.value?.actions.exchange.enabled)
 // 资源条只留福气币与蜜薯：红薯种子每天固定 28 个、只影响种植，读不到也不影响做决策，
@@ -474,7 +491,7 @@ function scanAgo() {
               <span>每日动作</span>
               <strong>{{ activity.daily.seedClaimed ? '种子已领' : '待领种子' }}</strong>
             </div>
-            <em class="soft">{{ activity.daily.shared ? '今日已分享' : '分享可触发暴击' }}</em>
+            <em class="soft">{{ shareStateText }}</em>
           </div>
           <!-- 种子是否已领改由服务端状态槽 130.1 的 claims.seed_claimed 直接给出，
                不再需要“行情已生成”这种间接提示。 -->
@@ -496,9 +513,15 @@ function scanAgo() {
               :disabled="busy || !activity.actions.share.enabled"
               @click="emit('share')"
             >
-              {{ activity.daily.shared ? '今日已分享' : (pendingShare ? '分享中…' : '分享收购价') }}
+              {{ shareButtonText }}
             </button>
           </div>
+          <!-- 已分享 ≠ 标识已落盘：分享过但没有本地标识的账号，再点一次只补标识，
+               没有暴击加成与种子奖励（当天标识固定不变，所以补一次就够）。 -->
+          <p v-if="shareKeyPending" class="daily-note">
+            今天已经分享过，但这次的分享标识没记下来（进程重启或版本更新前分享的）。
+            再点一次「补分享标识」即可：当天标识固定不变，只是不会再有暴击加成和种子奖励。
+          </p>
         </section>
 
         <section class="yshf-panel commission-panel">

@@ -135,12 +135,20 @@ test('daily seed and share claims run once, then skip on the server flags', asyn
     assert.deepEqual(harness.calls.find(entry => entry[0] === 'claimSeed')[1], { withSnapshot: false });
 
     const second = createHarness({
-        snapshot: makeSnapshot({ daily: { seedClaimed: true, shared: true } }),
+        snapshot: makeSnapshot({ daily: { seedClaimed: true, shared: true, shareKeySaved: true } }),
     });
     await second.automation.runYishuAutomation(ALL_ON);
     assert.deepEqual(second.calls.filter(entry => entry[0] !== 'getActivity').map(entry => entry[0]), []);
     // 每天只记一条跳过，不刷日志。
     assert.ok(second.logs.some(entry => entry.message.includes('今日红薯种子已经领过')));
+    assert.ok(second.logs.some(entry => entry.message.includes('标识也已落盘')));
+
+    // 已分享但标识没落盘：还要再补一次分享，只拿标识、没有奖励。
+    const keyless = createHarness({
+        snapshot: makeSnapshot({ daily: { seedClaimed: true, shared: true, shareKeySaved: false } }),
+    });
+    await keyless.automation.runYishuAutomation(ALL_ON);
+    assert.deepEqual(keyless.calls.filter(entry => entry[0] !== 'getActivity').map(entry => entry[0]), ['shareShop']);
 });
 
 test('commission is claimed only when the server says it is claimable', async () => {
