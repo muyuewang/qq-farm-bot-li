@@ -98,6 +98,8 @@ function createMemoryShareKeyStore() {
                 shareKey,
                 activityId: String(entry?.activityId || ''),
                 dateKey: String(entry?.dateKey || ''),
+                // 和真实存档一致：分享自动落盘记 share，手填记 manual。
+                source: String(entry?.source || 'share'),
                 updatedAt: Date.now(),
             });
             return true;
@@ -497,18 +499,60 @@ test('yishuhuanfu share sends cmd 98 once per day and records the shop share key
 });
 
 test('yishuhuanfu imports a share key from a pasted link', async () => {
-    const harness = createHarness();
+    const harness = createHarness({
+        shopQuotes: { 1014343107: { price: '99', quota: '8000', name: '手填好友' } },
+    });
     const result = await harness.service.importYishuHuanfuShareKey(
         '1014343107',
         'https://game.qq.com/x?share_key=7B946B00-C609-4364-996D-46ADB2F3D131&from=card',
     );
     assert.equal(result.gid, '1014343107');
     assert.equal(result.shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
-    assert.equal(harness.shareKeyStore.readYishuShareKey('1014343107').shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
+    const stored = harness.shareKeyStore.readYishuShareKey('1014343107');
+    assert.equal(stored.shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
+    // 手填的标识要能和面板账号自动落盘的区分开：界面上会标「手填」，出错时先怀疑它。
+    assert.equal(stored.source, 'manual');
+
+    // 导入完立刻以 force 重扫：这家铺子要马上出现在比价列表里，且标识原样下发。
+    const scan = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    const row = scan.shops.find(entry => entry.gid === '1014343107');
+    assert.ok(row, '手填标识后该铺子要进池');
+    assert.equal(row.shareKey, '7b946b00-c609-4364-996d-46adb2f3d131');
+    assert.equal(row.shareKeySource, 'manual');
 
     await assert.rejects(
         () => harness.service.importYishuHuanfuShareKey('1014343107', '完全不是标识的一段文字'),
         error => error.code === 'INVALID_YSHF_SHARE_KEY',
+    );
+});
+
+test('yishuhuanfu hand-typed key never overrides the account own share', async () => {
+    // 同一 gid 当天标识固定、第二天才换新：账号自己分享落盘的那条是服务端下发的权威值。
+    // 手填一条错的上去，会把当天唯一正确的标识换掉，那一天都卖不进去 —— 必须拦住。
+    const harness = createHarness({
+        shopQuotes: { 910001: { price: '260', quota: '2000', name: 'A号' } },
+        shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
+    });
+    await assert.rejects(
+        () => harness.service.importYishuHuanfuShareKey('910001', 'deadbeef-dead-4ead-8ead-deadbeefdead'),
+        error => error.code === 'YSHF_SHARE_KEY_LOCKED',
+    );
+    assert.equal(
+        harness.shareKeyStore.readYishuShareKey('910001').shareKey,
+        'a0000001-0000-4000-8000-000000000001',
+        '权威值不能被手填改掉',
+    );
+
+    // 贴的是同一个值：幂等确认，不报错也不改写。
+    const same = await harness.service.importYishuHuanfuShareKey('910001', 'a0000001-0000-4000-8000-000000000001');
+    assert.equal(same.unchanged, true);
+
+    // 手填值之间可以互相覆盖：贴错了要能改。
+    await harness.service.importYishuHuanfuShareKey('900001', 'c0000001-0000-4000-8000-000000000001');
+    await harness.service.importYishuHuanfuShareKey('900001', 'c0000002-0000-4000-8000-000000000002');
+    assert.equal(
+        harness.shareKeyStore.readYishuShareKey('900001').shareKey,
+        'c0000002-0000-4000-8000-000000000002',
     );
 });
 
@@ -835,6 +879,8 @@ test('yishuhuanfu shop quote reports the price the game shows (base + bonus)', a
     // 游戏界面「今日蜜薯收购价」显示 165。只报 price 会让整张比价表偏低 99。
     const harness = createHarness({
         shopQuotes: { 1006086548: { price: '66', bonus: '99', quota: '8000', name: '风筝有风' } },
+        // 2026-11-28 起查别人铺子也要带对方当天的标识，否则服务端会退回自己铺子的数据。
+        shareKeys: { 1006086548: 'b0000001-0000-4000-8000-000000000001' },
     });
     const quote = await harness.service.queryYishuHuanfuShop('1006086548');
     assert.equal(quote.price, '66');
@@ -842,6 +888,23 @@ test('yishuhuanfu shop quote reports the price the game shows (base + bonus)', a
     assert.equal(quote.totalPrice, '165');
     assert.equal(quote.quota, '8000');
     assert.equal(quote.own, false);
+});
+
+test('yishuhuanfu shop quote refuses a gid without a share key instead of echoing own shop', async () => {
+    // 2026-11-28 实测：不带 shop 去查别人的 gid，服务端会把自己铺子的行情原样返回，
+    // 回包结构和好友铺子完全一样。照单全收就会把「自己的价」当成对方的价记进比价表，
+    // 所以这里必须直接拒掉，一次网关请求都不该发出去。
+    const harness = createHarness({
+        shopQuotes: { 1220537209: { price: '100', quota: '8000', name: '自己' } },
+    });
+    await assert.rejects(
+        () => harness.service.queryYishuHuanfuShop('1006086548'),
+        (error) => {
+            assert.equal(error.code, 'YSHF_SHARE_KEY_MISSING');
+            return true;
+        },
+    );
+    assert.equal(harness.operateRequest().length, 0, '没有标识时不应发出 cmd 92');
 });
 
 test('yishuhuanfu purchase records decode the 2026-11-25 15:11 capture', async () => {
@@ -970,25 +1033,28 @@ test('yishuhuanfu scan pools every account with a share key and rotates the wind
     assert.equal(allGids.size, 5, '两轮轮换应覆盖自己 + 4 个候选账号');
 });
 
-test('yishuhuanfu scan leaves out friends without a share key unless explicitly asked', async () => {
+test('yishuhuanfu scan never pools keyless friends', async () => {
     const harness = createHarness({
         shopQuotes: {
             1220537209: { price: '100', quota: '8000' },
             900001: { price: '300', quota: '2000', name: '普通好友' },
             900002: { price: '250', quota: '2000', name: '别号好友' },
         },
-        // 好友列表照旧能拉到，但对方没有分享标识 —— 卖不进去，默认不进候选池。
+        // 历史收集过的 gid 还读得到，但今天都没标识 —— 一条都不该查。
         getAllFriends: async () => ({ game_friends: [{ gid: '900001', name: '普通好友' }] }),
         getPanelFriendGids: () => [{ gid: '900002', accountName: '别号' }],
     });
-    const byDefault = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    assert.equal(byDefault.shops.length, 1);
-    assert.equal(byDefault.shops[0].own, true);
+    const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
+    assert.equal(result.shops.length, 1);
+    assert.equal(result.shops[0].own, true);
+    // 2026-11-28 之后 cmd 92 不带 shop 只会拿回自己铺子的数据，
+    // 没有标识的 gid 一律不查，所以这里只有自己那一条请求。
+    assert.equal(result.scanned, 1);
+    const queried = harness.operateRequest()
+        .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
+    assert.deepEqual(queried, ['1220537209']);
 
-    const withFriends = await harness.service.scanYishuHuanfuFriendShops({ force: true, includeFriends: true });
-    const friendRow = withFriends.shops.find(entry => entry.gid === '900001');
-    assert.ok(friendRow, '显式要求时仍可看价');
-    // 只作价格参考：界面会标「未分享·只能看价」，自动任务也不会选它。
-    assert.equal(friendRow.shareKeyKnown, false);
-    assert.equal(withFriends.shareKeyMissing, 2);
+    // includeFriends 这个兼容入口已随查价收紧一并失效：传了也不会再并好友列表。
+    const legacy = await harness.service.scanYishuHuanfuFriendShops({ force: true, includeFriends: true });
+    assert.equal(legacy.shops.length, 1);
 });

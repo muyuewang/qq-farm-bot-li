@@ -113,12 +113,24 @@ const manualQuoteMatch = computed(() => {
 const targetShop = computed(() => {
   if (!targetGid.value)
     return null
-  return props.friendShops.find(entry => entry.gid === targetGid.value) || manualQuoteMatch.value
+  // 手动查到的行情优先：它是刚点「查行情」拉回来的那一份，比列表里的新。
+  // 列表里那份的 shareKeyKnown 可能还是补标识之前的旧值，拿它判断会让输入框收不起来。
+  return manualQuoteMatch.value || props.friendShops.find(entry => entry.gid === targetGid.value) || null
 })
 
 /** GID 只允许数字：粘贴带空格的号码时直接清掉，省得后端报「参数无效」。 */
 function onGidInput(value: string) {
-  targetGid.value = String(value || '').replace(/\D/g, '').slice(0, 20)
+  const next = String(value || '').replace(/\D/g, '').slice(0, 20)
+  // 换了号码，上一个号贴进来的分享标识就作废了，别让「保存」把它写到新号头上。
+  // 标识输入框只有填了 GID 才会出现，所以这里清空不会误伤「先贴标识再填号」的情况。
+  if (next !== targetGid.value)
+    resetShareKeyInput()
+  targetGid.value = next
+}
+
+function resetShareKeyInput() {
+  shareKeyText.value = ''
+  shareKeyEditing.value = false
 }
 
 function queryTargetQuote() {
@@ -184,6 +196,8 @@ function openCompare() {
 }
 
 function pickTarget(gid: string) {
+  if (gid !== targetGid.value)
+    resetShareKeyInput()
   targetGid.value = gid
   tab.value = 'shop'
 }
@@ -209,14 +223,83 @@ const exchangeTarget = ref<YishuHuanfuCatalogEntryDto | null>(null)
 const exchangeQty = ref(1)
 // 手动粘贴对方的分享标识（链接/卡片文本都行），用于面板外的真人好友。
 const shareKeyText = ref('')
+// 已经带上标识时默认折叠成一行状态，想换标识再点开输入框。
+const shareKeyEditing = ref(false)
 
+// 比价页的「手动添加铺子」：面板外的真人好友只能靠手填 gid + 标识进池。
+const addShopOpen = ref(false)
+const addShopGid = ref('')
+const addShopKey = ref('')
+const addShopValid = computed(() => /^\d{5,20}$/.test(addShopGid.value.trim()) && addShopKey.value.trim().length >= 16)
+
+function toggleAddShop() {
+  addShopOpen.value = !addShopOpen.value
+  if (!addShopOpen.value) {
+    addShopGid.value = ''
+    addShopKey.value = ''
+  }
+}
+
+function submitAddShop() {
+  if (!addShopValid.value || props.pendingImportKey)
+    return
+  emit('importShareKey', addShopGid.value.trim(), addShopKey.value.trim())
+  // 标识是一次性凭据，落盘后就没必要留在输入框里；GID 也清掉，避免重复提交同一个。
+  addShopGid.value = ''
+  addShopKey.value = ''
+}
+
+/** 标识太长（36 位 UUID），列表里只显示头尾，完整值放 title。 */
+function shortKey(value: string) {
+  const key = String(value || '')
+  if (key.length <= 17)
+    return key
+  return `${key.slice(0, 8)}…${key.slice(-6)}`
+}
+
+// 2026-11-28 起卖给别人必须带对方当天的分享标识（服务端校验）。
+// 自己的 GID 走自卖，不需要；填了别人的号就必须有。
+const ownGid = computed(() => String(activity.value?.shop.gid || ''))
+const needsShareKey = computed(() => {
+  if (!targetGid.value)
+    return false
+  if (targetShop.value?.own)
+    return false
+  return targetGid.value !== ownGid.value
+})
+
+// 三态：true 已确认带上今日标识 / false 明确没有 / null 还没查行情、不知道。
+// 关键点在 null 也要露出输入框：没标识时 cmd 92 可能查不到铺子，
+// 若「查不到就不给输入框」，用户就永远补不上标识，售卖被卡死。
+const targetKeyKnown = computed<boolean | null>(() => {
+  if (!needsShareKey.value)
+    return true
+  const shop = targetShop.value
+  if (!shop)
+    return null
+  return shop.shareKeyKnown !== false
+})
+const showShareKeyInput = computed(() => needsShareKey.value
+  && (targetKeyKnown.value !== true || shareKeyEditing.value))
+const shareKeyActionLabel = computed(() => {
+  if (props.pendingImportKey)
+    return '保存中…'
+  if (targetKeyKnown.value === true)
+    return '更新'
+  return targetKeyKnown.value === null ? '保存并查询' : '保存'
+})
+
+// 换目标 GID 时把上一个号的标识原文丢掉，避免顺手贴到别人头上。
 function submitShareKey() {
   const gid = targetGid.value.trim()
   const text = shareKeyText.value.trim()
   if (!gid || !text || props.pendingImportKey)
     return
   emit('importShareKey', gid, text)
+  // 贴进来的原文只在这一步有用：后端会归一化成 UUID 落盘，保存后马上重查行情，
+  // 成败都由行情回执说话，输入框留着原文反而会让人以为还没存进去。
   shareKeyText.value = ''
+  shareKeyEditing.value = false
 }
 
 // 上限取「本档剩余可兑」和「福气币够买几次」的较小值；余额为 0 时仍然允许 1，交给服务端裁决。
@@ -512,24 +595,47 @@ function scanAgo() {
           </p>
 
           <!-- 2026-11-28 起卖给别人要带对方当天的分享标识；面板外的真人好友只能手动贴一次。
-               面板账号会自己分享、标识自动落盘，不会出现这一行。 -->
-          <label v-if="targetShop && !targetShop.own && !targetShop.shareKeyKnown" class="sell-input">
-            <span>分享标识</span>
-            <input
-              v-model="shareKeyText"
-              type="text"
-              autocomplete="off"
-              placeholder="粘贴对方分享的链接或标识"
-            >
-            <button
-              type="button"
-              class="link"
-              :disabled="pendingImportKey || !shareKeyText.trim()"
-              @click="submitShareKey"
-            >
-              {{ pendingImportKey ? '保存中…' : '保存' }}
-            </button>
-          </label>
+               面板账号会自己分享、标识自动落盘，所以填自己或面板账号时不会出现这一行。
+               判定只看「GID 是不是别人的」——不依赖是否已查到行情，否则没标识就查不到铺子、
+               查不到铺子又不给输入框，会把售卖锁死。 -->
+          <template v-if="needsShareKey">
+            <div v-if="targetKeyKnown === true && !showShareKeyInput" class="share-key-state">
+              <span>
+                已带对方今日分享标识
+                <em v-if="targetShop?.shareKey" class="share-key-text" :title="targetShop.shareKey">{{ shortKey(targetShop.shareKey) }}</em>
+              </span>
+              <button type="button" class="link" @click="shareKeyEditing = true">
+                换一个
+              </button>
+            </div>
+            <template v-else>
+              <label class="sell-input">
+                <span>分享标识</span>
+                <input
+                  v-model="shareKeyText"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="粘贴对方分享的链接或标识"
+                >
+                <button
+                  type="button"
+                  class="link"
+                  :disabled="pendingImportKey || !shareKeyText.trim()"
+                  @click="submitShareKey"
+                >
+                  {{ shareKeyActionLabel }}
+                </button>
+              </label>
+              <p class="sell-hint" :class="{ warning: targetKeyKnown === false }">
+                <template v-if="targetKeyKnown === false">
+                  这家没有今天的分享标识，服务端会拒收。让对方在游戏里分享一次铺子，或把对方分享的链接贴进来。
+                </template>
+                <template v-else>
+                  卖给好友要带对方当天的分享标识：贴对方分享的链接或 UUID，保存后自动查一次行情。
+                </template>
+              </p>
+            </template>
+          </template>
 
           <label class="sell-input">
             <span>出售数量</span>
@@ -558,7 +664,7 @@ function scanAgo() {
           <button
             type="button"
             class="yshf-button primary wide"
-            :disabled="busy || !canSell || sellCount <= 0 || targetClosed"
+            :disabled="busy || !canSell || sellCount <= 0 || targetClosed || (needsShareKey && targetKeyKnown === false)"
             @click="submitSell"
           >
             {{ pendingSell ? '出售中…' : (targetGid ? '卖给他' : '卖给自己') }}
@@ -620,10 +726,48 @@ function scanAgo() {
         </button>
       </div>
       <p class="compare-hint">
-        用 GID 逐个查今日收购价（只读命令，不占用对方额度，对方也收不到通知）。候选只包含自己 + 有当天分享标识的账号：
-        2026-11-28 起卖给别人必须带对方分享卡片里的标识，别人的好友查得到价也卖不进去。
+        比价池 = 本账号 + 面板里当天分享过的账号（每个账号分享后，它的 gid 和分享标识会自动落盘）。
+        2026-11-28 起连查价都要带对方标识：不带标识去查别人的 GID，服务端只会退回自己铺子的数据，
+        所以面板外的好友要先贴一次他的分享链接才能进池。
         {{ ranking || '挑个价高的铺子卖，比卖给自己更划算。' }}
       </p>
+
+      <!-- 面板外的真人好友：手填 GID + 标识进池。标识一次有效一天，跨日重新分享。 -->
+      <div class="compare-add">
+        <button
+          type="button"
+          class="yshf-button ghost compact"
+          :disabled="friendShopsLoading"
+          @click="toggleAddShop"
+        >
+          {{ addShopOpen ? '收起' : '＋ 手动添加铺子' }}
+        </button>
+        <div v-if="addShopOpen" class="compare-add__form">
+          <input
+            v-model="addShopGid"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="对方 GID"
+            @input="addShopGid = String(($event.target as HTMLInputElement).value || '').replace(/\D/g, '').slice(0, 20)"
+          >
+          <input
+            v-model="addShopKey"
+            type="text"
+            autocomplete="off"
+            placeholder="对方分享的链接或标识"
+          >
+          <button
+            type="button"
+            class="catalog-buy narrow"
+            :disabled="!addShopValid || pendingImportKey"
+            @click="submitAddShop"
+          >
+            {{ pendingImportKey ? '保存中…' : '加入比价' }}
+          </button>
+        </div>
+      </div>
+
       <p v-if="friendScanNote" class="compare-note">{{ friendScanNote }}<template v-if="friendScanAt">（{{ scanAgo() }}）</template></p>
 
       <div v-if="friendShops.length" class="compare-list">
@@ -633,9 +777,12 @@ function scanAgo() {
             <strong>
               {{ shop.name || shop.gid }}
               <em v-if="shop.own">自己</em>
-              <em v-else-if="shop.via === 'panel'" class="panel-source" :title="shop.shareKeyKnown ? '拿到了对方当天的分享标识，可以直接卖' : '没有对方今天的分享标识，只能看价'">已分享</em>
+              <em v-else-if="shop.shareKeySource === 'manual'" class="panel-source" title="手动填进来的标识，如果查价 / 卖薯报错，先怀疑这条">手填</em>
+              <em v-else-if="shop.via === 'panel'" class="panel-source" title="该账号自己分享后自动落盘的标识">已分享</em>
             </strong>
             <span>GID {{ shop.gid }}</span>
+            <!-- 标识原样显示（截断，完整值在 title 里）：用户靠它核对这家是哪条链接进来的。 -->
+            <span v-if="shop.shareKey" class="share-key-text" :title="shop.shareKey">标识 {{ shortKey(shop.shareKey) }}</span>
           </div>
           <div class="quote">
             <strong>{{ formatNumber(shop.totalPrice) }}</strong>
@@ -1278,6 +1425,54 @@ function scanAgo() {
 
 .sell-hint.warning {
   color: var(--yshf-accent-soft);
+}
+
+/* 已经带上对方今日标识时的折叠态：一行弱提示 + 「换一个」，
+   不再常驻一个空输入框占位置。 */
+.share-key-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--yshf-chip-bg);
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+
+/* 分享标识（UUID）本身：等宽字体 + 弱色，一眼能看出是凭据而不是备注。 */
+.share-key-text {
+  font-family: var(--ui-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ui-muted);
+  opacity: 0.85;
+  cursor: help;
+}
+
+/* 比价页的手动添加入口。 */
+.compare-add {
+  margin: 8px 0 4px;
+}
+
+.compare-add__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.compare-add__form input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-solid);
+  font-size: 12px;
+  color: var(--ui-ink);
 }
 
 .link {

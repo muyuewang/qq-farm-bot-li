@@ -109,10 +109,6 @@ function createYishuHuanfuActivityService(deps: any) {
         serializeMutation,
         getActivityCenterSnapshot,
         getUserState,
-        // 好友列表默认懒加载，测试可注入桩函数，避免拉起真实的网关请求。
-        getAllFriends: getAllFriendsDep,
-        // 面板其它账号的好友同样可注入，测试不必读写磁盘存档。
-        getPanelFriendGids: getPanelFriendGidsDep,
         // 分享标识存档可注入：测试用内存表，生产走 core/data/yishu_share_keys。
         shareKeyStore: shareKeyStoreDep,
     } = deps;
@@ -183,84 +179,6 @@ function createYishuHuanfuActivityService(deps: any) {
             body,
         );
         return types.GetGroupReply.decode(replyBody);
-    }
-
-    /**
-     * 面板里所有账号的「已知好友 GID」。每个账号的 worker 同步好友列表时会把它落盘到
-     * `known_friend_gids/<accountId>.json`（worker-manager 的 known_friend_gids_sync），
-     * 这里把目录里所有账号的文件并起来，比价候选池就不再只有当前账号的好友。
-     *
-     * 蜜薯能卖给任何开着铺子的人，非好友也收，所以候选池越大越容易挑到当日最高价。
-     * 读不到（文件缺失 / 存档损坏）只当没有，不影响本账号好友。
-     */
-    function collectPanelFriendGids(): Array<{ gid: string; accountName: string }> {
-        if (typeof getPanelFriendGidsDep === 'function') {
-            const injected = getPanelFriendGidsDep();
-            if (Array.isArray(injected)) {
-                const result: Array<{ gid: string; accountName: string }> = [];
-                const seen = new Set<string>();
-                for (const raw of injected) {
-                    const gid = int64String(raw?.gid);
-                    if (!gid || gid === '0' || !/^\d+$/.test(gid) || seen.has(gid)) continue;
-                    seen.add(gid);
-                    result.push({ gid, accountName: String(raw?.accountName || '') });
-                }
-                return result;
-            }
-        }
-        const result: Array<{ gid: string; accountName: string }> = [];
-        const seen = new Set<string>();
-        try {
-            // 本文件在 services/activity-center/ 下，store 在 models/ 下，要退两级；
-            // 写成 '../models/store' 会指向不存在的 services/models/store，require 抛错被
-            // 下面的 catch 吞掉，面板好友池就永远为空（只剩本账号好友）。
-            const store = require('../../models/store');
-            const { listAllKnownFriendGidsCaches, readKnownFriendGidsCache } = require('../../models/store/gid-cache');
-            const listed = store?.getAccounts?.();
-            const accounts = Array.isArray(listed?.accounts) ? listed.accounts : [];
-            const namesById = new Map<string, string>();
-            for (const account of accounts) {
-                const accountId = String(account?.id || '');
-                if (accountId)
-                    namesById.set(accountId, String(account?.name || account?.nick || accountId));
-            }
-
-            // 以缓存目录为准扫描所有 <accountId>.json：面板可能只挂一个账号，
-            // 但历史账号落盘的文件同样有比价价值。按账号列表读会漏掉这些文件。
-            const caches = typeof listAllKnownFriendGidsCaches === 'function'
-                ? listAllKnownFriendGidsCaches()
-                : [];
-            for (const cache of caches) {
-                const accountId = String(cache?.accountId || '');
-                if (!accountId || !Array.isArray(cache?.gids)) continue;
-                const accountName = namesById.get(accountId) || `账号${accountId}`;
-                for (const raw of cache.gids) {
-                    const gid = int64String(raw);
-                    if (!gid || gid === '0' || !/^\d+$/.test(gid) || seen.has(gid)) continue;
-                    seen.add(gid);
-                    result.push({ gid, accountName });
-                }
-            }
-            // 兼容旧版本：若目录扫描函数缺失，退回按账号列表逐个读。
-            if (caches.length === 0 && typeof readKnownFriendGidsCache === 'function') {
-                for (const account of accounts) {
-                    const accountId = String(account?.id || '');
-                    if (!accountId) continue;
-                    const gids = readKnownFriendGidsCache(accountId);
-                    if (!Array.isArray(gids)) continue;
-                    const accountName = namesById.get(accountId) || `账号${accountId}`;
-                    for (const raw of gids) {
-                        const gid = int64String(raw);
-                        if (!gid || gid === '0' || !/^\d+$/.test(gid) || seen.has(gid)) continue;
-                        seen.add(gid);
-                        result.push({ gid, accountName });
-                    }
-                }
-            }
-        } catch {
-            // 读不到面板账号存档不是错误：退回只用本账号好友。
-        }
-        return result;
     }
 
     /**
@@ -629,6 +547,15 @@ function createYishuHuanfuActivityService(deps: any) {
         const sameAccount = targetGid === ownGid();
         // 查好友铺子要带对方当天的分享标识（2026-11-28 起服务端校验）；查自己铺子不带。
         const shopRef = sameAccount ? null : shareRefFor(targetGid, options.shareKeys);
+        // 没有标识时不能发这条请求：cmd 92 现在只认「带了自己标识的别人的 gid」，
+        // 不带 shop 就退回查自己铺子，回包结构与好友铺子一模一样。
+        // 照单全收的后果是把「自己的 441」记成对方的价，整张比价表全是假数据，
+        // 而且卖过去还会被服务端拒——所以这里直接拦住，让上层去补标识。
+        if (!sameAccount && !shopRef) {
+            throw businessError('YSHF_SHARE_KEY_MISSING',
+                `${targetGid} 今天还没有可用的分享标识，查不到对方铺子的行情。`
+                + '先贴对方分享的链接或标识。');
+        }
         const params: any = { shop_gid: targetGid };
         if (shopRef) params.shop = shopRef;
         const reply = await operateYshf(types.YshfShopQueryRequest, {
@@ -664,8 +591,10 @@ function createYishuHuanfuActivityService(deps: any) {
             quotaUsed: (BigInt(cap) - BigInt(quota)).toString(),
             bonus,
             canSell,
-            // 只有拿到对方当天标识才可能卖进去；自家铺子不需要标识。
+            // 只有拿到对方当天标识才可能查价/卖进去；自家铺子不需要标识。
             shareKeyKnown: sameAccount || !!shopRef,
+            // 回显这次用的标识，前端「分享标识」那一行要显示出来核对。
+            shareKey: shopRef ? String(shopRef.share_key || '') : '',
             shop: shop ? {
                 gid: int64String(shop.gid),
                 name: shop.name || '',
@@ -699,15 +628,17 @@ function createYishuHuanfuActivityService(deps: any) {
     /**
      * 可出售铺子的比价：把候选 gid 逐个丢给 cmd 92 扫一遍，按收购价从高到低排序。
      *
-     * 候选池的范围在 2026-11-28 收窄了。以前是「本账号好友 + 面板其它账号的全部好友」，
-     * 靠 gid 就能把蜜薯强卖进去；现在服务端要求带上对方当天的分享标识（share_key），
-     * 而标识只在对方分享的回包里下发、没有按 gid 反查的接口，所以：
-     *   - 默认只扫「本账号 + 有当天标识的账号」，也就是面板里自己登录、自己分享过的账号；
-     *   - 别人的好友即使查得到价，也卖不进去，纳入候选池只会让自动任务白跑一趟；
-     *   - 真要卖进面板外的真人好友铺子，得先导入对方分享卡片里的标识（见 importYishuHuanfuShareKey）。
+     * 唯一数据源是当天落盘的分享标识表 core/data/yishu_share_keys：
+     * 面板里挂的每个账号每天分享一次，cmd 98 回包里的 {gid, share_key} 自动落盘，
+     * 这张表就是「今天能查价、且能卖进去」的全部铺子。
      *
-     * options.includeFriends=true 时仍会把好友列表并进来（只作价格参考，
-     * shareKeyKnown=false，自动任务不会选它）。
+     * 好友列表这条线彻底不走了：2026-11-28 之后 cmd 92 也认标识，
+     * 不带标识去查别人的 gid，服务端直接退回自己铺子的数据，回包结构完全一样，
+     * 分辨不出来。好友的 share_key 根本拿不到，并进候选池只会白跑。
+     *
+     * 所以候选池 = 本账号自己（不需要标识）+ 存档里当天有效的 gid。
+     * 标识只在对方分享的回包里下发、没有按 gid 反查的接口，
+     * 池子有多大完全取决于今天有多少账号分享过。
      */
     async function scanYishuHuanfuFriendShops(options: any = {}) {
         const limitRaw = Number(options?.limit);
@@ -739,12 +670,19 @@ function createYishuHuanfuActivityService(deps: any) {
         const targets: any[] = [];
         const seen = new Set<string>();
         if (own) {
-            targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0', via: 'own' });
+            // 自家铺子不需要标识，shareKey 留空，界面按「不需要」处理。
+            targets.push({ gid: own, own: true, name: '我的铺子', avatar: '', level: '0', via: 'own', shareKey: '' });
             seen.add(own);
         }
         let sellableCount = 0;
+        // 存档里但日期对不上的：这些账号今天还没重新分享，需要提示用户去点一次分享。
+        let staleKeyCount = 0;
         for (const [gid, entry] of shareKeys) {
-            if (!gid || gid === '0' || seen.has(gid) || !keyIsFresh(entry)) continue;
+            if (!gid || gid === '0' || seen.has(gid)) continue;
+            if (!keyIsFresh(entry)) {
+                staleKeyCount += 1;
+                continue;
+            }
             seen.add(gid);
             sellableCount += 1;
             targets.push({
@@ -755,50 +693,14 @@ function createYishuHuanfuActivityService(deps: any) {
                 avatar: '',
                 level: '0',
                 via: 'panel',
+                // 原样下发，界面要把它显示出来：用户靠这串值核对「这家到底是哪个账号、
+                // 是不是自己手填的那条」，排错时不用去翻 data/yishu_share_keys 目录。
+                shareKey: String(entry.shareKey || ''),
+                shareKeySource: entry.source === 'manual' ? 'manual' : 'share',
             });
         }
-
-        // 兼容入口：显式要求时把好友列表并进来，只用于看价，不具备可售性。
-        let friends: any[] = [];
-        let friendListError = '';
-        if (options?.includeFriends === true) {
-            try {
-                const loader = typeof getAllFriendsDep === 'function'
-                    ? getAllFriendsDep
-                    : () => require('../friend/api').getAllFriends(false, 'low');
-                const reply = await loader(false, 'low');
-                if (Array.isArray(reply?.game_friends)) friends = reply.game_friends;
-                else if (Array.isArray(reply?.gameFriends)) friends = reply.gameFriends;
-            } catch (error: any) {
-                friendListError = error?.message || '好友列表获取失败';
-            }
-            for (const friend of friends) {
-                const gid = int64String(friend?.gid);
-                if (!gid || gid === '0' || seen.has(gid)) continue;
-                seen.add(gid);
-                targets.push({
-                    gid,
-                    own: gid === own,
-                    name: friend?.remark || friend?.name || gid,
-                    avatar: friend?.avatar_url || '',
-                    level: int64String(friend?.level),
-                    via: 'friend',
-                });
-            }
-            for (const entry of collectPanelFriendGids()) {
-                if (seen.has(entry.gid)) continue;
-                seen.add(entry.gid);
-                targets.push({
-                    gid: entry.gid,
-                    own: false,
-                    name: '',
-                    avatar: '',
-                    level: '0',
-                    via: 'panel',
-                    panelAccount: entry.accountName,
-                });
-            }
-        }
+        // 不再碰好友列表：好友的 share_key 拿不到，并进来也查不了价、卖不进去，
+        // 纯属白跑。候选池完全由「今天落到存档里的 gid + 标识」决定。
         const slice = takeScanWindow(targets, limit, !!own);
 
         const shops: any[] = [];
@@ -851,19 +753,18 @@ function createYishuHuanfuActivityService(deps: any) {
             ownShop: shops.find(entry => entry.own) || null,
             scanned: slice.length,
             failed,
-            // 有价但缺当天分享标识的铺子数：这些只能查价，卖不进去。
-            shareKeyMissing: shops.filter(entry => !entry.own && entry.shareKeyKnown === false).length,
-            // 候选池 = 本账号 + 有当天分享标识、能卖进去的账号（默认不再并别人的好友）。
+            // 存档里存在但日期对不上的标识数：这些账号今天还没重新分享，重分享后自动回到比价池。
+            staleKeyCount,
+            // 候选池 = 本账号 + 有当天分享标识、能查能卖的账号。
             friendCount: targets.length - (own ? 1 : 0),
             panelFriendCount: sellableCount,
             candidateCount: targets.length - (own ? 1 : 0),
             // 候选池超过本轮上限时按轮换窗口扫，这里告诉界面还有多少没轮到。
             pendingCount: Math.max(0, targets.length - (own ? 1 : 0) - slice.filter(entry => !entry.own).length),
             limit,
-            friendListError,
             message: shops.length === 0
-                ? (friendListError || '没有可比的铺子：先让面板里的账号各分享一次铺子')
-                : `已扫描 ${shops.length} 个铺子${sellableCount ? `（可售卖 ${sellableCount + 1} 个）` : ''}，`
+                ? '没有可比的铺子：先让面板里的账号各分享一次铺子，面板外的好友贴一次分享链接'
+                : `已扫描 ${shops.length} 个铺子${sellableCount ? `（含其它账号 ${sellableCount} 个）` : ''}，`
                     + `最高收购价 ${shops[0].totalPrice}`,
             errorMessage: failureMessage,
             cached: false,
@@ -1221,6 +1122,7 @@ function createYishuHuanfuActivityService(deps: any) {
                     activityId: YSHF_ACTIVITY_ID,
                     // 标识每天换新，按服务器日期记账，跨日自动失效。
                     dateKey: getSystemDateKey(),
+                    source: 'share',
                 });
             }
             return {
@@ -1243,6 +1145,9 @@ function createYishuHuanfuActivityService(deps: any) {
      * 服务端没有「按 gid 查好友分享标识」的接口，标识只在对方分享的卡片/链接里，
      * 面板账号之间的标识会自动落盘，面板外的真人好友只能靠这个入口补一次。
      * 接受整条分享链接、卡片文本，或直接粘贴 32 位十六进制 / UUID。
+     *
+     * 同一 gid 当天标识固定、第二天换新，所以不需要反复导入：
+     * 账号自己分享过的那条是权威值（不能手填覆盖），手填值之间可以互相改。
      */
     async function importYishuHuanfuShareKey(gidInput: unknown, textInput: unknown) {
         const gid = positiveDecimal(gidInput, 'INVALID_YSHF_SHOP_GID', 'gid');
@@ -1256,10 +1161,30 @@ function createYishuHuanfuActivityService(deps: any) {
                 '没从这段内容里认出分享标识（应为 32 位十六进制或 8-4-4-4-12 的 UUID）',
             );
         }
+        // 同一 gid 当天只有一个固定标识，第二天才换新。所以「账号自己分享落盘」的那条
+        // 是服务端下发的权威值：手填不能覆盖它，否则一条贴错的链接会把当天唯一正确的
+        // 标识换掉，这一天都卖不进去。手填只用来补「自己没分享过、拿不到标识」的铺子，
+        // 手填值之间允许互相覆盖（贴错了要能改）。
+        const existing = typeof store.readYishuShareKey === 'function'
+            ? store.readYishuShareKey(gid)
+            : null;
+        if (existing?.shareKey === shareKey) {
+            friendScanCache = null;
+            return { gid, shareKey, unchanged: true, message: `${gid} 今天的分享标识没变，已确认` };
+        }
+        if (existing?.shareKey
+            && existing.source !== 'manual'
+            && (!existing.dateKey || existing.dateKey === getSystemDateKey())) {
+            throw businessError(
+                'YSHF_SHARE_KEY_LOCKED',
+                `${gid} 今天已经自己分享过，标识以它下发的为准，手填的值不会覆盖它`,
+            );
+        }
         const saved = store.writeYishuShareKey(gid, {
             shareKey,
             activityId: YSHF_ACTIVITY_ID,
             dateKey: getSystemDateKey(),
+            source: 'manual',
         });
         if (!saved) throw businessError('YSHF_SHARE_KEY_SAVE_FAILED', '分享标识没能写入存档');
         // 标识变了，「这家铺子能不能卖」的判断要重算，缓存必须失效。

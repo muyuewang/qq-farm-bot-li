@@ -136,16 +136,33 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 
 早期 proto 把 2 号位当成 `share_key`，所以就算读出来也永远对不上。
 
-### 二、标识只能从分享回包拿，候选池要收窄
+### 二、查价也要标识，候选池唯一来源是标识存档
 
-服务端没有「按 gid 反查好友标识」的接口，`GetShareKey` 给的是另一个值。因此：
+同一天下午复测发现，**cmd 92 也认标识了**：不带 `shop` 去查别人的 gid，服务端不报错，直接把
+**自己铺子的行情**原样返回，回包结构和好友铺子完全一样。这是最坑的一点——照单全收会把
+「自己的 441」记成对方的价，整张比价表全是假数据，卖过去还会被 cmd 93 拒。
 
-- 每个账号分享成功后，把自己的 `{gid, share_key, dateKey}` 落到 `core/data/yishu_share_keys/<gid>.json`（按 gid 一文件，多进程各写各的，不会互相覆盖）；
-- 比价候选池 = **自己 + 所有带当天标识的 gid**。面板里自己登录、自己分享过的账号天然在里面；
-- 别人的好友查得到价但卖不进去，默认不再进候选池（`includeFriends: true` 才作价格参考，行上标「未分享·只能看价」）；
-- 面板外的真人好友：前端「分享标识」输入框贴对方分享的链接/卡片文本，后端用正则提取 UUID 后落盘（`POST /api/activity-center/yishuhuanfu/share-key`）。
+服务端没有「按 gid 反查好友标识」的接口，`GetShareKey` 给的是另一个值（32 位邀请码）。
+所以数据链路收敛成一条：
 
-跨日自动失效：`dateKey` 对不上就当没有，因为服务端每天换新 key。
+- 面板里挂的每个账号每天分享一次，cmd 98 回包里的 `{gid, share_key}` 自动落盘到
+  `core/data/yishu_share_keys/<gid>.json`；
+- `listYishuShareKeys()` 把目录下所有 `<gid>.json` 并成一张表，**这张表就是比价池**；
+- 物理上按 gid 一文件、逻辑上是一块：每个账号的 worker 只写自己那份，
+  多进程同时跑也不会互相覆盖（写同一个 JSON 就会丢标识）；
+- 没有标识的 gid 一律**不发 cmd 92**（`fetchShopQuote` 直接抛 `YSHF_SHARE_KEY_MISSING`），
+  宁可空着也不把假数据放进比价表；
+- 好友列表这条线彻底不走：好友的 share_key 拿不到，并进候选池只会白跑。`includeFriends`
+  参数保留但已无效果。
+
+跨日自动失效：`dateKey` 对不上就当没有（`staleKeyCount` 会把过期条数报给界面）。
+
+面板外的真人好友只能手动补：前端「分享标识」输入框贴对方分享的链接/卡片文本，
+后端用正则提取 UUID 后落盘（`POST /api/activity-center/yishuhuanfu/share-key`），
+写完立刻 `force` 重扫一次比价。
+
+**运维含义**：想比价几家，就得有几家今天分享过。面板账号把「自动-分享铺子」打开即可每天自动补；
+今天已经分享过但标识没落盘的账号，等明天或手动贴一次链接。
 
 ### 三、兑换档位的剩余次数（cmd 97 field 6 / cmd 96 field 4-5）
 
@@ -163,6 +180,7 @@ message YshfShopRef { int64 activity_id = 1; int64 gid = 2; string share_key = 3
 | `YshfShopRef` 与两个请求的 shop 字段、`YshfSelfShop` 重新定名、目录/兑换回包字段 | `core/src/proto/activitypb.proto` |
 | 标识存档（读写、跨日校验、链接解析） | `core/src/models/store/yishu-share-keys.ts`、`shared-state.ts` 的 `YISHU_SHARE_KEYS_DIR` |
 | 查行情/卖薯带 shop 引用、分享落盘、目录剩余量、兑换回写、导入接口 | `core/src/services/activity-center/yishuhuanfu.ts` |
-| 候选池收窄（只扫有标识的账号） | 同上 `scanYishuHuanfuFriendShops` |
-| 自动卖薯跳过无标识铺子（`YSHF_SHARE_KEY_MISSING` 计入换店错误） | `core/src/services/yishuhuanfu-auto.ts` |
+| 候选池 = 标识存档里的 gid（好友列表不再参与） | 同上 `scanYishuHuanfuFriendShops` |
+| 无标识时拒绝查价（避免把自家行情当成对方价） | 同上 `fetchShopQuote` |
+| 自动卖薯不再二次筛标识（池子已保证可卖） | `core/src/services/yishuhuanfu-auto.ts` |
 | 限购 `x/y`、未分享标记与按钮禁用、标识粘贴框 | `web/src/components/activity/YishuHuanfuTab.vue`、`web/src/stores/activity-center.ts` |

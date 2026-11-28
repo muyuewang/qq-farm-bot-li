@@ -446,6 +446,10 @@ export interface YishuHuanfuFriendShopDto {
   canSell: boolean | null
   // 是否拿到了对方当天的分享标识。false 表示只能查价、卖不进去（服务端会拒）。
   shareKeyKnown: boolean
+  // 这家铺子当天用的分享标识（UUID），界面要显示出来方便核对；自家铺子为空。
+  shareKey: string
+  // share = 该账号自己分享后自动落盘；manual = 用户手填的，可能是错的。
+  shareKeySource: 'share' | 'manual'
   // 自家铺子不占好友额度，界面显示「不限」而不是「还可收 N 个」。
   unlimited: boolean
   // 候选来源：自己 / 有当天分享标识的账号（面板账号或导入过标识的好友）/ 好友（仅看价）。
@@ -2594,6 +2598,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       shareKeyKnown: payload.shareKeyKnown === undefined && payload.share_key_known === undefined
         ? true
         : bool(payload.shareKeyKnown, payload.share_key_known),
+      shareKey: text(payload.shareKey, payload.share_key),
+      shareKeySource: text(payload.shareKeySource, payload.share_key_source) === 'manual' ? 'manual' : 'share',
       unlimited: bool(payload.own),
       via: 'friend',
       panelAccount: '',
@@ -2690,6 +2696,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
           shareKeyKnown: entry.shareKeyKnown === undefined && entry.share_key_known === undefined
             ? true
             : bool(entry.shareKeyKnown, entry.share_key_known),
+          shareKey: text(entry.shareKey, entry.share_key),
+          shareKeySource: text(entry.shareKeySource, entry.share_key_source) === 'manual' ? 'manual' : 'share',
           via: (text(entry.via) || (bool(entry.own) ? 'own' : 'friend')) as 'own' | 'friend' | 'panel',
           panelAccount: text(entry.panelAccount, entry.panel_account),
         }
@@ -2704,7 +2712,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
         || (scanned === 0
           ? '没有可查询的铺子'
           : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子`
-            + `${panelFriendCount ? `（含其它账号好友 ${panelFriendCount} 个）` : ''}`
+            + `${panelFriendCount ? `（含其它账号 ${panelFriendCount} 个）` : ''}`
             + `${failed ? `，${failed} 个查询失败` : ''}`
             + `${pendingCount ? `，还有 ${pendingCount} 个候选待下一轮轮换` : ''}`)
       return true
@@ -2722,8 +2730,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   // 导入后立即重扫一次比价，让「能不能卖」的标记跟着变。
   async function importYishuHuanfuShareKey(accountId: string, gid: string, text: string) {
     const result = await mutate('importYishuHuanfuShareKey', '/yishuhuanfu/share-key', accountId, { gid, text })
+    // 补完标识后顺手重扫比价，但不等它：一次全量扫描要串几十个 cmd 92，
+    // 等它会把「保存」之后的流程卡住十几秒，页面也迟迟拿不到这家铺子的新行情。
     if (result)
-      await scanYishuHuanfuFriendShops(accountId, true)
+      void scanYishuHuanfuFriendShops(accountId, true)
     return result
   }
 

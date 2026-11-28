@@ -12,7 +12,10 @@ export {};
  * 所以：
  *   - 本账号每次分享成功后，把自己的标识落盘；
  *   - 面板里其它账号分享过，也会各自落盘到同一目录，本账号扫描时直接读文件；
- *   - 没有落盘标识的好友，只能查价、不能卖（前端会明确提示原因）。
+ *   - 没有落盘标识的好友，连价都查不到（服务端会退回自己铺子的数据），前端会明确提示原因。
+ *
+ * 时效：**同一个 gid 当天标识固定不变，第二天换新**。所以按 dateKey 记账即可，
+ * 当天不必重复分享；跨日对不上就当没有，等它下次分享自动补回来。
  *
  * 按 gid 一文件：每个账号进程只写自己的那一个，多进程不会互相覆盖，
  * 也不需要额外的文件锁。跨日自动失效（dateKey 对不上就当没有）。
@@ -59,7 +62,7 @@ function isValidShareKey(value: unknown): boolean {
     return SHARE_KEY_PATTERN.test(String(value || ''));
 }
 
-function readYishuShareKey(gid: unknown): { gid: string; shareKey: string; activityId: string; dateKey: string; updatedAt: number } | null {
+function readYishuShareKey(gid: unknown): { gid: string; shareKey: string; activityId: string; dateKey: string; source: string; updatedAt: number } | null {
     const id = String(gid || '').trim();
     if (!id) return null;
     try {
@@ -73,6 +76,9 @@ function readYishuShareKey(gid: unknown): { gid: string; shareKey: string; activ
             shareKey,
             activityId: String(data?.activityId || ''),
             dateKey: String(data?.dateKey || ''),
+            // share = 本账号分享时自动落盘；manual = 用户手填的标识。
+            // 界面上要区分：手填那条如果是错的，只能靠用户自己认出来。
+            source: String(data?.source || 'share'),
             updatedAt: Number(data?.updatedAt) || 0,
         };
     } catch {
@@ -92,7 +98,7 @@ function findYishuShareKey(gid: unknown, dateKey: string): { shareKey: string; a
     return { shareKey: entry.shareKey, activityId: entry.activityId };
 }
 
-function writeYishuShareKey(gid: unknown, input: { shareKey: unknown; activityId?: unknown; dateKey?: unknown }): boolean {
+function writeYishuShareKey(gid: unknown, input: { shareKey: unknown; activityId?: unknown; dateKey?: unknown; source?: unknown }): boolean {
     const id = String(gid || '').trim();
     const shareKey = normalizeShareKey(input?.shareKey);
     if (!id || !shareKey) return false;
@@ -101,6 +107,7 @@ function writeYishuShareKey(gid: unknown, input: { shareKey: unknown; activityId
             shareKey,
             activityId: String(input?.activityId || ''),
             dateKey: String(input?.dateKey || ''),
+            source: String(input?.source || 'share'),
             updatedAt: Date.now(),
         });
         return true;
@@ -110,15 +117,20 @@ function writeYishuShareKey(gid: unknown, input: { shareKey: unknown; activityId
 }
 
 /** 一次读出目录下所有标识，供比价扫描时按 gid 查表，避免每家铺子都读一次盘。 */
-function listYishuShareKeys(): Map<string, { shareKey: string; activityId: string; dateKey: string }> {
-    const result = new Map<string, { shareKey: string; activityId: string; dateKey: string }>();
+function listYishuShareKeys(): Map<string, { shareKey: string; activityId: string; dateKey: string; source: string }> {
+    const result = new Map<string, { shareKey: string; activityId: string; dateKey: string; source: string }>();
     try {
         const dir = ensureYishuShareKeysDir();
         for (const file of fs.readdirSync(dir)) {
             if (!/\.json$/i.test(file)) continue;
             const entry = readYishuShareKey(file.replace(/\.json$/i, ''));
             if (entry) {
-                result.set(entry.gid, { shareKey: entry.shareKey, activityId: entry.activityId, dateKey: entry.dateKey });
+                result.set(entry.gid, {
+                    shareKey: entry.shareKey,
+                    activityId: entry.activityId,
+                    dateKey: entry.dateKey,
+                    source: entry.source,
+                });
             }
         }
     } catch {

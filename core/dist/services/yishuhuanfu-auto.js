@@ -188,18 +188,12 @@ function createYishuAutomation(deps) {
             failed('scan', `好友铺子比价失败: ${e?.message || e}`);
             return;
         }
-        // 只留「能真的卖进去」的铺子：自家铺子不需要分享标识，别人家的必须有对方当天的
-        // 标识（2026-11-28 起服务端校验）。缺标识的店查得到价但一定成交不了，
-        // 留在候选里只会把单轮 3 次的写预算浪费掉。
-        const withKey = shops.filter((shop) => shop.own || shop.shareKeyKnown !== false);
-        const keyless = shops.length - withKey.length;
-        if (keyless > 0) {
-            skip('sell', `${keyless} 家铺子没有今天的分享标识，只能看价不能卖，已跳过`);
-        }
-        const candidates = options.fallbackOwn ? withKey : withKey.filter((shop) => !shop.own);
+        // 比价池本身已经只包含「能查能卖」的铺子（自家 + 当天分享过的账号），
+        // 这里不需要再按标识过滤一遍。
+        const candidates = options.fallbackOwn ? shops : shops.filter((shop) => !shop.own);
         if (!candidates.length) {
             skip('sell', shops.length
-                ? '候选铺子里没有可卖的（缺分享标识或已关闭卖给自己）'
+                ? '候选里只剩自己的铺子，且已关闭卖给自己'
                 : '没有可卖的好友铺子：先让面板里的账号各分享一次铺子');
             return;
         }
