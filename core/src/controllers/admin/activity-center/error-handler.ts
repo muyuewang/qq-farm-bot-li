@@ -93,6 +93,14 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_YSHF_SELL_COUNT: '出售数量必须是正整数',
     INVALID_YSHF_FRIEND_GID: '目标铺子 GID 无效',
     INVALID_YSHF_SHOP_GID: '目标铺子 GID 无效',
+    // 1034184 是**本账号**被限，不是对方链接坏了（当天标识一整天都有效）。
+    // 文案必须把「换账号/过一会儿再试」说清楚，否则用户会去删一条有效标识。
+    YSHF_SHOP_LOOKUP_BLOCKED: '服务端回了「分享链接已失效」，但当天链接不会失效——是本账号查价被限了。换个账号再试，或过十几分钟重试；标识都保留着',
+    YSHF_SHARE_KEY_MISSING: '这家今天还没有可用的分享标识，查不到行情也卖不进去；等它分享一次，或把手填的标识补上',
+    YSHF_SHARE_KEY_LOCKED: '这家今天自己分享过，标识以它下发的为准，手填值不能覆盖',
+    YSHF_SHARE_KEY_STORE_MISSING: '分享标识存档暂不可用，请稍后重试',
+    YSHF_SHARE_KEY_SAVE_FAILED: '分享标识没能写入存档，请重试',
+
 };
 
 function activityErrorResponse(error: any): { code: string; message: string; detail?: string } {

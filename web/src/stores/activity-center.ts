@@ -478,9 +478,10 @@ export interface YishuHuanfuFriendScanDto {
   ownShop: YishuHuanfuFriendShopDto | null
   scanned: number
   failed: number
-  // 分享链接已失效（服务端 1034184）被移出比价的铺子：需要对方重新分享一次。
-  expiredShops: YishuHuanfuExpiredShopDto[]
-  expiredKeyCount: number
+  // 本轮被服务端 1034184 挡回来的铺子。**这不是对方的链接坏了**：当天标识一整天都有效，
+  // 同一条链接换个账号照样能查能卖，纯粹是当前账号被限了。存档没删，界面只做提示。
+  blockedShops: YishuHuanfuBlockedShopDto[]
+  blockedKeyCount: number
   friendCount: number
   panelFriendCount: number
   candidateCount: number
@@ -490,7 +491,8 @@ export interface YishuHuanfuFriendScanDto {
   cached: boolean
 }
 
-export interface YishuHuanfuExpiredShopDto {
+/** 本账号被 1034184 挡回来的铺子（链接本身仍有效，换账号即可查/卖）。 */
+export interface YishuHuanfuBlockedShopDto {
   gid: string
   name: string
 }
@@ -1938,6 +1940,13 @@ const activityErrorMessages: Record<string, string> = {
   INVALID_YSHF_SELL_COUNT: '出售数量必须是正整数',
   INVALID_YSHF_FRIEND_GID: '目标铺子 GID 无效',
   INVALID_YSHF_SHOP_GID: '目标铺子 GID 无效',
+  // 1034184 的真实含义是「本账号被限」，不是对方链接失效：当天标识一整天都有效，
+  // 同一条链接换个账号照样能查能卖。所以文案只讲换账号/等一会儿，绝不提删标识。
+  YSHF_SHOP_LOOKUP_BLOCKED: '服务端回了「分享链接已失效」，但当天链接不会失效——是本账号查价被限了。换个账号再试，或过十几分钟重试；标识都保留着',
+  YSHF_SHARE_KEY_MISSING: '这家今天还没有可用的分享标识，查不到行情也卖不进去；等它分享一次，或把手填的标识补上',
+  YSHF_SHARE_KEY_LOCKED: '这家今天自己分享过，标识以它下发的为准，手填值不能覆盖',
+  YSHF_SHARE_KEY_STORE_MISSING: '分享标识存档暂不可用，请稍后重试',
+  YSHF_SHARE_KEY_SAVE_FAILED: '分享标识没能写入存档，请重试',
   NO_PASS_REWARD: '当前没有可领取的游记奖励，请完成新的游记等级后再试',
   SOLAR_TERM_UNAVAILABLE: '当前节令奖励暂不可领取，请在开放后再试',
   CONSTELLATION_UNAVAILABLE: '观星礼录活动暂未开放或已经结束',
@@ -2103,9 +2112,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const yishuHuanfuFriendShopsLoading = ref(false)
   const yishuHuanfuFriendScanAt = ref(0)
   const yishuHuanfuFriendScanNote = ref('')
-  // 这一轮因为「分享链接已失效」被移出比价的铺子：界面单独提示一句，
-  // 让用户知道不是网络问题，而是需要对方重新分享一次。
-  const yishuHuanfuExpiredShops = ref<YishuHuanfuExpiredShopDto[]>([])
+  // 这一轮被本账号风控挡回来的铺子。文案必须写成「本账号被限，换账号再试」，
+  // 不能写成「对方链接失效」——那会骗用户去删一条其实完全有效的标识。
+  const yishuHuanfuBlockedShops = ref<YishuHuanfuBlockedShopDto[]>([])
   // 收购记录（cmd 95）是独立查询，不放在快照里，避免每次轮询都多打一次网关。
   // recordsAccountId 记录这份列表属于哪个账号：切号时必须整份丢掉，否则会把上一个账号的
   // 记录当成当前账号的显示（页面守卫还会因为「已有数据」直接跳过请求）。
@@ -2751,20 +2760,20 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       const friendListError = text(payload.friendListError, payload.friend_list_error)
       const panelFriendCount = finiteNumber(first(payload.panelFriendCount, payload.panel_friend_count)) || 0
       const pendingCount = finiteNumber(first(payload.pendingCount, payload.pending_count)) || 0
-      // 分享链接失效的铺子：后端已经删了它们的存档，这里只负责告诉用户「要让对方重新分享」。
-      const expiredRaw = Array.isArray(payload.expiredShops)
-        ? payload.expiredShops
-        : Array.isArray(payload.expired_shops) ? payload.expired_shops : []
-      yishuHuanfuExpiredShops.value = expiredRaw
+      // 被 1034184 挡回来的铺子：后端一条存档都没删，这里只提示「换账号再试」。
+      const blockedRaw = Array.isArray(payload.blockedShops)
+        ? payload.blockedShops
+        : Array.isArray(payload.blocked_shops) ? payload.blocked_shops : []
+      yishuHuanfuBlockedShops.value = blockedRaw
         .map((entry: any) => ({ gid: text(entry?.gid), name: text(entry?.name) }))
-        .filter((entry: YishuHuanfuExpiredShopDto) => !!entry.gid)
-      const expiredCount = yishuHuanfuExpiredShops.value.length
+        .filter((entry: YishuHuanfuBlockedShopDto) => !!entry.gid)
+      const blockedCount = yishuHuanfuBlockedShops.value.length
       yishuHuanfuFriendScanNote.value = friendListError
         || (scanned === 0
-          ? (expiredCount ? `${expiredCount} 家铺子的分享链接已失效，等对方重新分享` : '没有可查询的铺子')
+          ? (blockedCount ? `本账号查价被服务端限了（${blockedCount} 家回「分享链接已失效」），换账号再扫一次` : '没有可查询的铺子')
           : `已扫描 ${yishuHuanfuFriendShops.value.length} 个铺子`
             + `${panelFriendCount ? `（含其它账号 ${panelFriendCount} 个）` : ''}`
-            + `${expiredCount ? `，${expiredCount} 家分享链接失效已移出` : ''}`
+            + `${blockedCount ? `，本账号被限 ${blockedCount} 家没查到（标识都还在，换账号可查）` : ''}`
             + `${failed ? `，${failed} 个查询失败` : ''}`
             + `${pendingCount ? `，还有 ${pendingCount} 个候选待下一轮轮换` : ''}`)
       return true
@@ -2803,7 +2812,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     yishuHuanfuFriendShopsLoading.value = false
     yishuHuanfuFriendScanAt.value = 0
     yishuHuanfuFriendScanNote.value = ''
-    yishuHuanfuExpiredShops.value = []
+    yishuHuanfuBlockedShops.value = []
     yishuHuanfuFriendShopsAccountId.value = ''
   }
 
@@ -2964,7 +2973,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     yishuHuanfuFriendShopsLoading,
     yishuHuanfuFriendScanAt,
     yishuHuanfuFriendScanNote,
-    yishuHuanfuExpiredShops,
+    yishuHuanfuBlockedShops,
     charity,
     weather,
     weatherFriends,

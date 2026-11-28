@@ -138,6 +138,7 @@ function shopQuotePayload(gid, entry) {
 
 function createHarness(options = {}) {
     const built = makeGroupReply(options);
+    let currentGid = String(options.gid || '1220537209');
     const requests = [];
     const dateKeyOf = (nowMs) => {
         const ms = typeof nowMs === 'number' ? nowMs : built.now * 1000;
@@ -212,7 +213,8 @@ function createHarness(options = {}) {
         },
         serializeMutation: operation => operation(),
         getActivityCenterSnapshot: async () => ({}),
-        getUserState: () => ({ gid: '1220537209' }),
+        // 当前账号可改：比价缓存按账户隔离的用例要切号验证。
+        getUserState: () => ({ gid: currentGid }),
         // 好友列表走桩，避免测试里拉起真实网关。
         getAllFriends: options.getAllFriends || (async () => ({ game_friends: [] })),
         // 面板其它账号的好友默认空，测试可注入以覆盖跨账号候选池。
@@ -220,7 +222,8 @@ function createHarness(options = {}) {
         shareKeyStore,
     });
     const operateRequest = () => requests.filter(entry => entry.method === 'Operate');
-    return { service, requests, built, operateRequest, shareKeyStore, dateKey: dateKeyOf() };
+    const setCurrentGid = (gid) => { currentGid = String(gid); };
+    return { service, requests, built, operateRequest, shareKeyStore, setCurrentGid, dateKey: dateKeyOf() };
 }
 
 test('yishuhuanfu snapshot maps the price slot and gates actions by balance', async () => {
@@ -1142,18 +1145,20 @@ test('yishuhuanfu scan never pools keyless friends', async () => {
     assert.equal(legacy.shops.length, 1);
 });
 
-// 2026-11-28 实测：铺主重新分享一次后，之前那条链接立刻作废，
-// 服务端回 1034184「分享链接已失效，请重新联系店主分享」。
-// 存档里那条已经没用了 —— 必须清掉，否则每轮比价都拿死链打网关：
-// 既拿不到价，又平白多出一堆注定失败的请求。
-function shareKeyExpiredError() {
+// 2026-11-28 晚实测：当天拿到的 share_key 一整天都有效，同一条链接换个账号
+// 照样能查能卖。服务端回 1034184 时那句「分享链接已失效，请重新联系店主分享」
+// 是**说辞**，真实原因是发起查询的账号自己被限了（短时间连查太多家最典型）。
+// 因此这里的铁律是：只影响本账号这一轮，**绝不碰共享存档**。
+// 删掉存档等于把「别的账号本来能用」的一家从当天池子里删掉，而且面板账号
+// 当天不会再分享第二次，这一天就白少一家可卖的铺子。
+function lookupBlockedError() {
     return Object.assign(
         new Error('gamepb.activitypb.ActivityService.Operate code=1034184 分享链接已失效，请重新联系店主分享'),
         { code: 1034184, errorMessage: '分享链接已失效，请重新联系店主分享' },
     );
 }
 
-test('查价撞到 1034184 会删掉这家的标识，并从下一轮候选里消失', async () => {
+test('查价撞到 1034184 只标记本账号被限，存档一个字都不动', async () => {
     const harness = createHarness({
         shopQuotes: {
             1220537209: { price: '100', quota: '8000' },
@@ -1163,29 +1168,33 @@ test('查价撞到 1034184 会删掉这家的标识，并从下一轮候选里�
         operateThrows: (cmd, body) => {
             if (cmd !== 92) return null;
             const gid = String(types.YshfShopQueryRequest.decode(body).params?.shop_gid ?? '');
-            return gid === '910001' ? shareKeyExpiredError() : null;
+            return gid === '910001' ? lookupBlockedError() : null;
         },
     });
 
     const first = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    assert.equal(first.expiredKeyCount, 1);
-    assert.deepEqual(first.expiredShops, [{ gid: '910001', name: '' }]);
-    // 失效的不算「查询失败」：这不是网络问题，重试也不会好。
+    assert.equal(first.blockedKeyCount, 1);
+    assert.deepEqual(first.blockedShops, [{ gid: '910001', name: '' }]);
+    // 被风控挡回来的不算「查询失败」：换账号立刻能查，不是网络问题。
     assert.equal(first.failed, 0);
     assert.equal(first.shops.some(entry => entry.gid === '910001'), false);
-    assert.match(first.message, /分享链接失效已移出/);
-    // 死链已经从存档里清掉，否则下一轮还会拿它打网关。
-    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+    assert.match(first.message, /本账号被限/);
+    // 关键断言：标识必须原样留着，别的账号今天还要靠它卖这一家。
+    assert.equal(
+        harness.shareKeyStore.readYishuShareKey('910001')?.shareKey,
+        'a0000001-0000-4000-8000-000000000001',
+    );
 
+    // 下一轮照样会去查它：存档还在，这家仍然在候选池里。
     const before = harness.operateRequest().length;
     const second = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    assert.equal(second.expiredKeyCount, 0);
+    assert.equal(second.blockedKeyCount, 1);
     const queried = harness.operateRequest().slice(before)
         .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
-    assert.deepEqual(queried, ['1220537209'], '死链不该再被请求');
+    assert.ok(queried.includes('910001'), '标识没删，这家应该还在请求里');
 });
 
-test('错误只把 code 拼在 message 里也能认出 1034184', async () => {
+test('错误只把 code 拼在 message 里也能认出 1034184，且不清存档', async () => {
     // 真实链路里错误经过 worker / IPC 序列化后，可能只剩一句带 code= 的 message，
     // error.code 已经丢了。只按 code 判会漏，必须同时看文案。
     const harness = createHarness({
@@ -1197,12 +1206,14 @@ test('错误只把 code 拼在 message 里也能认出 1034184', async () => {
         operateThrows: cmd => (cmd === 92 ? new Error('ActivityService.Operate code=1034184 分享链接已失效') : null),
     });
     const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    // 自己的查价也会撞上这个桩，只能确认「至少认出了一条」且存档被清。
-    assert.ok(result.expiredKeyCount >= 1);
-    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+    assert.ok(result.blockedKeyCount >= 1);
+    assert.equal(
+        harness.shareKeyStore.readYishuShareKey('910001')?.shareKey,
+        'a0000001-0000-4000-8000-000000000001',
+    );
 });
 
-test('售卖撞到 1034184 抛 SHARE_KEY_EXPIRED 并清掉死链', async () => {
+test('售卖撞到 1034184 抛 LOOKUP_BLOCKED，文案指向「换账号」而不是「让店主重新分享」', async () => {
     const harness = createHarness({
         sweetPotato: '30',
         shopQuotes: {
@@ -1210,23 +1221,53 @@ test('售卖撞到 1034184 抛 SHARE_KEY_EXPIRED 并清掉死链', async () => {
             910001: { price: '260', quota: '2000', name: 'A号' },
         },
         shareKeys: { 910001: 'a0000001-0000-4000-8000-000000000001' },
-        // cmd 92 正常（能查到价），cmd 93 被拒：模拟对方在这两步之间重新分享了。
-        operateThrows: cmd => (cmd === 93 ? shareKeyExpiredError() : null),
+        // cmd 92 正常（能查到价），cmd 93 被拒：本账号在这一下被限了。
+        operateThrows: cmd => (cmd === 93 ? lookupBlockedError() : null),
     });
     await assert.rejects(
         () => harness.service.sellYishuHuanfuSweetPotato('910001', '30', { withSnapshot: false }),
         (error) => {
-            assert.equal(error.code, 'YSHF_SHARE_KEY_EXPIRED');
-            assert.match(error.message, /重新分享/);
+            assert.equal(error.code, 'YSHF_SHOP_LOOKUP_BLOCKED');
+            assert.match(error.message, /换个账号/);
+            // 不能说「链接失效」，否则用户会把一条有效标识删掉。
+            assert.doesNotMatch(error.message, /已失效，请重新联系店主分享/);
             return true;
         },
     );
-    assert.equal(harness.shareKeyStore.readYishuShareKey('910001'), null);
+    // 卖失败了，但存档必须还在。
+    assert.equal(
+        harness.shareKeyStore.readYishuShareKey('910001')?.shareKey,
+        'a0000001-0000-4000-8000-000000000001',
+    );
 });
 
-test('失效成片出现时提前中止本轮，不再继续打网关', async () => {
-    // 5 家全部失效：第一批 4 个（含自己）撞到 3 条就停手，
-    // 剩下的留给下一轮（那时存档已清，不会再撞）。
+test('比价缓存按账户来：换了发起查询的 gid，缓存不串号', async () => {
+    // 1034184 是「这个号被限」，扫出来的结果（少几家、大批 blocked）只对它自己成立，
+    // 绝不能喂给别的账号。这里直接换 currentGid 验证缓存键带账号。
+    const harness = createHarness({
+        shopQuotes: { 1220537209: { price: '100', quota: '8000' } },
+        shareKeys: {},
+    });
+    const first = await harness.service.scanYishuHuanfuFriendShops({});
+    assert.equal(first.cached, false);
+    // 同一个号：走缓存，不再打网关。
+    const before = harness.operateRequest().length;
+    const second = await harness.service.scanYishuHuanfuFriendShops({});
+    assert.equal(second.cached, true);
+    assert.equal(harness.operateRequest().length, before, '同账号命中缓存，不该再请求');
+    // 换号：缓存必须作废，重新扫（新号自己的铺子会重新发一次 cmd 92）。
+    harness.setCurrentGid('1220537999');
+    const mark = harness.operateRequest().length;
+    const third = await harness.service.scanYishuHuanfuFriendShops({});
+    assert.equal(third.cached, false, '换号后必须重扫，不能复用上一个账号的比价结果');
+    const requery = harness.operateRequest().slice(mark)
+        .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
+    assert.deepEqual(requery, ['1220537999']);
+});
+
+test('风控成片出现时提前中止本轮，不再继续打网关（存档照旧保留）', async () => {
+    // 5 家全被 1034184 挡回来：第一批 4 个（含自己）撞到 3 条就停手，
+    // 剩下的不再发请求——继续打只会加重风控，还拿不到价。
     const shareKeys = {};
     for (let i = 1; i <= 5; i += 1)
         shareKeys[`91000${i}`] = `a000000${i}-0000-4000-8000-00000000000${i}`;
@@ -1237,15 +1278,18 @@ test('失效成片出现时提前中止本轮，不再继续打网关', async ()
         operateThrows: (cmd, body) => {
             if (cmd !== 92) return null;
             const gid = String(types.YshfShopQueryRequest.decode(body).params?.shop_gid ?? '');
-            return gid === '1220537209' ? null : shareKeyExpiredError();
+            return gid === '1220537209' ? null : lookupBlockedError();
         },
     });
 
     const result = await harness.service.scanYishuHuanfuFriendShops({ force: true });
-    assert.equal(result.expiredKeyCount, 3);
+    assert.equal(result.blockedKeyCount, 3);
     // 只打了一批（自己 + 3 家），没把剩下两家也算成本轮已扫。
     assert.equal(result.scanned, 4);
     const queried = harness.operateRequest()
         .map(entry => String(types.YshfShopQueryRequest.decode(Buffer.from(entry.body)).params?.shop_gid));
     assert.equal(queried.length, 4, '熔断后不该再发请求');
+    // 熔断不等于作废：五家的标识一条都不能少，换个账号今天照样能全查一遍。
+    for (const gid of Object.keys(shareKeys))
+        assert.ok(harness.shareKeyStore.readYishuShareKey(gid)?.shareKey, `${gid} 的标识被误删了`);
 });

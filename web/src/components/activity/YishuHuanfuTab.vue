@@ -17,8 +17,8 @@ const props = defineProps<{
   friendShopsLoading: boolean
   friendScanAt: number
   friendScanNote: string
-  // 上一轮因为分享链接失效（服务端 1034184）被移出比价的铺子。
-  expiredShops: { gid: string, name: string }[]
+  // 上一轮被本账号风控（1034184）挡回来的铺子。链接本身没坏，换账号照样能查能卖。
+  blockedShops: { gid: string, name: string }[]
   records: YishuHuanfuRecordDto[]
   recordsLoading: boolean
   recordsNote: string
@@ -835,14 +835,16 @@ function scanAgo() {
       </div>
 
       <p v-if="friendScanNote" class="compare-note">{{ friendScanNote }}<template v-if="friendScanAt">（{{ scanAgo() }}）</template></p>
-      <!-- 失效的铺子单列出来：这不是网络错误，是对方重新分享过、旧链接被作废了。
-           点「重新比价」也不会好，必须等对方再分享一次（面板账号可以点「补分享标识」）。 -->
-      <p v-if="expiredShops.length" class="compare-note warning">
-        分享链接已失效（对方重新分享过，旧链接作废），已移出比价：
-        <span v-for="(shop, index) in expiredShops" :key="shop.gid">
-          {{ shop.name || shop.gid }}<template v-if="shop.name">（{{ shop.gid }}）</template>{{ index === expiredShops.length - 1 ? '' : '、' }}
+      <!-- 被 1034184 挡回来的铺子单列出来。**别写成「对方链接失效」**：当天标识一整天都有效，
+           同一条链接换个账号照样能查能卖，这是本账号这一轮被限了。
+           标识一条都没删，所以提示里只让用户「换个账号再扫」或「过十几分钟再试」，
+           千万不要引导用户去删那家铺子——那等于把一家本来可卖的铺子从当天池子里删掉。 -->
+      <p v-if="blockedShops.length" class="compare-note warning">
+        本账号查价被服务端限了（回「分享链接已失效」≠ 对方链接坏了，当天链接不会失效），以下 {{ blockedShops.length }} 家没查到：
+        <span v-for="(shop, index) in blockedShops" :key="shop.gid">
+          {{ shop.name || shop.gid }}<template v-if="shop.name">（{{ shop.gid }}）</template>{{ index === blockedShops.length - 1 ? '' : '、' }}
         </span>
-        。等对方重新分享一次铺子，或把他的新链接贴进来。
+        。标识都还在，换个账号再扫一次，或过十几分钟重试即可。
       </p>
 
       <div v-if="friendShops.length" class="compare-list">

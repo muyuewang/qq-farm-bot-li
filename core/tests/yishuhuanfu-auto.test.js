@@ -545,20 +545,20 @@ test('比价池里最高价直接成交，不再二次筛标识', async () => {
     assert.ok(harness.logs.some(entry => String(entry.message).includes('卖出 30 个蜜薯')));
 });
 
-// 2026-11-28 晚：铺主重新分享会让旧链接作废（服务端 1034184）。
-// 自动任务遇到它必须换下一家继续卖 —— 服务层已经删了那条死链，
-// 下轮它自然不在候选池，但这一轮剩下的蜜薯不能因此不卖。
-test('售卖撞到分享链接失效时换下一家，不判整轮失败', async () => {
+// 2026-11-28 晚实测：1034184「分享链接已失效」不是对方链接坏了，是本账号这一下被限
+// （当天标识一整天都有效，换个号照样能卖）。服务层不删存档，只把「这家没卖进去」说出来。
+// 自动任务遇到它必须换下一家继续卖，这一轮剩下的蜜薯不能因此不卖。
+test('售卖撞到本账号风控（1034184）时换下一家，不判整轮失败', async () => {
     const harness = createHarness({
         snapshot: makeSnapshot({ sweetPotatoBalance: '30' }),
         shops: [
-            makeShop({ gid: '900', name: '旧链接', totalPrice: '400', quota: '1000' }),
+            makeShop({ gid: '900', name: '被限', totalPrice: '400', quota: '1000' }),
             makeShop({ gid: '901', name: '正常', totalPrice: '300', quota: '1000' }),
         ],
         sell: (friendGid, count) => {
             if (friendGid === '900') {
-                const error = new Error('900 的分享链接已失效（对方多半重新分享过一次）');
-                error.code = 'YSHF_SHARE_KEY_EXPIRED';
+                const error = new Error('售卖时服务端回了「分享链接已失效」——当天链接不会失效，这通常是本账号被限了');
+                error.code = 'YSHF_SHOP_LOOKUP_BLOCKED';
                 throw error;
             }
             return { count, price: '300', income: String(Number(count) * 300) };

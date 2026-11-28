@@ -72,20 +72,23 @@ const FRIEND_SCAN_MAX_LIMIT = 200;
 const FRIEND_SCAN_CONCURRENCY = 4;
 
 /**
- * 分享标识失效的业务码：1034184「分享链接已失效，请重新联系店主分享」。
+ * 风控拒绝码：1034184。文案是「分享链接已失效，请重新联系店主分享」，但**别被它骗了**。
  *
- * 2026-11-28 18:00 实测：铺主重新分享一次后，之前那条链接立刻作废。所以「当天 key
- * 固定不变」只在「对方没再分享」的前提下成立——对方再分享一次，存档里那条就成了死链。
- * 遇到这个码不能只记一次失败：那条标识已经没用，继续拿它打网关既不拿价、又白增请求量。
- * 处理方式是直接删存档（对方下次分享会重新落盘），并把它从当轮比价里剔掉。
+ * 2026-11-28 晚实测确认：当天拿到的 share_key 一整天都不会失效，同一条链接换个账号
+ * 照样能查价能卖。这个码是**发起查询的账号自己**被服务端限了（连查十几家、请求太密
+ * 之类），服务端用「链接失效」当说辞把请求挡回来。
+ *
+ * 所以处理原则只有一条：**只影响当前账号这一轮，绝不碰共享存档。**
+ * 这条码不代表对方的标识坏了，删掉存档会把「别的账号本来能用」的那家一起干掉，
+ * 而且面板账号当天不会再分享第二次，等于这一天白白少一家可卖的铺子。
  */
-const SHARE_KEY_EXPIRED_CODES = new Set(['1034184']);
+const SHOP_LOOKUP_BLOCKED_CODES = new Set(['1034184']);
 /**
- * 一轮比价里连续撞到这么多条失效就中止剩余扫描。
- * 失效成片出现通常不是巧合（服务端换规则、或这一批号被判定异常），
- * 继续打完只会放大请求量，留给下一轮更安全。
+ * 一轮比价里连续撞到这么多条风控拒绝就中止本账号的剩余扫描。
+ * 成片出现说明这个号已经被限了，继续打完只会加重风控、还拿不到价。
+ * 注意中止的只是「本账号这一轮」，存档和其它账号完全不受影响。
  */
-const SHARE_KEY_EXPIRED_ABORT = 3;
+const SHOP_LOOKUP_BLOCKED_ABORT = 3;
 /**
  * 批与批之间的间隔。一轮比价可能连着打十几个 cmd 92，一次性连发在服务端看来
  * 很像脚本：间隔 350ms 后总耗时只多一点，但请求曲线平滑很多。
@@ -139,7 +142,7 @@ function createYishuHuanfuActivityService(deps: any) {
     // 因此每日动作按服务器日期在本地记账，服务端报错时再回滚。
     let seedClaimedDateKey = '';
     let sharedDateKey = '';
-    let friendScanCache: { at: number; data: any } | null = null;
+    let friendScanCache: { accountId: string; dateKey: string; at: number; data: any } | null = null;
     // 候选池（本账号好友 + 面板其它账号好友）超过单轮上限时的轮换游标。
     let friendScanRotation = 0;
     // 背包读取失败时保留原因，随快照一起下发，前端可以显示“余额未知”的具体理由。
@@ -219,46 +222,34 @@ function createYishuHuanfuActivityService(deps: any) {
     }
 
     /**
-     * 这条错误是不是「分享链接已失效」。
+     * 这条错误是不是服务端拿「分享链接已失效」当说辞的风控拒绝（1034184）。
      *
      * 网关的非零 error_code 以 GatewayError 抛出，code 在 `error.code`（数字或字符串），
      * 服务端文案在 `error.errorMessage`；但错误经过 worker / IPC 序列化后，也可能只剩
      * 一句拼好的 `... code=1034184 ...` 的 message。三处都判，避免换个链路就认不出来。
      */
-    function isShareKeyExpiredError(error: any): boolean {
+    function isLookupBlockedError(error: any): boolean {
         if (!error) return false;
         const code = String(error?.code ?? '').trim();
-        if (code && SHARE_KEY_EXPIRED_CODES.has(code)) return true;
+        if (code && SHOP_LOOKUP_BLOCKED_CODES.has(code)) return true;
         const text = String(error?.errorMessage || error?.message || '');
         const inText = (text.match(/\bcode=(\d+)\b/) || [])[1];
-        if (inText && SHARE_KEY_EXPIRED_CODES.has(inText)) return true;
+        if (inText && SHOP_LOOKUP_BLOCKED_CODES.has(inText)) return true;
         return /分享链接已失效|重新联系店主分享/.test(text);
     }
 
     /**
-     * 把一条已失效的标识从存档里删掉（面板账号下次分享会重新落盘）。
-     * 返回是否真的删掉了文件，用来区分「确实是死链」和「本来就没存档」。
+     * 风控拒绝时的统一文案。
+     *
+     * 这里刻意不改存档：1034184 是「这个账号被限了」，不是对方标识真的坏了。
+     * 一声明对方重新分享、一边把标识删掉，会让其它账号当天也用不了这家铺子。
      */
-    function dropExpiredShareKey(targetGid: string): boolean {
-        if (!targetGid) return false;
-        let removed = false;
-        try {
-            removed = !!shareKeyStore()?.removeYishuShareKey?.(targetGid);
-        } catch {
-            removed = false;
-        }
-        // 少了一家可卖铺子，界面上的比价表要让位给下一次重扫。
-        if (removed) friendScanCache = null;
-        return removed;
-    }
-
-    /** 统一给「链接失效」这个新错误码的文案，界面直接拿去提示。 */
-    function expiredShareKeyError(targetGid: string, removed: boolean, action: string) {
+    function lookupBlockedError(targetGid: string, action: string) {
         return businessError(
-            'YSHF_SHARE_KEY_EXPIRED',
-            `${targetGid} 的分享链接已失效（对方多半重新分享过一次，旧链接会被作废）。`
-            + `${removed ? '已把这条标识移出比价列表。' : ''}`
-            + `${action}让对方重新分享一次铺子，或重新贴一次他刚发的那条链接。`,
+            'YSHF_SHOP_LOOKUP_BLOCKED',
+            `${action}服务端回了「分享链接已失效」——当天链接不会失效，这通常是本账号被限了`
+            + `（短时间内查太多家最容易触发）。${targetGid} 的标识已保留，换个账号查/卖就行，`
+            + '或者过十几分钟再试。',
         );
     }
 
@@ -667,11 +658,9 @@ function createYishuHuanfuActivityService(deps: any) {
                 params,
             });
         } catch (error: any) {
-            // 1034184：对方重新分享过，存档里这条链接已经作废。
-            // 删掉存档再抛出可读错误，下一轮它就不在候选池里了，不会反复拿死链打网关。
-            if (!sameAccount && isShareKeyExpiredError(error)) {
-                const removed = dropExpiredShareKey(targetGid);
-                throw expiredShareKeyError(targetGid, removed, '查价被拒，');
+            // 1034184 是「本账号被限」，不是死链：标识留着，别的账号还能用。
+            if (!sameAccount && isLookupBlockedError(error)) {
+                throw lookupBlockedError(targetGid, '查价时');
             }
             throw error;
         }
@@ -759,7 +748,17 @@ function createYishuHuanfuActivityService(deps: any) {
             : FRIEND_SCAN_DEFAULT_LIMIT;
         const force = options?.force === true;
         const now = Date.now();
-        if (!force && friendScanCache && now - friendScanCache.at < FRIEND_SCAN_TTL_MS) {
+        const own = ownGid();
+        const dateKey = getSystemDateKey();
+        // 比价缓存**按账户来**：1034184 是「发起查询的号被限」，同一个号扫出的结果
+        // （少几家、大把 blocked）只对它自己成立，绝不能喂给别的账号。
+        // 正常部署每账号一个 worker、天然隔离，但测试和未来的单进程多号都在同一模块里，
+        // 所以这里显式带上 accountId + dateKey 双重判断：换了号或跨了天，缓存一律作废。
+        if (!force
+            && friendScanCache
+            && friendScanCache.accountId === own
+            && friendScanCache.dateKey === dateKey
+            && now - friendScanCache.at < FRIEND_SCAN_TTL_MS) {
             return { ...friendScanCache.data, cached: true };
         }
 
@@ -767,8 +766,6 @@ function createYishuHuanfuActivityService(deps: any) {
         if (!snapshot.active) {
             throw businessError('YSHF_INACTIVE', '以薯换福活动未在活动期内');
         }
-        const own = ownGid();
-        const dateKey = getSystemDateKey();
 
         // 一次读出所有账号落盘的分享标识：按 gid 查表，别让每家铺子都读一次盘。
         // 这份表本身就是「今天能卖进去的铺子」清单。
@@ -826,16 +823,17 @@ function createYishuHuanfuActivityService(deps: any) {
         const slice = takeScanWindow(targets, limit, !!own);
 
         const shops: any[] = [];
-        // 本轮撞到「分享链接已失效」的铺子。它们的存档已经被删掉，
-        // 界面要单独提示一句「让对方重新分享」，而不是混进 failed 里当成网络错误。
-        const expiredShops: Array<{ gid: string; name: string }> = [];
+        // 本轮被服务端用「分享链接已失效」挡回来的铺子（1034184 = 本账号被限）。
+        // 存档一条都不动：这些铺子换个账号照样能查能卖，界面单独提示，
+        // 不要混进 failed 里当成网络错误。
+        const blockedShops: Array<{ gid: string; name: string }> = [];
         let failed = 0;
         let attempted = 0;
         let failureMessage = '';
         for (let start = 0; start < slice.length; start += FRIEND_SCAN_CONCURRENCY) {
-            // 失效成片出现就停手：这不是偶发的单条死链，继续打完只会放大请求量，
-            // 反而更像异常流量。剩下的留给下一轮（那时存档已清，不会再撞）。
-            if (expiredShops.length >= SHARE_KEY_EXPIRED_ABORT) break;
+            // 连续被拒就停手：说明这个号已经被限了，继续打完只会加重风控、还拿不到价。
+            // 停的只是本账号这一轮，存档和其它账号完全不受影响。
+            if (blockedShops.length >= SHOP_LOOKUP_BLOCKED_ABORT) break;
             // 批次之间喘口气：一轮十几家连着打最容易像脚本，隔一下请求曲线平滑很多。
             if (start > 0) await new Promise(resolve => setTimeout(resolve, FRIEND_SCAN_BATCH_GAP_MS));
             const batch = slice.slice(start, start + FRIEND_SCAN_CONCURRENCY);
@@ -845,8 +843,8 @@ function createYishuHuanfuActivityService(deps: any) {
                 const entry = batch[index];
                 if (result.status === 'rejected') {
                     const reason = result.reason;
-                    if (reason?.code === 'YSHF_SHARE_KEY_EXPIRED') {
-                        expiredShops.push({ gid: entry.gid, name: entry.name || '' });
+                    if (reason?.code === 'YSHF_SHOP_LOOKUP_BLOCKED') {
+                        blockedShops.push({ gid: entry.gid, name: entry.name || '' });
                         if (!failureMessage) failureMessage = reason.message;
                         return;
                     }
@@ -891,9 +889,11 @@ function createYishuHuanfuActivityService(deps: any) {
             ownShop: shops.find(entry => entry.own) || null,
             scanned: attempted,
             failed,
-            // 分享链接已失效的铺子：存档已删，需要对方重新分享一次才能回到比价池。
-            expiredShops,
-            expiredKeyCount: expiredShops.length,
+            // 本轮被 1034184 挡回来的铺子。**存档一个字都没动**：这些铺子换个账号
+            // 照样能查能卖，纯粹是本账号这一轮被限。界面按「本账号受限」提示，
+            // 不要写成「对方链接失效」，那会引导用户去删一条其实完全有效的标识。
+            blockedShops,
+            blockedKeyCount: blockedShops.length,
             // 存档里存在但日期对不上的标识数：这些账号今天还没重新分享，重分享后自动回到比价池。
             staleKeyCount,
             // 候选池 = 本账号 + 有当天分享标识、能查能卖的账号。
@@ -904,17 +904,17 @@ function createYishuHuanfuActivityService(deps: any) {
             pendingCount: Math.max(0, targets.length - (own ? 1 : 0) - slice.filter(entry => !entry.own).length),
             limit,
             message: shops.length === 0
-                ? (expiredShops.length
-                    ? `${expiredShops.length} 家铺子的分享链接已失效（对方重新分享过），让对方重新分享一次再比价`
+                ? (blockedShops.length
+                    ? `本账号查价被服务端限了（${blockedShops.length} 家铺子回「分享链接已失效」）——当天标识不会失效，换面板里别的账号再查一次就行，标识都还在`
                     : '没有可比的铺子：先让面板里的账号各分享一次铺子，面板外的好友贴一次分享链接')
                 : `已扫描 ${shops.length} 个铺子${sellableCount ? `（含其它账号 ${sellableCount} 个）` : ''}，`
                     + `最高收购价 ${shops[0].totalPrice}`
-                    + (expiredShops.length ? `；${expiredShops.length} 家分享链接失效已移出` : ''),
+                    + (blockedShops.length ? `；本账号被限，${blockedShops.length} 家没查到（换账号再扫）` : ''),
             errorMessage: failureMessage,
             cached: false,
             scannedAt: now,
         };
-        friendScanCache = { at: now, data };
+        friendScanCache = { accountId: own, dateKey, at: now, data };
         return data;
     }
 
@@ -1006,12 +1006,11 @@ function createYishuHuanfuActivityService(deps: any) {
                 });
             } catch (error: any) {
                 // 上面那次 cmd 92 用同一条标识能查到价，接着卖却回 1034184：
-                // 说明对方在这两步之间重新分享了（或者两个请求被差别对待）。
-                // 一律按「此链接作废」处理，删存档 + 给可读原因，别让用户对着
-                // 「分享链接已失效，请重新联系店主分享」猜。
-                if (!isOwn && isShareKeyExpiredError(error)) {
-                    const removed = dropExpiredShareKey(targetGid);
-                    throw expiredShareKeyError(targetGid, removed, '售卖被拒，');
+                // 跟链接本身无关，就是本账号这一下被限了（连发请求最容易撞上）。
+                // 存档保持不变，给一句能照着做的说明，别让用户对着
+                // 「分享链接已失效，请重新联系店主分享」去删一条其实有效的标识。
+                if (!isOwn && isLookupBlockedError(error)) {
+                    throw lookupBlockedError(targetGid, '售卖时');
                 }
                 throw error;
             }

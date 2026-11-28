@@ -22,7 +22,7 @@ const {
   yishuHuanfuFriendShopsLoading,
   yishuHuanfuFriendScanAt,
   yishuHuanfuFriendScanNote,
-  yishuHuanfuExpiredShops,
+  yishuHuanfuBlockedShops,
   yishuHuanfuRecords,
   yishuHuanfuRecordsLoading,
   yishuHuanfuRecordsNote,
@@ -278,7 +278,7 @@ async function onImportShareKey(gid: string, shareKey: string) {
         :friend-shops-loading="yishuHuanfuFriendShopsLoading"
         :friend-scan-at="yishuHuanfuFriendScanAt"
         :friend-scan-note="yishuHuanfuFriendScanNote"
-        :expired-shops="yishuHuanfuExpiredShops"
+        :blocked-shops="yishuHuanfuBlockedShops"
         :records="yishuHuanfuRecords"
         :records-loading="yishuHuanfuRecordsLoading"
         :records-note="yishuHuanfuRecordsNote"
